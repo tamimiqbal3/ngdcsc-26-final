@@ -1,5 +1,9 @@
 import React, { useEffect, useRef } from 'react';
 
+/**
+ * Formal, uniform scientific particle & molecular lattice network animation
+ * Runs smoothly and consistently across all pages of the NGDC Science Club portal.
+ */
 export default function ScienceBackground() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -11,15 +15,48 @@ export default function ScienceBackground() {
     if (!ctx) return;
 
     let animId: number;
-    let W: number, H: number, dpr: number;
-    let scene = 0;
-    let nodes: Array<{ x: number; y: number; r: number; vx: number; vy: number }> = [];
-    let particles: Array<{ x: number; y: number; vx: number; vy: number; r: number }> = [];
+    let W = window.innerWidth;
+    let H = window.innerHeight;
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    interface ScienceNode {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      r: number;
+      baseAlpha: number;
+      isHighlight: boolean;
+      pulseOffset: number;
+    }
+
+    let nodes: ScienceNode[] = [];
+    const mouse = { x: -1000, y: -1000, active: false };
+
+    function createNodes() {
+      nodes = [];
+      // Adjust density based on screen dimensions for optimal performance
+      const count = Math.min(75, Math.max(35, Math.floor((W * H) / 18000)));
+
+      for (let i = 0; i < count; i++) {
+        const isHighlight = i % 5 === 0;
+        nodes.push({
+          x: Math.random() * W,
+          y: Math.random() * H,
+          // Formal, dignified, steady velocity (smooth, not chaotic)
+          vx: (Math.random() - 0.5) * 0.32,
+          vy: (Math.random() - 0.5) * 0.32,
+          r: isHighlight ? Math.random() * 0.8 + 2.0 : Math.random() * 0.7 + 1.2,
+          baseAlpha: isHighlight ? 0.85 : 0.45,
+          isHighlight,
+          pulseOffset: Math.random() * Math.PI * 2,
+        });
+      }
+    }
 
     function resize() {
       if (!canvas || !ctx) return;
       dpr = Math.min(window.devicePixelRatio || 1, 2);
-
       W = window.innerWidth;
       H = window.innerHeight;
 
@@ -29,248 +66,133 @@ export default function ScienceBackground() {
       canvas.style.height = H + 'px';
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
       createNodes();
-      createParticles();
     }
 
-    // Clean background without any grid or grip lines
-    function background() {
+    function draw() {
       if (!ctx) return;
-      ctx.fillStyle = 'rgba(5,7,10,.16)';
+
+      // Dark canvas refresh with slight trail fade for fluid motion
+      ctx.fillStyle = 'rgba(5, 7, 10, 0.25)';
       ctx.fillRect(0, 0, W, H);
-    }
 
-    function createNodes() {
-      nodes = [];
-      const count = Math.min(65, Math.floor((W * H) / 19000));
-      for (let i = 0; i < count; i++) {
-        nodes.push({
-          x: Math.random() * W,
-          y: Math.random() * H,
-          r: Math.random() * 1.8 + 0.8,
-          // Significantly faster nodes (speed increased from 0.08 to 0.45)
-          vx: (Math.random() - 0.5) * 0.48,
-          vy: (Math.random() - 0.5) * 0.48
-        });
-      }
-    }
+      const time = performance.now() * 0.0015;
+      const connectionDist = 145;
+      const mouseConnectionDist = 160;
 
-    function createParticles() {
-      particles = [];
-      for (let i = 0; i < 180; i++) {
-        particles.push({
-          x: Math.random() * W,
-          y: Math.random() * H,
-          // Faster floating particles (speed increased from 0.25 to 0.95)
-          vx: (Math.random() - 0.5) * 0.95,
-          vy: (Math.random() - 0.5) * 0.95,
-          r: Math.random() * 1.4 + 0.4
-        });
-      }
-    }
-
-    function blueprint() {
-      if (!ctx) return;
-      background();
-
+      // 1. Draw connections between nearby nodes
       for (let i = 0; i < nodes.length; i++) {
         const a = nodes[i];
 
+        // Update position
         a.x += a.vx;
         a.y += a.vy;
 
-        if (a.x < 0 || a.x > W) a.vx *= -1;
-        if (a.y < 0 || a.y > H) a.vy *= -1;
+        // Formal boundary bounce
+        if (a.x < 0) {
+          a.x = 0;
+          a.vx = Math.abs(a.vx);
+        } else if (a.x > W) {
+          a.x = W;
+          a.vx = -Math.abs(a.vx);
+        }
 
+        if (a.y < 0) {
+          a.y = 0;
+          a.vy = Math.abs(a.vy);
+        } else if (a.y > H) {
+          a.y = H;
+          a.vy = -Math.abs(a.vy);
+        }
+
+        // Draw node-to-node links
         for (let j = i + 1; j < nodes.length; j++) {
           const b = nodes[j];
           const dx = a.x - b.x;
           const dy = a.y - b.y;
-          const d = Math.hypot(dx, dy);
+          const dist = Math.hypot(dx, dy);
 
-          if (d < 155) {
+          if (dist < connectionDist) {
+            const alpha = (1 - dist / connectionDist) * 0.16;
             ctx.beginPath();
             ctx.moveTo(a.x, a.y);
             ctx.lineTo(b.x, b.y);
-            ctx.strokeStyle = `rgba(170,190,210,${(1 - d / 155) * 0.22})`;
-            ctx.stroke();
-          }
-        }
 
-        ctx.beginPath();
-        ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(220,230,240,.75)';
-        ctx.fill();
-      }
-    }
-
-    function circuit() {
-      if (!ctx) return;
-      background();
-
-      const grid = 80;
-      ctx.lineWidth = 0.8;
-
-      for (let x = grid / 2; x < W; x += grid) {
-        for (let y = grid / 2; y < H; y += grid) {
-          if (Math.random() > 0.45) {
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            if (Math.random() > 0.5) {
-              ctx.lineTo(x + grid, y);
+            // Emerald-tinted subtle connection
+            if (a.isHighlight || b.isHighlight) {
+              ctx.strokeStyle = `rgba(0, 229, 153, ${alpha * 1.3})`;
+              ctx.lineWidth = 0.8;
             } else {
-              ctx.lineTo(x, y + grid);
+              ctx.strokeStyle = `rgba(180, 210, 235, ${alpha})`;
+              ctx.lineWidth = 0.55;
             }
-            ctx.strokeStyle = 'rgba(170,190,210,.15)';
             ctx.stroke();
-
-            ctx.beginPath();
-            ctx.arc(x, y, 2, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(220,230,240,.6)';
-            ctx.fill();
           }
         }
-      }
 
-      // High-speed electron pulses (speed increased from 0.025 to 0.10)
-      for (let i = 0; i < 9; i++) {
-        const x = ((performance.now() * 0.10 + i * 180) % (W + 300)) - 150;
-        const y = H * 0.22 + i * H * 0.09;
+        // 2. Gentle connection to mouse cursor when active
+        if (mouse.active) {
+          const mdx = a.x - mouse.x;
+          const mdy = a.y - mouse.y;
+          const mdist = Math.hypot(mdx, mdy);
 
-        ctx.beginPath();
-        ctx.arc(x, y, 2.5, 0, Math.PI * 2);
-        ctx.shadowBlur = 14;
-        ctx.shadowColor = 'white';
-        ctx.fillStyle = 'white';
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      }
-    }
-
-    function reaction() {
-      if (!ctx) return;
-      background();
-
-      const cx = W / 2;
-      const cy = H / 2;
-
-      particles.forEach((p) => {
-        const dx = cx - p.x;
-        const dy = cy - p.y;
-        const d = Math.hypot(dx, dy);
-
-        // Faster centripetal acceleration (increased from 0.002 to 0.008)
-        if (d < 320) {
-          p.vx += (dx / d) * 0.008;
-          p.vy += (dy / d) * 0.008;
+          if (mdist < mouseConnectionDist) {
+            const malpha = (1 - mdist / mouseConnectionDist) * 0.35;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(mouse.x, mouse.y);
+            ctx.strokeStyle = `rgba(0, 229, 153, ${malpha})`;
+            ctx.lineWidth = 0.9;
+            ctx.stroke();
+          }
         }
 
-        p.x += p.vx;
-        p.y += p.vy;
-
-        if (p.x < 0) p.x = W;
-        if (p.x > W) p.x = 0;
-        if (p.y < 0) p.y = H;
-        if (p.y > H) p.y = 0;
+        // 3. Render Node Point
+        const pulse = Math.sin(time + a.pulseOffset) * 0.25;
+        const currentRadius = Math.max(0.8, a.r + pulse * 0.5);
 
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(220,230,235,.65)';
-        ctx.fill();
-      });
+        ctx.arc(a.x, a.y, currentRadius, 0, Math.PI * 2);
 
-      ctx.beginPath();
-      ctx.arc(cx, cy, 75, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(210,220,230,.22)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
+        if (a.isHighlight) {
+          // Emerald highlight with soft glow
+          ctx.fillStyle = `rgba(0, 229, 153, ${a.baseAlpha + pulse * 0.15})`;
+          ctx.shadowColor = 'rgba(0, 229, 153, 0.4)';
+          ctx.shadowBlur = 6;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        } else {
+          // Cool white/silver point
+          ctx.fillStyle = `rgba(215, 230, 245, ${a.baseAlpha + pulse * 0.1})`;
+          ctx.fill();
+        }
+      }
 
-      ctx.beginPath();
-      ctx.arc(cx, cy, 38, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(230,235,240,.38)';
-      ctx.stroke();
+      animId = requestAnimationFrame(draw);
     }
 
-    function future() {
-      if (!ctx) return;
-      ctx.fillStyle = 'rgba(3,5,8,.2)';
-      ctx.fillRect(0, 0, W, H);
+    const handleMouseMove = (e: MouseEvent) => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+      mouse.active = true;
+    };
 
-      // Accelerated time flow (increased from 0.001 to 0.0028)
-      const t = performance.now() * 0.0028;
-
-      for (let i = 0; i < 6; i++) {
-        const y = ((t * 70 + i * 170) % (H + 120)) - 60;
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(W, y);
-        ctx.strokeStyle = 'rgba(210,220,230,.09)';
-        ctx.stroke();
-      }
-
-      const cx = W / 2;
-      const cy = H / 2;
-
-      for (let i = 0; i < 4; i++) {
-        const r = 55 + i * 42;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, t * 0.45 + i, t * 0.45 + i + Math.PI * 1.55);
-        ctx.strokeStyle = 'rgba(220,230,240,.35)';
-        ctx.lineWidth = 0.9;
-        ctx.stroke();
-      }
-
-      for (let i = 0; i < 45; i++) {
-        const a = i * 0.71 + t * 0.4;
-        const r = 130 + (i % 5) * 35;
-        const x = cx + Math.cos(a) * r;
-        const y = cy + Math.sin(a) * r * 0.55;
-
-        ctx.beginPath();
-        ctx.arc(x, y, 1.4, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(230,235,240,.75)';
-        ctx.fill();
-      }
-    }
-
-    function tap() {
-      scene++;
-      if (scene > 3) scene = 0;
-      if (scene === 2) {
-        createParticles();
-      }
-    }
-
-    function animate() {
-      if (scene === 0) blueprint();
-      else if (scene === 1) circuit();
-      else if (scene === 2) reaction();
-      else if (scene === 3) future();
-
-      animId = requestAnimationFrame(animate);
-    }
-
-    // Allow user to click anywhere on empty background space to switch scene smoothly
-    const handleGlobalClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target) return;
-      if (target.closest('button, input, textarea, select, a, [role="button"], label')) {
-        return;
-      }
-      tap();
+    const handleMouseLeave = () => {
+      mouse.active = false;
     };
 
     window.addEventListener('resize', resize);
-    document.addEventListener('click', handleGlobalClick);
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    window.addEventListener('mouseleave', handleMouseLeave);
 
     resize();
-    animate();
+    draw();
 
     return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', resize);
-      document.removeEventListener('click', handleGlobalClick);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseleave', handleMouseLeave);
     };
   }, []);
 

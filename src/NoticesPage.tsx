@@ -75,7 +75,7 @@ export default function NoticesPage({ onBack, onOpenAdmin }: NoticesPageProps) {
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 py-8 relative z-10 animate-in fade-in duration-200">
+    <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 py-8 relative z-10 formal-page-enter">
       {/* Top Bar Navigation */}
       <div className="flex items-center justify-between gap-3 mb-6">
         <button

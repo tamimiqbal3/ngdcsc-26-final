@@ -405,7 +405,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#05070a] flex flex-col items-center justify-center p-4">
-        <div className="w-full max-w-xs text-center p-6 bg-slate-950/80 border border-white/10 rounded-2xl backdrop-blur-xl shadow-2xl">
+        <div className="w-full max-w-xs text-center p-6 bg-slate-950/80 border border-white/10 rounded-2xl backdrop-blur-xl shadow-2xl formal-page-enter">
           <h1 className="text-2xl font-bold tracking-tight text-white mb-6">
             Admin
           </h1>
@@ -466,7 +466,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   const hsc28Count = members.filter(m => m.batch === 'HSC 28').length;
 
   return (
-    <div className="min-h-screen bg-[#F8F6F0] text-slate-900 flex flex-col">
+    <div className="min-h-screen bg-[#F8F6F0] text-slate-900 flex flex-col formal-page-enter">
       {/* Top Navbar */}
       <header className="sticky top-0 z-40 bg-slate-950 text-white border-b border-slate-800 px-4 sm:px-6 py-3 flex items-center justify-between shadow-md">
         <div className="flex items-center gap-3">

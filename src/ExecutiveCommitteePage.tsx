@@ -117,20 +117,20 @@ export default function ExecutiveCommitteePage({ onBackToRegistration }: Executi
   }, []);
 
   return (
-    <div className="w-full max-w-6xl relative z-10 px-4 sm:px-6 pt-6 pb-20 animate-in fade-in duration-300">
+    <div className="w-full max-w-6xl relative z-10 px-4 sm:px-6 pt-6 pb-20 formal-page-enter">
 
       {/* Top Bar with Clean Back Button */}
       <div className="flex items-center justify-between gap-4 mb-8">
         <button
           type="button"
           onClick={onBackToRegistration}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/80 hover:bg-white border border-[#E0DBD0] text-slate-800 text-xs sm:text-sm font-bold shadow-2xs hover:shadow-xs transition-all cursor-pointer group"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/70 hover:bg-slate-800/90 border border-white/10 text-white text-xs sm:text-sm font-bold shadow-2xs hover:shadow-xs transition-all cursor-pointer group backdrop-blur-md"
         >
-          <ArrowLeft className="w-4 h-4 text-emerald-600 group-hover:-translate-x-1 transition-transform" />
+          <ArrowLeft className="w-4 h-4 text-emerald-400 group-hover:-translate-x-1 transition-transform" />
           <span>Back to Registration</span>
         </button>
 
-        <span className="text-xs font-black text-emerald-700 bg-emerald-50/90 border border-emerald-300 px-3 py-1 rounded-full">
+        <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full shadow-xs">
           2026–2027
         </span>
       </div>
@@ -141,29 +141,30 @@ export default function ExecutiveCommitteePage({ onBackToRegistration }: Executi
           <img 
             src="https://plain-apac-prod-public.komododecks.com/202609/21/iFpbvbXJaON4rnVidFRy/image.png" 
             alt="NGDC Science Club Logo" 
-            className="h-20 sm:h-24 w-auto object-contain hover:scale-105 transition-transform"
+            className="h-20 sm:h-24 w-auto object-contain hover:scale-105 transition-transform drop-shadow-[0_0_20px_rgba(0,229,153,0.3)]"
             referrerPolicy="no-referrer"
           />
         </div>
         
-        <h1 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight">
+        <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
           Executive Committee
         </h1>
-        <p className="text-sm sm:text-base font-bold text-emerald-600 tracking-wide uppercase mt-1">
+        <p className="text-sm sm:text-base font-bold text-emerald-400 tracking-wide uppercase mt-1">
           NGDC Science Club (2026–2027)
         </p>
       </div>
 
-      {/* COMMITTEE MEMBERS GRID - BIGGER CARDS WITH FROSTED GLASS TRANSLUCENCY */}
+      {/* COMMITTEE MEMBERS GRID - DARK TRANSLUCENT GLASS CARDS MATCHING WEBSITE */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
         {members.map((member) => {
+          const isExecMember = member.role.toLowerCase().includes('executive member');
           return (
             <div
               key={member.id}
-              className="group relative rounded-3xl p-4 sm:p-5 bg-white/40 hover:bg-white/55 backdrop-blur-md border border-white/70 shadow-[0_8px_32px_rgba(0,0,0,0.06)] hover:shadow-[0_12px_40px_rgba(0,229,153,0.22)] transition-all duration-300 flex flex-col items-center text-center"
+              className="group relative rounded-3xl p-4 sm:p-5 bg-slate-950/60 hover:bg-slate-900/80 backdrop-blur-xl border border-white/10 hover:border-emerald-500/40 shadow-[0_8px_32px_rgba(0,0,0,0.3)] hover:shadow-[0_12px_40px_rgba(0,229,153,0.15)] transition-all duration-300 flex flex-col items-center text-center"
             >
               {/* LARGE PHOTO */}
-              <div className="relative w-full aspect-4/5 rounded-2xl overflow-hidden bg-white/50 border border-white/80 group-hover:border-emerald-400 transition-colors shadow-xs mb-4">
+              <div className="relative w-full aspect-4/5 rounded-2xl overflow-hidden bg-slate-900 border border-white/10 group-hover:border-emerald-400/50 transition-colors shadow-xs mb-4">
                 <img 
                   src={member.image} 
                   alt={member.name} 
@@ -175,13 +176,15 @@ export default function ExecutiveCommitteePage({ onBackToRegistration }: Executi
                 />
               </div>
 
-              {/* TITLE / ROLE (e.g., President, Convener, etc.) */}
-              <p className="text-xs sm:text-sm font-black uppercase tracking-wider text-emerald-600 mb-1 drop-shadow-2xs">
+              {/* TITLE / ROLE (Executive Member font is WHITE as requested) */}
+              <p className={`text-xs sm:text-sm font-black uppercase tracking-wider mb-1 drop-shadow-2xs ${
+                isExecMember ? 'text-white' : 'text-emerald-400'
+              }`}>
                 {member.role}
               </p>
 
-              {/* MEMBER NAME */}
-              <h3 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
+              {/* MEMBER NAME - WHITE FONT */}
+              <h3 className="text-base sm:text-lg font-black text-white leading-tight">
                 {member.name}
               </h3>
 

@@ -561,8 +561,8 @@ export default function App() {
           onOpenAdmin={() => navigateTo('admin')}
         />
       ) : (
-        /* Form Container */
-        <div className="w-full max-w-2xl relative z-10 px-4 sm:px-6 pt-6">
+        /* Form Container with formal entrance animation */
+        <div className="w-full max-w-2xl relative z-10 px-4 sm:px-6 pt-6 formal-page-enter">
         
         {/* Simple Clean Header: Official Club Logo with No Background */}
         <div className="text-center mb-7">
@@ -1051,16 +1051,16 @@ export default function App() {
             </div>
 
             {/* 11. RULES & REGULATIONS */}
-            <div className="rounded-2xl p-4 sm:p-5 bg-amber-950/20 border border-amber-500/30 space-y-3.5" id="rules-regulations-card">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-300 flex items-center justify-center font-bold text-xs shrink-0 border border-amber-500/30">
-                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+            <div className="rounded-2xl p-4 sm:p-5 bg-slate-950/60 border border-emerald-500/30 backdrop-blur-xl space-y-3.5 shadow-[0_0_30px_rgba(0,229,153,0.06)]" id="rules-regulations-card">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0 border border-emerald-500/30 shadow-[0_0_15px_rgba(0,229,153,0.15)]">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
                 </div>
                 <div>
                   <h4 className="text-xs sm:text-sm font-black text-white uppercase tracking-wide">
                     Club Rules &amp; Regulations
                   </h4>
-                  <p className="text-[10px] text-amber-400 font-semibold">
+                  <p className="text-[10px] text-emerald-400 font-semibold">
                     Please read carefully before submitting your membership
                   </p>
                 </div>
@@ -1068,25 +1068,25 @@ export default function App() {
 
               <div className="space-y-2.5 text-xs text-slate-300 leading-relaxed font-medium pl-1">
                 <div className="flex items-start gap-2.5">
-                  <span className="font-black text-amber-400 shrink-0">1.</span>
+                  <span className="font-black text-emerald-400 shrink-0">1.</span>
                   <p>
                     <strong className="text-white font-bold">Attendance &amp; Cancellation:</strong> Missing two (2) consecutive club sessions, workshops, or weekly meetings without prior notice or valid written approval will result in automatic cancellation of club membership.
                   </p>
                 </div>
                 <div className="flex items-start gap-2.5">
-                  <span className="font-black text-amber-400 shrink-0">2.</span>
+                  <span className="font-black text-emerald-400 shrink-0">2.</span>
                   <p>
                     <strong className="text-white font-bold">Mandatory Olympiad Participation:</strong> All members must actively prepare for and regularly participate in Science Olympiads (Math, Physics, Bio, Chem, Informatics, Astronomy), science fairs, and project exhibitions.
                   </p>
                 </div>
                 <div className="flex items-start gap-2.5">
-                  <span className="font-black text-amber-400 shrink-0">3.</span>
+                  <span className="font-black text-emerald-400 shrink-0">3.</span>
                   <p>
                     <strong className="text-white font-bold">Discipline &amp; Conduct:</strong> Every member must uphold strict academic integrity, mutual respect, ethical standards, and represent New Government Degree College with dignity.
                   </p>
                 </div>
                 <div className="flex items-start gap-2.5">
-                  <span className="font-black text-amber-400 shrink-0">4.</span>
+                  <span className="font-black text-emerald-400 shrink-0">4.</span>
                   <p>
                     <strong className="text-white font-bold">Active Dedication:</strong> Members must complete assigned scientific tasks, collaborate respectfully in group activities, and adhere to guidelines set by the Executive Committee.
                   </p>
@@ -1099,8 +1099,8 @@ export default function App() {
                 onClick={() => setFormData(prev => ({ ...prev, agreedToRules: !prev.agreedToRules }))}
                 className={`mt-2 flex items-start gap-3 p-3 rounded-xl border cursor-pointer select-none transition-all ${
                   formData.agreedToRules
-                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-200 shadow-2xs ring-1 ring-emerald-500/40'
-                    : 'bg-slate-900/50 border-amber-500/30 text-slate-300 hover:bg-slate-900/80'
+                    ? 'bg-emerald-950/40 border-emerald-500 text-emerald-200 shadow-2xs ring-1 ring-emerald-500/40'
+                    : 'bg-slate-900/70 border-white/10 text-slate-300 hover:bg-slate-900/90 hover:border-emerald-500/30'
                 }`}
               >
                 <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
