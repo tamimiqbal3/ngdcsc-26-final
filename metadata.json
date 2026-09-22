@@ -1,6 +1,6 @@
 {
-  "name": "NGDC Science Club Membership",
-  "description": "Official student membership registration portal for New Government Degree College Science Club (HSC '27 & '28 Batches).",
+  "name": "NGDC SCIENCE CLUB",
+  "description": "Official website, membership portal, notice board, and executive dashboard for New Government Degree College Science Club (NGDCSC).",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

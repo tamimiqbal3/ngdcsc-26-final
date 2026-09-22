@@ -1,12 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { fetchCommitteeFromFirebase } from './services/firebase';
+import { ExecutiveMember } from './types';
 
-export interface CommitteeMember {
-  id: string;
-  role: string;
-  name: string;
-  image: string;
-}
+export type CommitteeMember = ExecutiveMember;
 
 // Curated list of Executive Committee members (2026-2027) - Porosh removed as requested
 export const INITIAL_COMMITTEE: CommitteeMember[] = [
@@ -101,29 +98,23 @@ interface ExecutiveCommitteePageProps {
 }
 
 export default function ExecutiveCommitteePage({ onBackToRegistration }: ExecutiveCommitteePageProps) {
-  // Preserve any photos the user uploaded in localStorage while filtering out Porosh
   const [members, setMembers] = useState<CommitteeMember[]>(() => {
     try {
-      const saved = localStorage.getItem('ngdc_committee_members_v1');
-      if (saved) {
-        const parsed: any[] = JSON.parse(saved);
-        // Build map of custom images uploaded by the user
-        const imageMap = new Map<string, string>();
-        parsed.forEach(m => {
-          if (m && m.id && m.image && m.id !== 'org-sec' && !m.name?.toLowerCase().includes('porosh')) {
-            imageMap.set(m.id, m.image);
-          }
-        });
-        return INITIAL_COMMITTEE.map(m => ({
-          ...m,
-          image: imageMap.get(m.id) || m.image
-        }));
-      }
+      const saved = localStorage.getItem('ngdcsc_firebase_committee_cache') || localStorage.getItem('ngdc_committee_members_v1');
+      if (saved) return JSON.parse(saved);
     } catch {
       // ignore
     }
     return INITIAL_COMMITTEE;
   });
+
+  useEffect(() => {
+    fetchCommitteeFromFirebase(INITIAL_COMMITTEE).then(data => {
+      if (data && data.length > 0) {
+        setMembers(data);
+      }
+    }).catch(() => {});
+  }, []);
 
   return (
     <div className="w-full max-w-6xl relative z-10 px-4 sm:px-6 pt-6 pb-20 animate-in fade-in duration-300">
@@ -163,16 +154,16 @@ export default function ExecutiveCommitteePage({ onBackToRegistration }: Executi
         </p>
       </div>
 
-      {/* COMMITTEE MEMBERS GRID - BIGGER CARDS WITH ONLY PHOTO, TITLE & NAME */}
+      {/* COMMITTEE MEMBERS GRID - BIGGER CARDS WITH FROSTED GLASS TRANSLUCENCY */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
         {members.map((member) => {
           return (
             <div
               key={member.id}
-              className="group relative rounded-3xl p-4 sm:p-5 bg-white/85 backdrop-blur-xl border border-white/90 shadow-[0_8px_30px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_40px_rgba(0,229,153,0.15)] transition-all duration-300 flex flex-col items-center text-center"
+              className="group relative rounded-3xl p-4 sm:p-5 bg-white/40 hover:bg-white/55 backdrop-blur-md border border-white/70 shadow-[0_8px_32px_rgba(0,0,0,0.06)] hover:shadow-[0_12px_40px_rgba(0,229,153,0.22)] transition-all duration-300 flex flex-col items-center text-center"
             >
               {/* LARGE PHOTO */}
-              <div className="relative w-full aspect-4/5 rounded-2xl overflow-hidden bg-slate-100 border border-[#E0DBD0] group-hover:border-emerald-400 transition-colors shadow-xs mb-4">
+              <div className="relative w-full aspect-4/5 rounded-2xl overflow-hidden bg-white/50 border border-white/80 group-hover:border-emerald-400 transition-colors shadow-xs mb-4">
                 <img 
                   src={member.image} 
                   alt={member.name} 
@@ -185,7 +176,7 @@ export default function ExecutiveCommitteePage({ onBackToRegistration }: Executi
               </div>
 
               {/* TITLE / ROLE (e.g., President, Convener, etc.) */}
-              <p className="text-xs sm:text-sm font-black uppercase tracking-wider text-emerald-600 mb-1">
+              <p className="text-xs sm:text-sm font-black uppercase tracking-wider text-emerald-600 mb-1 drop-shadow-2xs">
                 {member.role}
               </p>
 

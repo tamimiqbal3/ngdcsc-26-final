@@ -227,6 +227,8 @@ export async function readSpreadsheetRows(
   return data.values || [];
 }
 
+export const PRIMARY_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbx7VHpP91EYt1o0OCYqs00RSn1exWb39KDThdrS9E9Ok-SA6CnKe0p59K4mEr-oHMFm/exec';
+
 /**
  * Automatically send submission to the designated Google Sheet
  */
@@ -234,10 +236,11 @@ export async function submitToTargetSheet(
   record: SubmissionRecord,
   accessToken?: string | null
 ): Promise<{ success: boolean; method: string }> {
-  // 1. Try Google Apps Script Webhook URL if configured
+  // 1. Try Google Apps Script Webhook URL (user provided primary script)
   const webhookUrl = 
-    localStorage.getItem('ngdc_sheets_webhook') || 
-    (import.meta.env.VITE_SHEETS_WEBHOOK_URL as string);
+    (import.meta.env.VITE_SHEETS_WEBHOOK_URL as string) ||
+    PRIMARY_WEBHOOK_URL ||
+    localStorage.getItem('ngdc_sheets_webhook');
 
   if (webhookUrl) {
     try {

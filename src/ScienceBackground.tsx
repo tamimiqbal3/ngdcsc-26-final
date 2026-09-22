@@ -11,10 +11,10 @@ export default function ScienceBackground() {
     if (!ctx) return;
 
     let animId: number;
-    let W = window.innerWidth;
-    let H = window.innerHeight;
-    let dpr = 1;
-    let time = 0;
+    let W: number, H: number, dpr: number;
+    let scene = 0;
+    let nodes: Array<{ x: number; y: number; r: number; vx: number; vy: number }> = [];
+    let particles: Array<{ x: number; y: number; vx: number; vy: number; r: number }> = [];
 
     function resize() {
       if (!canvas || !ctx) return;
@@ -25,107 +25,269 @@ export default function ScienceBackground() {
 
       canvas.width = W * dpr;
       canvas.height = H * dpr;
-
       canvas.style.width = W + 'px';
       canvas.style.height = H + 'px';
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      createNodes();
+      createParticles();
     }
 
-    function glow(x: number, y: number, radius: number, color: string) {
+    // Clean background without any grid or grip lines
+    function background() {
       if (!ctx) return;
-      const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
-      g.addColorStop(0, color);
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillStyle = 'rgba(5,7,10,.16)';
+      ctx.fillRect(0, 0, W, H);
     }
 
-    function draw() {
+    function createNodes() {
+      nodes = [];
+      const count = Math.min(65, Math.floor((W * H) / 19000));
+      for (let i = 0; i < count; i++) {
+        nodes.push({
+          x: Math.random() * W,
+          y: Math.random() * H,
+          r: Math.random() * 1.8 + 0.8,
+          // Significantly faster nodes (speed increased from 0.08 to 0.45)
+          vx: (Math.random() - 0.5) * 0.48,
+          vy: (Math.random() - 0.5) * 0.48
+        });
+      }
+    }
+
+    function createParticles() {
+      particles = [];
+      for (let i = 0; i < 180; i++) {
+        particles.push({
+          x: Math.random() * W,
+          y: Math.random() * H,
+          // Faster floating particles (speed increased from 0.25 to 0.95)
+          vx: (Math.random() - 0.5) * 0.95,
+          vy: (Math.random() - 0.5) * 0.95,
+          r: Math.random() * 1.4 + 0.4
+        });
+      }
+    }
+
+    function blueprint() {
       if (!ctx) return;
-      ctx.clearRect(0, 0, W, H);
+      background();
 
-      /* Soft moving scientific energy fields */
-      const x1 = W * 0.20 + Math.sin(time * 0.45) * W * 0.15;
-      const y1 = H * 0.28 + Math.cos(time * 0.35) * H * 0.18;
+      for (let i = 0; i < nodes.length; i++) {
+        const a = nodes[i];
 
-      const x2 = W * 0.80 + Math.cos(time * 0.30) * W * 0.16;
-      const y2 = H * 0.68 + Math.sin(time * 0.40) * H * 0.20;
+        a.x += a.vx;
+        a.y += a.vy;
 
-      const x3 = W * 0.50 + Math.sin(time * 0.25) * W * 0.10;
-      const y3 = H * 0.50 + Math.cos(time * 0.28) * H * 0.12;
+        if (a.x < 0 || a.x > W) a.vx *= -1;
+        if (a.y < 0 || a.y > H) a.vy *= -1;
 
-      // Glow fields
-      glow(x1, y1, Math.min(W, H) * 0.60, 'rgba(59, 130, 246, 0.18)');
-      glow(x2, y2, Math.min(W, H) * 0.65, 'rgba(16, 185, 129, 0.16)');
-      glow(x3, y3, Math.min(W, H) * 0.45, 'rgba(6, 182, 212, 0.12)');
+        for (let j = i + 1; j < nodes.length; j++) {
+          const b = nodes[j];
+          const dx = a.x - b.x;
+          const dy = a.y - b.y;
+          const d = Math.hypot(dx, dy);
 
-      /* Flowing sine wave scientific field (7 vibrant layers) */
-      for (let layer = 0; layer < 7; layer++) {
-        ctx.beginPath();
-
-        for (let x = -50; x <= W + 50; x += 6) {
-          const normalized = x / W;
-
-          const y =
-            H * (0.45 + layer * 0.04) +
-            Math.sin(normalized * 6.5 + time * 0.65 + layer * 0.7) * (30 + layer * 6) +
-            Math.sin(normalized * 14 - time * 0.35) * 12;
-
-          if (x === -50) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
+          if (d < 155) {
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.strokeStyle = `rgba(170,190,210,${(1 - d / 155) * 0.22})`;
+            ctx.stroke();
+          }
         }
 
-        // Distinct scientific gradient coloring
-        const opacity = 0.07 + layer * 0.025;
-        ctx.strokeStyle = layer % 2 === 0 
-          ? `rgba(37, 99, 235, ${opacity})` 
-          : `rgba(16, 185, 129, ${opacity * 1.1})`;
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(220,230,240,.75)';
+        ctx.fill();
+      }
+    }
 
-        ctx.lineWidth = 1.6;
+    function circuit() {
+      if (!ctx) return;
+      background();
+
+      const grid = 80;
+      ctx.lineWidth = 0.8;
+
+      for (let x = grid / 2; x < W; x += grid) {
+        for (let y = grid / 2; y < H; y += grid) {
+          if (Math.random() > 0.45) {
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            if (Math.random() > 0.5) {
+              ctx.lineTo(x + grid, y);
+            } else {
+              ctx.lineTo(x, y + grid);
+            }
+            ctx.strokeStyle = 'rgba(170,190,210,.15)';
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(x, y, 2, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(220,230,240,.6)';
+            ctx.fill();
+          }
+        }
+      }
+
+      // High-speed electron pulses (speed increased from 0.025 to 0.10)
+      for (let i = 0; i < 9; i++) {
+        const x = ((performance.now() * 0.10 + i * 180) % (W + 300)) - 150;
+        const y = H * 0.22 + i * H * 0.09;
+
+        ctx.beginPath();
+        ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+        ctx.shadowBlur = 14;
+        ctx.shadowColor = 'white';
+        ctx.fillStyle = 'white';
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    function reaction() {
+      if (!ctx) return;
+      background();
+
+      const cx = W / 2;
+      const cy = H / 2;
+
+      particles.forEach((p) => {
+        const dx = cx - p.x;
+        const dy = cy - p.y;
+        const d = Math.hypot(dx, dy);
+
+        // Faster centripetal acceleration (increased from 0.002 to 0.008)
+        if (d < 320) {
+          p.vx += (dx / d) * 0.008;
+          p.vy += (dy / d) * 0.008;
+        }
+
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.x < 0) p.x = W;
+        if (p.x > W) p.x = 0;
+        if (p.y < 0) p.y = H;
+        if (p.y > H) p.y = 0;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(220,230,235,.65)';
+        ctx.fill();
+      });
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, 75, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(210,220,230,.22)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, 38, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(230,235,240,.38)';
+      ctx.stroke();
+    }
+
+    function future() {
+      if (!ctx) return;
+      ctx.fillStyle = 'rgba(3,5,8,.2)';
+      ctx.fillRect(0, 0, W, H);
+
+      // Accelerated time flow (increased from 0.001 to 0.0028)
+      const t = performance.now() * 0.0028;
+
+      for (let i = 0; i < 6; i++) {
+        const y = ((t * 70 + i * 170) % (H + 120)) - 60;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.strokeStyle = 'rgba(210,220,230,.09)';
         ctx.stroke();
       }
 
-      /* Floating scientific particles with glow */
-      for (let i = 0; i < 42; i++) {
-        const px = (i * 157 + time * (16 + (i % 5) * 3)) % (W + 120) - 60;
-        const py = H * 0.5 + Math.sin(i * 1.6 + time * 0.45) * H * 0.36;
-        const radius = 1.6 + (i % 3) * 0.8;
+      const cx = W / 2;
+      const cy = H / 2;
 
+      for (let i = 0; i < 4; i++) {
+        const r = 55 + i * 42;
         ctx.beginPath();
-        ctx.arc(px, py, radius, 0, Math.PI * 2);
-        ctx.fillStyle = i % 2 === 0 ? 'rgba(37, 99, 235, 0.40)' : 'rgba(0, 229, 153, 0.45)';
-        ctx.fill();
-
-        // Subtle glow around some particles
-        if (i % 3 === 0) {
-          ctx.beginPath();
-          ctx.arc(px, py, radius * 2.8, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(59, 130, 246, 0.12)';
-          ctx.fill();
-        }
+        ctx.arc(cx, cy, r, t * 0.45 + i, t * 0.45 + i + Math.PI * 1.55);
+        ctx.strokeStyle = 'rgba(220,230,240,.35)';
+        ctx.lineWidth = 0.9;
+        ctx.stroke();
       }
 
-      time += 0.009;
-      animId = requestAnimationFrame(draw);
+      for (let i = 0; i < 45; i++) {
+        const a = i * 0.71 + t * 0.4;
+        const r = 130 + (i % 5) * 35;
+        const x = cx + Math.cos(a) * r;
+        const y = cy + Math.sin(a) * r * 0.55;
+
+        ctx.beginPath();
+        ctx.arc(x, y, 1.4, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(230,235,240,.75)';
+        ctx.fill();
+      }
     }
 
+    function tap() {
+      scene++;
+      if (scene > 3) scene = 0;
+      if (scene === 2) {
+        createParticles();
+      }
+    }
+
+    function animate() {
+      if (scene === 0) blueprint();
+      else if (scene === 1) circuit();
+      else if (scene === 2) reaction();
+      else if (scene === 3) future();
+
+      animId = requestAnimationFrame(animate);
+    }
+
+    // Allow user to click anywhere on empty background space to switch scene smoothly
+    const handleGlobalClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target) return;
+      if (target.closest('button, input, textarea, select, a, [role="button"], label')) {
+        return;
+      }
+      tap();
+    };
+
     window.addEventListener('resize', resize);
+    document.addEventListener('click', handleGlobalClick);
+
     resize();
-    draw();
+    animate();
 
     return () => {
-      window.removeEventListener('resize', resize);
       cancelAnimationFrame(animId);
+      window.removeEventListener('resize', resize);
+      document.removeEventListener('click', handleGlobalClick);
     };
   }, []);
 
   return (
-    <div className="science-bg fixed inset-0 -z-10 pointer-events-none overflow-hidden bg-[#F6F9FD]">
-      <canvas id="scienceField" ref={canvasRef} className="absolute inset-0 w-full h-full" />
-    </div>
+    <>
+      <style>{`
+        #scienceCanvas {
+          position: fixed;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          z-index: -1;
+          background: #05070a;
+          pointer-events: none;
+        }
+      `}</style>
+      <canvas id="scienceCanvas" ref={canvasRef} />
+    </>
   );
 }
