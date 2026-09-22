@@ -24,7 +24,6 @@ import {
   Phone, 
   Mail, 
   AlertCircle,
-  KeyRound,
   Save,
   RefreshCw,
   Pin
@@ -168,7 +167,11 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       }
     } catch (err: any) {
       console.error('Google sign in error:', err);
-      setLoginError(err.message || 'Failed to sign in with Google');
+      if (err?.code === 'auth/operation-not-allowed' || (err?.message && err.message.includes('operation-not-allowed'))) {
+        setLoginError('operation-not-allowed');
+      } else {
+        setLoginError(err?.message || 'Failed to sign in with Google');
+      }
     } finally {
       setLoginSubmitting(false);
     }
@@ -405,16 +408,32 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#05070a] flex flex-col items-center justify-center p-4">
-        <div className="w-full max-w-xs text-center p-6 bg-slate-950/80 border border-white/10 rounded-2xl backdrop-blur-xl shadow-2xl formal-page-enter">
+        <div className="w-full max-w-sm text-center p-6 bg-slate-950/80 border border-white/10 rounded-2xl backdrop-blur-xl shadow-2xl formal-page-enter">
           <h1 className="text-2xl font-bold tracking-tight text-white mb-6">
             Admin
           </h1>
 
-          {loginError && (
+          {/* Operation not allowed in Firebase guidance */}
+          {loginError === 'operation-not-allowed' ? (
+            <div className="mb-5 p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/30 text-left space-y-2 text-xs">
+              <div className="flex items-center gap-2 text-amber-300 font-bold">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                <span>Google Sign-in Not Enabled</span>
+              </div>
+              <p className="text-[11px] text-amber-200/90 leading-snug">
+                Firebase Console-এ Google Sign-in এনাবল করা হয়নি।
+              </p>
+              <div className="text-[10px] text-slate-300 space-y-1 bg-slate-900/90 p-2.5 rounded-lg border border-white/5 font-mono">
+                <p>1. console.firebase.google.com-এ যান</p>
+                <p>2. Authentication → Sign-in method</p>
+                <p>3. Google সিলেক্ট করে Enable করুন ও Save দিন</p>
+              </div>
+            </div>
+          ) : loginError ? (
             <p className="text-xs text-rose-400 font-medium mb-4">
               {loginError}
             </p>
-          )}
+          ) : null}
 
           <button
             type="button"
@@ -428,7 +447,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
             </svg>
-            <span>Sign in with Google</span>
+            <span>{loginSubmitting ? 'Signing in...' : 'Sign in with Google'}</span>
           </button>
 
           {onExit && (

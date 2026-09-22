@@ -121,8 +121,12 @@ export async function fetchMembersFromFirebase(): Promise<SubmissionRecord[]> {
       }
       return records;
     }
-  } catch (err) {
-    console.warn('Firestore fetch members warning, falling back to cache:', err);
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      console.info('Firestore: Rules need to be published in Firebase Console. Using local members cache.');
+    } else {
+      console.warn('Firestore fetch members warning, falling back to cache:', err);
+    }
   }
   return getCachedMembers();
 }
@@ -200,8 +204,12 @@ export async function fetchCommitteeFromFirebase(defaultList: ExecutiveMember[])
       // If collection is empty, seed with initial list
       seedDefaultCommittee(defaultList).catch(() => {});
     }
-  } catch (err) {
-    console.warn('Firestore fetch committee error, using cache/default:', err);
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      console.info('Firestore: Rules need to be published in Firebase Console. Using local/default committee.');
+    } else {
+      console.warn('Firestore fetch committee error, using cache/default:', err);
+    }
   }
 
   try {
@@ -331,8 +339,12 @@ export async function fetchNoticesFromFirebase(): Promise<ClubNotice[]> {
         await setDoc(doc(db, 'notices', n.id), n, { merge: true }).catch(() => {});
       }
     }
-  } catch (err) {
-    console.warn('Firestore fetch notices error, using cached notices:', err);
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      console.info('Firestore: Rules need to be published in Firebase Console. Using local/default notices.');
+    } else {
+      console.warn('Firestore fetch notices error, using cached notices:', err);
+    }
   }
 
   try {

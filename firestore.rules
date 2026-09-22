@@ -1,0 +1,28 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 1. Club Notices: Anyone can read; only authorized club admin can create/edit/delete
+    match /notices/{noticeId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.token.email.lower() == 'ngdcsc.org@gmail.com';
+    }
+
+    // 2. Executive Committee: Anyone can read; only authorized club admin can create/edit/delete
+    match /executive_committee/{memberId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.token.email.lower() == 'ngdcsc.org@gmail.com';
+    }
+
+    // 3. Member Registrations: Anyone can submit registration (create); only authorized club admin can read/update/delete
+    match /members/{memberId} {
+      allow create: if true;
+      allow read, update, delete: if request.auth != null && request.auth.token.email.lower() == 'ngdcsc.org@gmail.com';
+    }
+
+    // Fallback: Default deny for any other collections
+    match /{document=**} {
+      allow read, write: if request.auth != null && request.auth.token.email.lower() == 'ngdcsc.org@gmail.com';
+    }
+  }
+}
