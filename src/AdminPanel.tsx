@@ -26,7 +26,11 @@ import {
   AlertCircle,
   Save,
   RefreshCw,
-  Pin
+  Pin,
+  Copy,
+  Check,
+  MessageSquare,
+  X
 } from 'lucide-react';
 import { 
   SubmissionRecord, 
@@ -36,6 +40,17 @@ import {
   SectionType, 
   BatchType 
 } from './types';
+
+const CLUB_LOGO_URL = 'https://plain-apac-prod-public.komododecks.com/202609/21/iFpbvbXJaON4rnVidFRy/image.png';
+
+const STANDARD_SEGMENTS = [
+  'Science Olympiad (Math, Physics, Bio, Chem)',
+  'Science Project & Innovation',
+  'Science Quizzing',
+  'Robotics & Programming',
+  'Astronomy & Space Science',
+  'Scientific Wall Magazine & Publication'
+];
 import { 
   auth, 
   googleProvider,
@@ -106,6 +121,93 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   const execPhotoInputRef = useRef<HTMLInputElement>(null);
   const noticeFileInputRef = useRef<HTMLInputElement>(null);
   const memberPhotoInputRef = useRef<HTMLInputElement>(null);
+
+  // Custom segment state for manual input & Toast notification
+  const [customSegmentText, setCustomSegmentText] = useState('');
+  const [copiedToast, setCopiedToast] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, label: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedToast(`Copied ${label}: ${text}`);
+    setTimeout(() => setCopiedToast(null), 2500);
+  };
+
+  const copyAllPhones = () => {
+    const phones = filteredMembers.map(m => m.phone).filter(Boolean);
+    if (phones.length === 0) {
+      setCopiedToast('No phone numbers available to copy');
+      setTimeout(() => setCopiedToast(null), 2500);
+      return;
+    }
+    navigator.clipboard.writeText(phones.join(', '));
+    setCopiedToast(`Copied ${phones.length} phone numbers!`);
+    setTimeout(() => setCopiedToast(null), 2500);
+  };
+
+  const copyAllWhatsApp = () => {
+    const wps = filteredMembers.map(m => m.whatsapp || m.phone).filter(Boolean);
+    if (wps.length === 0) {
+      setCopiedToast('No WhatsApp numbers available to copy');
+      setTimeout(() => setCopiedToast(null), 2500);
+      return;
+    }
+    navigator.clipboard.writeText(wps.join(', '));
+    setCopiedToast(`Copied ${wps.length} WhatsApp numbers!`);
+    setTimeout(() => setCopiedToast(null), 2500);
+  };
+
+  const copyAllEmails = () => {
+    const emails = filteredMembers.map(m => m.email).filter(Boolean);
+    if (emails.length === 0) {
+      setCopiedToast('No emails available to copy');
+      setTimeout(() => setCopiedToast(null), 2500);
+      return;
+    }
+    navigator.clipboard.writeText(emails.join(', '));
+    setCopiedToast(`Copied ${emails.length} emails!`);
+    setTimeout(() => setCopiedToast(null), 2500);
+  };
+
+  const handleMemberPhotoUpload = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    if (file.size > 6 * 1024 * 1024) {
+      alert('Photo size cannot exceed 6MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 600;
+        let w = img.width, h = img.height;
+        if (w > MAX_DIM || h > MAX_DIM) {
+          if (w > h) { h = Math.round((h * MAX_DIM) / w); w = MAX_DIM; }
+          else { w = Math.round((w * MAX_DIM) / h); h = MAX_DIM; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL('image/jpeg', 0.85);
+          setEditingMember(prev => prev ? { ...prev, photo: compressed } : null);
+        }
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAddCustomSegment = () => {
+    if (!customSegmentText.trim() || !editingMember) return;
+    const trimmed = customSegmentText.trim();
+    const current = editingMember.interestedSegments || [];
+    if (!current.includes(trimmed)) {
+      setEditingMember({ ...editingMember, interestedSegments: [...current, trimmed] });
+    }
+    setCustomSegmentText('');
+  };
 
   // Check auth state - strictly enforce ngdcsc.org@gmail.com
   useEffect(() => {
@@ -296,6 +398,10 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
   const handleExecPhotoUpload = (file: File, targetExec: ExecutiveMember, isEditing: boolean) => {
     if (!file.type.startsWith('image/')) return;
+    if (file.size > 6 * 1024 * 1024) {
+      alert('Photo size cannot exceed 6MB.');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
@@ -365,14 +471,22 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   if (currentUser && !isAuthorized) {
     return (
       <div className="min-h-screen bg-[#05070a] flex flex-col items-center justify-center p-4">
-        <div className="w-full max-w-xs text-center p-6 bg-slate-950/80 border border-white/10 rounded-2xl backdrop-blur-xl shadow-2xl">
-          <h1 className="text-xl font-bold tracking-tight text-white mb-2">
-            Admin
+        <div className="w-full max-w-sm text-center p-7 bg-slate-950/80 border border-rose-500/30 rounded-3xl backdrop-blur-xl shadow-2xl">
+          <div className="flex justify-center mb-3">
+            <img 
+              src={CLUB_LOGO_URL} 
+              alt="NGDC Science Club Logo" 
+              className="h-16 w-auto object-contain drop-shadow-[0_0_15px_rgba(0,229,153,0.3)]" 
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          <h1 className="text-xl font-black tracking-tight text-white mb-1">
+            Access Restricted
           </h1>
-          <p className="text-xs text-rose-400 font-semibold mb-1">
-            Unauthorized
+          <p className="text-xs text-rose-400 font-bold mb-2">
+            Unauthorized Google Account
           </p>
-          <p className="text-[11px] text-slate-400 font-mono break-all mb-5">
+          <p className="text-[11px] text-slate-400 font-mono break-all mb-5 bg-slate-900/80 p-2 rounded-xl border border-white/5">
             {currentUser.email}
           </p>
 
@@ -387,7 +501,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
             </svg>
-            <span>Sign in with Google</span>
+            <span>Sign in with Authorized Account</span>
           </button>
 
           {onExit && (
@@ -396,7 +510,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
               onClick={onExit}
               className="mt-4 text-[11px] text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
             >
-              Back
+              Back to Site
             </button>
           )}
         </div>
@@ -404,14 +518,26 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     );
   }
 
-  // 2. Unauthenticated Login Screen: ONLY 'Admin' text on top and Google button below
+  // 2. Unauthenticated Login Screen: Club Logo on top, Admin title, and Google button
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#05070a] flex flex-col items-center justify-center p-4">
-        <div className="w-full max-w-sm text-center p-6 bg-slate-950/80 border border-white/10 rounded-2xl backdrop-blur-xl shadow-2xl formal-page-enter">
-          <h1 className="text-2xl font-bold tracking-tight text-white mb-6">
-            Admin
+        <div className="w-full max-w-sm text-center p-7 bg-slate-950/80 border border-white/10 rounded-3xl backdrop-blur-xl shadow-2xl formal-page-enter">
+          <div className="flex justify-center mb-4">
+            <img 
+              src={CLUB_LOGO_URL} 
+              alt="NGDC Science Club Logo" 
+              className="h-20 w-auto object-contain drop-shadow-[0_0_20px_rgba(0,229,153,0.35)] hover:scale-105 transition-transform" 
+              referrerPolicy="no-referrer"
+            />
+          </div>
+
+          <h1 className="text-2xl font-black tracking-tight text-white mb-0.5">
+            NGDC SCIENCE CLUB
           </h1>
+          <p className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-6">
+            Official Administrative Portal
+          </p>
 
           {/* Operation not allowed in Firebase guidance */}
           {loginError === 'operation-not-allowed' ? (
@@ -456,7 +582,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
               onClick={onExit}
               className="mt-4 text-[11px] text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
             >
-              Back
+              Back to Site
             </button>
           )}
         </div>
@@ -485,43 +611,47 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   const hsc28Count = members.filter(m => m.batch === 'HSC 28').length;
 
   return (
-    <div className="min-h-screen bg-[#F8F6F0] text-slate-900 flex flex-col formal-page-enter">
+    <div className="min-h-screen bg-[#05070a] text-slate-100 flex flex-col formal-page-enter">
       {/* Top Navbar */}
-      <header className="sticky top-0 z-40 bg-slate-950 text-white border-b border-slate-800 px-4 sm:px-6 py-3 flex items-center justify-between shadow-md">
+      <header className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-xl text-white border-b border-white/10 px-4 sm:px-6 py-3 flex items-center justify-between shadow-md">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-emerald-300 flex items-center justify-center text-slate-950 shadow-[0_0_15px_rgba(0,229,153,0.35)]">
-            <ShieldCheck className="w-5 h-5 stroke-[2.5]" />
-          </div>
+          <img 
+            src={CLUB_LOGO_URL} 
+            alt="NGDC SC Logo" 
+            className="h-10 w-auto object-contain drop-shadow-[0_0_12px_rgba(0,229,153,0.35)] shrink-0" 
+            referrerPolicy="no-referrer"
+          />
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-extrabold tracking-wide text-white">
+              <h1 className="text-sm sm:text-base font-black tracking-tight text-white">
                 NGDC SCIENCE CLUB
               </h1>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-extrabold uppercase border border-emerald-400/30">
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase border border-emerald-400/30">
                 Admin Panel
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">
-              Firebase Database &bull; Connected to ngdcsc-a8228
+            <p className="text-[11px] text-slate-400 flex items-center gap-1.5 font-medium">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>Live Cloud Sync &bull; ngdcsc.org@gmail.com</span>
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={onExit}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-bold border border-slate-800 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-200 hover:text-white text-xs font-bold border border-white/10 transition-colors cursor-pointer"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">View Site</span>
+            <ArrowLeft className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">View Public Site</span>
           </button>
 
           <button
             type="button"
             onClick={handleLogout}
             title="Log out"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-bold border border-rose-500/30 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-bold border border-rose-500/30 transition-colors cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Logout</span>
@@ -529,22 +659,30 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
         </div>
       </header>
 
+      {/* Floating Copied Toast */}
+      {copiedToast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-400 to-teal-300 text-slate-950 font-black text-xs shadow-[0_10px_30px_rgba(0,229,153,0.4)] backdrop-blur-md flex items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-200 border border-emerald-300">
+          <Check className="w-4 h-4 stroke-[3]" />
+          <span>{copiedToast}</span>
+        </div>
+      )}
+
       {/* Main Navigation Tabs */}
-      <div className="bg-white border-b border-[#EAE4D9] px-4 sm:px-6">
-        <div className="max-w-7xl mx-auto flex items-center gap-2 sm:gap-4 overflow-x-auto py-2.5">
+      <div className="bg-slate-950/60 backdrop-blur-md border-b border-white/10 px-4 sm:px-6">
+        <div className="max-w-7xl mx-auto flex items-center gap-2 sm:gap-3 overflow-x-auto py-2.5">
           <button
             type="button"
             onClick={() => setActiveTab('members')}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer shrink-0 ${
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 ${
               activeTab === 'members'
-                ? 'bg-slate-950 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-[0_0_15px_rgba(0,229,153,0.35)]'
+                : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
             }`}
           >
-            <Users className="w-4 h-4 text-emerald-400" />
+            <Users className="w-4 h-4 shrink-0" />
             <span>Members &amp; Registrations</span>
-            <span className={`px-2 py-0.2 rounded-full text-[10px] font-bold ${
-              activeTab === 'members' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeTab === 'members' ? 'bg-slate-950/20 text-slate-950 font-black' : 'bg-slate-800 text-slate-300'
             }`}>
               {members.length}
             </span>
@@ -553,16 +691,16 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
           <button
             type="button"
             onClick={() => setActiveTab('committee')}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer shrink-0 ${
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 ${
               activeTab === 'committee'
-                ? 'bg-slate-950 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-[0_0_15px_rgba(0,229,153,0.35)]'
+                : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
             }`}
           >
-            <Award className="w-4 h-4 text-emerald-400" />
+            <Award className="w-4 h-4 shrink-0" />
             <span>Executive Committee</span>
-            <span className={`px-2 py-0.2 rounded-full text-[10px] font-bold ${
-              activeTab === 'committee' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeTab === 'committee' ? 'bg-slate-950/20 text-slate-950 font-black' : 'bg-slate-800 text-slate-300'
             }`}>
               {committee.length}
             </span>
@@ -571,16 +709,16 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
           <button
             type="button"
             onClick={() => setActiveTab('notices')}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer shrink-0 ${
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 ${
               activeTab === 'notices'
-                ? 'bg-slate-950 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-[0_0_15px_rgba(0,229,153,0.35)]'
+                : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
             }`}
           >
-            <Bell className="w-4 h-4 text-emerald-400" />
+            <Bell className="w-4 h-4 shrink-0" />
             <span>Notices &amp; Files</span>
-            <span className={`px-2 py-0.2 rounded-full text-[10px] font-bold ${
-              activeTab === 'notices' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeTab === 'notices' ? 'bg-slate-950/20 text-slate-950 font-black' : 'bg-slate-800 text-slate-300'
             }`}>
               {notices.length}
             </span>
@@ -592,9 +730,9 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
               onClick={loadAllData}
               disabled={loadingData}
               title="Refresh Data"
-              className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+              className="p-2 rounded-xl border border-white/10 bg-slate-900/60 text-slate-300 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
             >
-              <RefreshCw className={`w-4 h-4 ${loadingData ? 'animate-spin text-emerald-600' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${loadingData ? 'animate-spin text-emerald-400' : ''}`} />
             </button>
           </div>
         </div>
@@ -608,111 +746,150 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
           <div className="space-y-6">
             {/* Quick Stats Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-              <div className="bg-white p-4 rounded-2xl border border-[#EAE4D9] shadow-2xs">
+              <div className="bg-slate-900/60 backdrop-blur-xl p-4 sm:p-5 rounded-2xl border border-emerald-500/30 shadow-lg">
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Total Registered</p>
-                <p className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">{members.length}</p>
-                <p className="text-[10px] text-emerald-600 font-bold mt-1">Live in Firestore</p>
+                <p className="text-2xl sm:text-3xl font-black text-white mt-1">{members.length}</p>
+                <p className="text-[10px] text-emerald-400 font-bold mt-1">Live in Firestore</p>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-[#EAE4D9] shadow-2xs">
+              <div className="bg-slate-900/60 backdrop-blur-xl p-4 sm:p-5 rounded-2xl border border-amber-500/30 shadow-lg">
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Pending Review</p>
-                <p className="text-2xl sm:text-3xl font-black text-amber-600 mt-1">{pendingCount}</p>
+                <p className="text-2xl sm:text-3xl font-black text-amber-400 mt-1">{pendingCount}</p>
                 <p className="text-[10px] text-slate-400 mt-1">Awaiting approval</p>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-[#EAE4D9] shadow-2xs">
+              <div className="bg-slate-900/60 backdrop-blur-xl p-4 sm:p-5 rounded-2xl border border-teal-500/30 shadow-lg">
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Approved</p>
-                <p className="text-2xl sm:text-3xl font-black text-emerald-600 mt-1">{approvedCount}</p>
+                <p className="text-2xl sm:text-3xl font-black text-teal-400 mt-1">{approvedCount}</p>
                 <p className="text-[10px] text-slate-400 mt-1">Active members</p>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-[#EAE4D9] shadow-2xs">
+              <div className="bg-slate-900/60 backdrop-blur-xl p-4 sm:p-5 rounded-2xl border border-blue-500/30 shadow-lg">
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Batch HSC 27 / 28</p>
-                <p className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">
+                <p className="text-2xl sm:text-3xl font-black text-white mt-1">
                   {hsc27Count} <span className="text-sm font-semibold text-slate-400">/ {hsc28Count}</span>
                 </p>
                 <p className="text-[10px] text-slate-400 mt-1">Batch split</p>
               </div>
             </div>
 
-            {/* Filter & Action Bar */}
-            <div className="bg-white p-4 rounded-2xl border border-[#EAE4D9] shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-              <div className="relative flex-1 max-w-md">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={memberSearch}
-                  onChange={(e) => setMemberSearch(e.target.value)}
-                  placeholder="Search student by name, roll, phone, email..."
-                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-500 focus:outline-none"
-                />
+            {/* Filter & Action Bar with Bulk Copy Controls */}
+            <div className="bg-slate-900/70 backdrop-blur-xl p-4 sm:p-5 rounded-2xl border border-white/10 shadow-lg space-y-3.5">
+              <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={memberSearch}
+                    onChange={(e) => setMemberSearch(e.target.value)}
+                    placeholder="Search student by name, roll, phone, email..."
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-slate-950/80 border border-white/10 text-white placeholder:text-slate-500 focus:bg-slate-950 focus:border-emerald-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Batch Filter */}
+                  <select
+                    value={filterBatch}
+                    onChange={(e) => setFilterBatch(e.target.value)}
+                    className="px-3 py-2 text-xs font-bold rounded-xl bg-slate-950 border border-white/15 text-slate-200"
+                  >
+                    <option value="All">All Batches</option>
+                    <option value="HSC 27">HSC 27</option>
+                    <option value="HSC 28">HSC 28</option>
+                  </select>
+
+                  {/* Section Filter */}
+                  <select
+                    value={filterSection}
+                    onChange={(e) => setFilterSection(e.target.value)}
+                    className="px-3 py-2 text-xs font-bold rounded-xl bg-slate-950 border border-white/15 text-slate-200"
+                  >
+                    <option value="All">All Sections</option>
+                    <option value="A">Section A</option>
+                    <option value="B">Section B</option>
+                    <option value="C">Section C</option>
+                    <option value="D">Section D</option>
+                  </select>
+
+                  {/* Status Filter */}
+                  <select
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    className="px-3 py-2 text-xs font-bold rounded-xl bg-slate-950 border border-white/15 text-slate-200"
+                  >
+                    <option value="All">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+
+                  {/* Export CSV */}
+                  <button
+                    type="button"
+                    onClick={exportMembersCSV}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-white/10 transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Export CSV</span>
+                  </button>
+
+                  {/* Add Member Manually */}
+                  <button
+                    type="button"
+                    onClick={() => setShowAddMemberModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 text-xs font-black shadow-[0_0_15px_rgba(0,229,153,0.3)] transition-all cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Member</span>
+                  </button>
+                </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Batch Filter */}
-                <select
-                  value={filterBatch}
-                  onChange={(e) => setFilterBatch(e.target.value)}
-                  className="px-3 py-2 text-xs font-bold rounded-xl bg-slate-50 border border-slate-200 text-slate-700"
-                >
-                  <option value="All">All Batches</option>
-                  <option value="HSC 27">HSC 27</option>
-                  <option value="HSC 28">HSC 28</option>
-                </select>
-
-                {/* Section Filter */}
-                <select
-                  value={filterSection}
-                  onChange={(e) => setFilterSection(e.target.value)}
-                  className="px-3 py-2 text-xs font-bold rounded-xl bg-slate-50 border border-slate-200 text-slate-700"
-                >
-                  <option value="All">All Sections</option>
-                  <option value="A">Section A</option>
-                  <option value="B">Section B</option>
-                  <option value="C">Section C</option>
-                  <option value="D">Section D</option>
-                </select>
-
-                {/* Status Filter */}
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                  className="px-3 py-2 text-xs font-bold rounded-xl bg-slate-50 border border-slate-200 text-slate-700"
-                >
-                  <option value="All">All Status</option>
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-
-                {/* Export CSV */}
+              {/* Bulk Copy Bar for Phone, WhatsApp & Email */}
+              <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-white/10">
+                <span className="text-[11px] font-extrabold text-slate-400 flex items-center gap-1.5 mr-1">
+                  <Copy className="w-3 h-3 text-emerald-400" />
+                  <span>Bulk Copy:</span>
+                </span>
                 <button
                   type="button"
-                  onClick={exportMembersCSV}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-colors cursor-pointer"
+                  onClick={copyAllPhones}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-emerald-300 text-xs font-bold border border-white/10 transition-all cursor-pointer"
+                  title="Copy all visible phone numbers"
                 >
-                  <Download className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Export CSV</span>
+                  <Phone className="w-3 h-3 text-emerald-400" />
+                  <span>Copy All Phones ({filteredMembers.filter(m => m.phone).length})</span>
                 </button>
 
-                {/* Add Member Manually */}
                 <button
                   type="button"
-                  onClick={() => setShowAddMemberModal(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                  onClick={copyAllWhatsApp}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-[#25D366] text-xs font-bold border border-white/10 transition-all cursor-pointer"
+                  title="Copy all visible WhatsApp numbers"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Member</span>
+                  <MessageSquare className="w-3 h-3 text-[#25D366]" />
+                  <span>Copy All WhatsApp ({filteredMembers.filter(m => m.whatsapp || m.phone).length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={copyAllEmails}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-blue-300 text-xs font-bold border border-white/10 transition-all cursor-pointer"
+                  title="Copy all visible email addresses"
+                >
+                  <Mail className="w-3 h-3 text-blue-400" />
+                  <span>Copy All Emails ({filteredMembers.filter(m => m.email).length})</span>
                 </button>
               </div>
             </div>
 
             {/* Members Table */}
-            <div className="bg-white rounded-2xl border border-[#EAE4D9] shadow-2xs overflow-hidden">
+            <div className="bg-slate-900/70 backdrop-blur-xl rounded-2xl border border-white/10 shadow-lg overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
+                    <tr className="bg-slate-950/80 border-b border-white/10 text-[11px] font-black text-slate-400 uppercase tracking-wider">
                       <th className="py-3 px-4">Photo &amp; Name</th>
                       <th className="py-3 px-4">Roll / ID</th>
                       <th className="py-3 px-4">Batch &amp; Sec</th>
@@ -722,7 +899,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                       <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs">
+                  <tbody className="divide-y divide-white/5 text-xs text-slate-200">
                     {filteredMembers.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="text-center py-12 text-slate-400 font-semibold">
@@ -731,100 +908,133 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                       </tr>
                     ) : (
                       filteredMembers.map((member) => (
-                        <tr key={member.id || member.submittedAt} className="hover:bg-slate-50/60 transition-colors">
+                        <tr key={member.id || member.submittedAt} className="hover:bg-slate-800/40 transition-colors">
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-3">
                               {member.photo ? (
                                 <img
                                   src={member.photo}
                                   alt={member.name}
-                                  className="w-9 h-9 rounded-xl object-cover border border-slate-200 shadow-2xs shrink-0 cursor-pointer"
+                                  className="w-10 h-10 rounded-xl object-cover border border-white/15 shadow-sm shrink-0 cursor-pointer hover:border-emerald-400 transition-colors"
                                   onClick={() => setSelectedMember(member)}
                                 />
                               ) : (
-                                <div className="w-9 h-9 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 font-bold shrink-0">
+                                <div 
+                                  onClick={() => setSelectedMember(member)}
+                                  className="w-10 h-10 rounded-xl bg-slate-800 border border-white/15 flex items-center justify-center text-slate-300 font-bold shrink-0 cursor-pointer hover:border-emerald-400"
+                                >
                                   {member.name ? member.name.charAt(0) : '?'}
                                 </div>
                               )}
                               <div>
                                 <p 
-                                  className="font-extrabold text-slate-900 hover:text-emerald-600 cursor-pointer"
+                                  className="font-extrabold text-white hover:text-emerald-400 cursor-pointer transition-colors"
                                   onClick={() => setSelectedMember(member)}
                                 >
                                   {member.name}
                                 </p>
-                                <p className="text-[11px] text-slate-400 truncate max-w-[160px]">{member.email || 'No email'}</p>
+                                {member.email ? (
+                                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                                    <span className="truncate max-w-[150px]">{member.email}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => copyToClipboard(member.email, 'Email')}
+                                      title="Copy email"
+                                      className="p-0.5 rounded hover:bg-white/10 text-slate-400 hover:text-blue-400 transition-colors cursor-pointer"
+                                    >
+                                      <Copy className="w-2.5 h-2.5" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <p className="text-[11px] text-slate-500">No email</p>
+                                )}
                               </div>
                             </div>
                           </td>
 
-                          <td className="py-3 px-4 font-mono font-bold text-slate-700">
+                          <td className="py-3 px-4 font-mono font-bold text-emerald-400">
                             {member.studentId || '—'}
                           </td>
 
                           <td className="py-3 px-4 font-bold">
-                            <span className="inline-flex items-center gap-1">
-                              <span className="text-slate-800">{member.batch}</span>
-                              <span className="px-1.5 py-0.2 rounded bg-slate-100 text-[10px] text-slate-600">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="text-white">{member.batch}</span>
+                              <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-white/10 text-[10px] text-slate-300">
                                 Sec {member.section}
                               </span>
                             </span>
                           </td>
 
                           <td className="py-3 px-4">
-                            <div className="font-mono text-slate-800 font-semibold">
-                              <a href={`tel:${member.phone}`} className="hover:text-emerald-600">{member.phone}</a>
+                            <div className="flex items-center gap-1.5 font-mono text-slate-200 font-bold">
+                              <a href={`tel:${member.phone}`} className="hover:text-emerald-400 transition-colors">{member.phone}</a>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(member.phone, 'Phone')}
+                                title="Copy Phone Number"
+                                className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-emerald-400 transition-colors cursor-pointer"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
                             </div>
                             {member.whatsapp && (
-                              <div className="text-[11px] text-emerald-600 font-mono">
-                                WA: {member.whatsapp}
+                              <div className="flex items-center gap-1 text-[11px] text-emerald-400 font-mono mt-0.5">
+                                <span>WA: {member.whatsapp}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(member.whatsapp, 'WhatsApp')}
+                                  title="Copy WhatsApp Number"
+                                  className="p-0.5 rounded hover:bg-white/10 text-slate-400 hover:text-emerald-300 transition-colors cursor-pointer"
+                                >
+                                  <Copy className="w-2.5 h-2.5" />
+                                </button>
                               </div>
                             )}
                           </td>
 
-                          <td className="py-3 px-4 text-slate-500 text-[11px]">
+                          <td className="py-3 px-4 text-slate-400 text-[11px]">
                             {member.submittedAt || '—'}
                           </td>
 
                           <td className="py-3 px-4">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
                               member.status === 'approved'
-                                ? 'bg-emerald-100 text-emerald-800'
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                                 : member.status === 'rejected'
-                                ? 'bg-rose-100 text-rose-800'
-                                : 'bg-amber-100 text-amber-800'
+                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                             }`}>
                               {member.status || 'pending'}
                             </span>
                           </td>
 
                           <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1">
+                            <div className="flex items-center justify-end gap-1.5">
                               <button
                                 type="button"
                                 onClick={() => setSelectedMember(member)}
                                 title="View details"
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                               >
-                                <Eye className="w-3.5 h-3.5" />
+                                <Eye className="w-4 h-4" />
                               </button>
                               
                               <button
                                 type="button"
                                 onClick={() => setEditingMember(member)}
-                                title="Edit member"
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                                title="Edit member &amp; photo"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-white/10 transition-colors cursor-pointer"
                               >
-                                <Edit3 className="w-3.5 h-3.5" />
+                                <Edit3 className="w-4 h-4" />
                               </button>
 
                               <button
                                 type="button"
                                 onClick={() => handleDeleteMember(member.id!)}
                                 title="Delete record"
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
                           </td>
@@ -841,13 +1051,14 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
         {/* ===================== TAB 2: EXECUTIVE COMMITTEE ===================== */}
         {activeTab === 'committee' && (
           <div className="space-y-6">
-            <div className="bg-white p-4 rounded-2xl border border-[#EAE4D9] shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="bg-slate-900/70 backdrop-blur-xl p-4 sm:p-5 rounded-2xl border border-white/10 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-base font-extrabold text-slate-900">
-                  Executive Committee Management
+                <h2 className="text-base font-extrabold text-white flex items-center gap-2">
+                  <Award className="w-4 h-4 text-emerald-400" />
+                  <span>Executive Committee Management</span>
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Update executive photos, titles, names, and order. Changes immediately reflect on the public website.
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Update executive photos, designations, names, and order. Changes immediately reflect on the public website.
                 </p>
               </div>
 
@@ -855,16 +1066,16 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                 <button
                   type="button"
                   onClick={handleResetCommittee}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-white/10 transition-colors cursor-pointer"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
+                  <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
                   <span>Reset Default</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setShowAddExecutiveModal(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 text-xs font-black shadow-[0_0_15px_rgba(0,229,153,0.3)] transition-all cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Add Executive</span>
@@ -877,30 +1088,30 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
               {committee.map((exec, idx) => (
                 <div
                   key={exec.id || idx}
-                  className="bg-white rounded-2xl border border-[#EAE4D9] overflow-hidden shadow-2xs group hover:shadow-md transition-all flex flex-col"
+                  className="bg-slate-900/70 backdrop-blur-xl rounded-2xl border border-white/10 overflow-hidden shadow-lg group hover:border-emerald-500/40 hover:shadow-[0_8px_25px_rgba(0,229,153,0.1)] transition-all flex flex-col"
                 >
                   {/* Executive Photo Container */}
-                  <div className="relative aspect-4/3 bg-slate-900 overflow-hidden">
+                  <div className="relative aspect-4/3 bg-slate-950 overflow-hidden">
                     <img
                       src={exec.image || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400'}
                       alt={exec.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent opacity-80" />
 
                     <div className="absolute top-2 right-2 flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() => setEditingExecutive(exec)}
-                        className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white backdrop-blur-xs transition-colors cursor-pointer"
+                        className="p-1.5 rounded-lg bg-black/70 hover:bg-black/90 text-white backdrop-blur-md border border-white/20 transition-colors cursor-pointer"
                         title="Change Photo & Edit"
                       >
-                        <Camera className="w-3.5 h-3.5" />
+                        <Camera className="w-3.5 h-3.5 text-emerald-400" />
                       </button>
                     </div>
 
                     <div className="absolute bottom-2 left-3 right-3">
-                      <span className="inline-block px-2 py-0.5 rounded-full bg-emerald-500/90 text-slate-950 text-[10px] font-extrabold uppercase tracking-wide">
+                      <span className="inline-block px-2.5 py-0.5 rounded-full bg-emerald-500/90 text-slate-950 text-[10px] font-black uppercase tracking-wide shadow-md">
                         {exec.role}
                       </span>
                     </div>
@@ -909,7 +1120,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                   {/* Details */}
                   <div className="p-4 flex-1 flex flex-col justify-between">
                     <div>
-                      <h3 className="font-extrabold text-sm text-slate-900 group-hover:text-emerald-700 transition-colors">
+                      <h3 className="font-extrabold text-sm text-white group-hover:text-emerald-400 transition-colors">
                         {exec.name}
                       </h3>
                       {exec.batch && (
@@ -917,20 +1128,20 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                       )}
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                      <span className="text-[10px] font-mono text-slate-400">#{exec.order || idx + 1}</span>
+                    <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
+                      <span className="text-[10px] font-mono text-emerald-400 font-bold">#{exec.order || idx + 1}</span>
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
                           onClick={() => setEditingExecutive(exec)}
-                          className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-white/10 transition-colors cursor-pointer"
                         >
                           Edit
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDeleteExecutive(exec.id)}
-                          className="p-1 rounded-lg text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                          className="p-1 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
                           title="Delete"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -947,20 +1158,21 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
         {/* ===================== TAB 3: NOTICES ===================== */}
         {activeTab === 'notices' && (
           <div className="space-y-6">
-            <div className="bg-white p-4 rounded-2xl border border-[#EAE4D9] shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="bg-slate-900/70 backdrop-blur-xl p-4 sm:p-5 rounded-2xl border border-white/10 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-base font-extrabold text-slate-900">
-                  Notices &amp; Announcements
+                <h2 className="text-base font-extrabold text-white flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-emerald-400" />
+                  <span>Notices &amp; Announcements</span>
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Publish announcements, notices, and upload files (PDF/Images) directly to the website notice board.
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Publish announcements, circulars, and upload files (PDF/Images) directly to the public website notice board.
                 </p>
               </div>
 
               <button
                 type="button"
                 onClick={() => setShowAddNoticeModal(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 text-xs font-black shadow-[0_0_15px_rgba(0,229,153,0.3)] transition-all cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Publish New Notice</span>
@@ -972,20 +1184,20 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
               {notices.map((notice) => (
                 <div
                   key={notice.id}
-                  className="bg-white rounded-2xl border border-[#EAE4D9] p-4 sm:p-5 shadow-2xs hover:shadow-sm transition-all"
+                  className="bg-slate-900/70 backdrop-blur-xl rounded-2xl border border-white/10 p-4 sm:p-5 shadow-lg hover:border-emerald-500/30 transition-all"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
                     <div className="flex items-center gap-2">
                       {notice.isPinned && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
-                          <Pin className="w-3 h-3 fill-emerald-600 text-emerald-600" />
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-extrabold">
+                          <Pin className="w-3 h-3 fill-amber-400 text-amber-400" />
                           <span>PINNED</span>
                         </span>
                       )}
-                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold border border-slate-200">
+                      <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 text-[10px] font-bold border border-white/10">
                         {notice.category}
                       </span>
-                      <span className="text-xs text-slate-400 font-medium">
+                      <span className="text-xs text-slate-400 font-mono">
                         {notice.date}
                       </span>
                     </div>
@@ -994,14 +1206,14 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                       <button
                         type="button"
                         onClick={() => setEditingNotice(notice)}
-                        className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-white/10 transition-colors cursor-pointer"
                       >
                         Edit
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDeleteNotice(notice.id)}
-                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                        className="p-1 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
                         title="Delete Notice"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -1009,23 +1221,23 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                     </div>
                   </div>
 
-                  <h3 className="font-extrabold text-base text-slate-900 mb-1.5">
+                  <h3 className="font-extrabold text-base text-white mb-1.5">
                     {notice.title}
                   </h3>
-                  <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">
+                  <p className="text-xs text-slate-300 leading-relaxed line-clamp-2">
                     {notice.content}
                   </p>
 
                   {/* Attachment if any */}
                   {notice.fileUrl && (
-                    <div className="mt-3 flex items-center gap-2 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200/60 w-fit">
+                    <div className="mt-3 flex items-center gap-2 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/30 w-fit">
                       <FileText className="w-3.5 h-3.5" />
                       <span>Attached: {notice.fileName || 'Notice Attachment'}</span>
                       <a 
                         href={notice.fileUrl} 
                         target="_blank" 
                         rel="noreferrer" 
-                        className="underline ml-1 font-bold"
+                        className="underline ml-1 font-bold text-emerald-300 hover:text-white"
                       >
                         View File
                       </a>
@@ -1040,14 +1252,14 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
       {/* ===================== MODAL: MEMBER FULL DETAILS ===================== */}
       {selectedMember && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="relative max-w-lg w-full bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
-              <h3 className="text-base font-extrabold text-slate-900">Member Registration Details</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative max-w-lg w-full bg-slate-950/95 rounded-3xl shadow-2xl border border-white/15 overflow-hidden flex flex-col max-h-[90vh] text-slate-100">
+            <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-slate-900/60">
+              <h3 className="text-base font-black text-white">Member Registration Details</h3>
               <button
                 type="button"
                 onClick={() => setSelectedMember(null)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/80 transition-colors cursor-pointer"
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
               >
                 ✕
               </button>
@@ -1062,17 +1274,19 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                     className="w-20 h-20 rounded-2xl object-cover border-2 border-emerald-500 shadow-md shrink-0"
                   />
                 ) : (
-                  <div className="w-20 h-20 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 font-bold text-xl shrink-0">
+                  <div className="w-20 h-20 rounded-2xl bg-slate-800 border border-white/15 flex items-center justify-center text-slate-400 font-bold text-xl shrink-0">
                     {selectedMember.name ? selectedMember.name.charAt(0) : '?'}
                   </div>
                 )}
                 <div>
-                  <h4 className="text-lg font-black text-slate-900">{selectedMember.name}</h4>
-                  <p className="text-xs font-mono font-bold text-emerald-600 mt-0.5">Roll: {selectedMember.studentId}</p>
-                  <p className="text-xs text-slate-500">{selectedMember.batch} &bull; Section {selectedMember.section}</p>
-                  <div className="mt-1">
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
-                      selectedMember.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                  <h4 className="text-lg font-black text-white">{selectedMember.name}</h4>
+                  <p className="text-xs font-mono font-bold text-emerald-400 mt-0.5">Roll: {selectedMember.studentId}</p>
+                  <p className="text-xs text-slate-400">{selectedMember.batch} &bull; Section {selectedMember.section}</p>
+                  <div className="mt-1.5">
+                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                      selectedMember.status === 'approved' 
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' 
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                     }`}>
                       Status: {selectedMember.status || 'pending'}
                     </span>
@@ -1080,28 +1294,63 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 text-xs pt-2 border-t border-slate-100">
-                <div className="p-2.5 rounded-xl bg-slate-50">
-                  <span className="text-[10px] text-slate-400 block font-bold uppercase">Phone</span>
-                  <a href={`tel:${selectedMember.phone}`} className="font-bold text-slate-800 hover:underline">{selectedMember.phone}</a>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs pt-2 border-t border-white/10">
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-white/5 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-bold uppercase">Phone</span>
+                    <a href={`tel:${selectedMember.phone}`} className="font-bold text-white hover:text-emerald-400">{selectedMember.phone}</a>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(selectedMember.phone, 'Phone')}
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 hover:text-emerald-400 transition-colors cursor-pointer"
+                    title="Copy Phone"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-                <div className="p-2.5 rounded-xl bg-slate-50">
-                  <span className="text-[10px] text-slate-400 block font-bold uppercase">WhatsApp</span>
-                  <a href={`https://wa.me/${selectedMember.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="font-bold text-emerald-700 hover:underline">
-                    {selectedMember.whatsapp}
-                  </a>
+
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-white/5 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-bold uppercase">WhatsApp</span>
+                    <a href={`https://wa.me/${selectedMember.whatsapp?.replace(/\D/g, '') || selectedMember.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="font-bold text-emerald-400 hover:underline">
+                      {selectedMember.whatsapp || selectedMember.phone}
+                    </a>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(selectedMember.whatsapp || selectedMember.phone, 'WhatsApp')}
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 hover:text-[#25D366] transition-colors cursor-pointer"
+                    title="Copy WhatsApp"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-                <div className="p-2.5 rounded-xl bg-slate-50 col-span-2">
-                  <span className="text-[10px] text-slate-400 block font-bold uppercase">Email</span>
-                  <span className="font-semibold text-slate-800">{selectedMember.email || 'None'}</span>
+
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-white/5 sm:col-span-2 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-bold uppercase">Email</span>
+                    <span className="font-semibold text-slate-200">{selectedMember.email || 'None'}</span>
+                  </div>
+                  {selectedMember.email && (
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(selectedMember.email, 'Email')}
+                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 hover:text-blue-400 transition-colors cursor-pointer"
+                      title="Copy Email"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
-                <div className="p-2.5 rounded-xl bg-slate-50">
+
+                <div className="p-2.5 rounded-xl bg-slate-900/50 border border-white/5">
                   <span className="text-[10px] text-slate-400 block font-bold uppercase">Date of Birth</span>
-                  <span className="font-semibold text-slate-800">{selectedMember.dob || '—'}</span>
+                  <span className="font-semibold text-slate-300">{selectedMember.dob || '—'}</span>
                 </div>
-                <div className="p-2.5 rounded-xl bg-slate-50">
+                <div className="p-2.5 rounded-xl bg-slate-900/50 border border-white/5">
                   <span className="text-[10px] text-slate-400 block font-bold uppercase">Submitted At</span>
-                  <span className="font-semibold text-slate-800">{selectedMember.submittedAt}</span>
+                  <span className="font-semibold text-slate-300">{selectedMember.submittedAt}</span>
                 </div>
               </div>
 
@@ -1112,7 +1361,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {(selectedMember.interestedSegments || []).map((seg, i) => (
-                    <span key={i} className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+                    <span key={i} className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
                       {seg}
                     </span>
                   ))}
@@ -1121,19 +1370,19 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
             </div>
 
             {/* Status change action buttons in modal */}
-            <div className="p-4 border-t border-slate-100 bg-slate-50/80 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
+            <div className="p-4 border-t border-white/10 bg-slate-900/60 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => handleStatusChange(selectedMember.id!, 'approved')}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer"
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs transition-colors cursor-pointer"
                 >
                   Approve Member
                 </button>
                 <button
                   type="button"
                   onClick={() => handleStatusChange(selectedMember.id!, 'rejected')}
-                  className="px-3 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-800 text-xs font-bold transition-colors cursor-pointer"
+                  className="px-3.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Reject
                 </button>
@@ -1142,7 +1391,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
               <button
                 type="button"
                 onClick={() => setSelectedMember(null)}
-                className="px-4 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition-colors cursor-pointer"
               >
                 Close
               </button>
@@ -1153,48 +1402,109 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
       {/* ===================== MODAL: EDIT MEMBER ===================== */}
       {editingMember && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="relative max-w-md w-full bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <h3 className="text-base font-extrabold text-slate-900">Edit Member Information</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative max-w-lg w-full bg-slate-950/95 rounded-3xl shadow-2xl border border-white/15 overflow-hidden flex flex-col max-h-[92vh] text-slate-100">
+            <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-slate-900/60">
+              <div>
+                <h3 className="text-base font-black text-white">Edit Member Information</h3>
+                <p className="text-[11px] text-slate-400">Update photo, details, and club segments</p>
+              </div>
               <button
                 type="button"
                 onClick={() => setEditingMember(null)}
-                className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveMemberEdit} className="p-5 overflow-y-auto space-y-3 text-xs">
+            <form onSubmit={handleSaveMemberEdit} className="p-5 overflow-y-auto space-y-4 text-xs">
+              {/* Member Photo Management */}
+              <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-white/10 flex flex-col sm:flex-row items-center gap-4">
+                <div className="relative group shrink-0">
+                  {editingMember.photo ? (
+                    <img
+                      src={editingMember.photo}
+                      alt={editingMember.name}
+                      className="w-20 h-20 rounded-2xl object-cover border-2 border-emerald-400 shadow-md"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-2xl bg-slate-800 border-2 border-dashed border-white/20 flex flex-col items-center justify-center text-slate-400 font-bold">
+                      <Camera className="w-6 h-6 text-slate-500 mb-1" />
+                      <span className="text-[10px]">No Photo</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 text-center sm:text-left space-y-1.5">
+                  <p className="text-xs font-bold text-white">Member Profile Photo</p>
+                  <p className="text-[11px] text-slate-400">
+                    Upload, change, or remove the member photo. Automatically resized and compressed.
+                  </p>
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                    <input
+                      type="file"
+                      ref={memberPhotoInputRef}
+                      accept="image/*"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          handleMemberPhotoUpload(e.target.files[0]);
+                        }
+                      }}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => memberPhotoInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-xs border border-emerald-500/40 transition-colors cursor-pointer"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>{editingMember.photo ? 'Change Photo' : 'Upload Photo'}</span>
+                    </button>
+
+                    {editingMember.photo && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingMember({ ...editingMember, photo: null })}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 font-bold text-xs border border-rose-500/30 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Remove</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Basic Info */}
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Full Name</label>
+                <label className="font-bold text-slate-300 block mb-1">Full Name</label>
                 <input
                   type="text"
                   value={editingMember.name}
                   onChange={(e) => setEditingMember({ ...editingMember, name: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-emerald-500 font-bold"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:border-emerald-400 font-bold"
                   required
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Roll / Student ID</label>
+                  <label className="font-bold text-slate-300 block mb-1">Roll / Student ID</label>
                   <input
                     type="text"
                     value={editingMember.studentId}
                     onChange={(e) => setEditingMember({ ...editingMember, studentId: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-emerald-500 font-mono"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-emerald-400 focus:outline-none focus:border-emerald-400 font-mono font-bold"
                     required
                   />
                 </div>
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Batch</label>
+                  <label className="font-bold text-slate-300 block mb-1">Batch</label>
                   <select
                     value={editingMember.batch}
                     onChange={(e) => setEditingMember({ ...editingMember, batch: e.target.value as BatchType })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none font-bold"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none font-bold"
                   >
                     <option value="HSC 27">HSC 27</option>
                     <option value="HSC 28">HSC 28</option>
@@ -1202,26 +1512,26 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Section</label>
+                  <label className="font-bold text-slate-300 block mb-1">Section</label>
                   <select
                     value={editingMember.section}
                     onChange={(e) => setEditingMember({ ...editingMember, section: e.target.value as SectionType })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none font-bold"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none font-bold"
                   >
-                    <option value="A">A</option>
-                    <option value="B">B</option>
-                    <option value="C">C</option>
-                    <option value="D">D</option>
+                    <option value="A">Section A</option>
+                    <option value="B">Section B</option>
+                    <option value="C">Section C</option>
+                    <option value="D">Section D</option>
                   </select>
                 </div>
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">Status</label>
+                  <label className="font-bold text-slate-300 block mb-1">Status</label>
                   <select
                     value={editingMember.status || 'pending'}
                     onChange={(e) => setEditingMember({ ...editingMember, status: e.target.value as MemberStatus })}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none font-bold"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none font-bold"
                   >
                     <option value="pending">Pending</option>
                     <option value="approved">Approved</option>
@@ -1230,48 +1540,188 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                 </div>
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Phone Number</label>
-                <input
-                  type="text"
-                  value={editingMember.phone}
-                  onChange={(e) => setEditingMember({ ...editingMember, phone: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none font-mono"
-                  required
-                />
+              {/* Contact Information with Quick Copy Buttons */}
+              <div className="space-y-2.5 pt-1">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-300">Phone Number</label>
+                    {editingMember.phone && (
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(editingMember.phone, 'Phone')}
+                        className="text-[10px] text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Copy className="w-2.5 h-2.5" />
+                        <span>Copy</span>
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={editingMember.phone}
+                    onChange={(e) => setEditingMember({ ...editingMember, phone: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none font-mono"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-300">WhatsApp Number</label>
+                    {editingMember.whatsapp && (
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(editingMember.whatsapp, 'WhatsApp')}
+                        className="text-[10px] text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Copy className="w-2.5 h-2.5" />
+                        <span>Copy</span>
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={editingMember.whatsapp}
+                    onChange={(e) => setEditingMember({ ...editingMember, whatsapp: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-slate-300">Email Address</label>
+                    {editingMember.email && (
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(editingMember.email, 'Email')}
+                        className="text-[10px] text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Copy className="w-2.5 h-2.5" />
+                        <span>Copy</span>
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="email"
+                    value={editingMember.email}
+                    onChange={(e) => setEditingMember({ ...editingMember, email: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">WhatsApp Number</label>
-                <input
-                  type="text"
-                  value={editingMember.whatsapp}
-                  onChange={(e) => setEditingMember({ ...editingMember, whatsapp: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none font-mono"
-                />
+              {/* Segments Editing & Manual Add */}
+              <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-white/10 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-white text-xs block">
+                    Interested Segments ({editingMember.interestedSegments?.length || 0})
+                  </label>
+                </div>
+
+                {/* Active Segments with Remove (X) button */}
+                <div className="flex flex-wrap gap-1.5 min-h-[32px] p-2 rounded-xl bg-slate-950/60 border border-white/5">
+                  {(editingMember.interestedSegments || []).length === 0 ? (
+                    <span className="text-[11px] text-slate-500 italic">No segments selected. Add below.</span>
+                  ) : (
+                    (editingMember.interestedSegments || []).map((seg, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/35 text-[11px] font-semibold"
+                      >
+                        <span>{seg}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = (editingMember.interestedSegments || []).filter((_, i) => i !== idx);
+                            setEditingMember({ ...editingMember, interestedSegments: updated });
+                          }}
+                          className="hover:text-rose-400 ml-0.5 cursor-pointer font-bold"
+                          title="Remove segment"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
+
+                {/* Manual Add Custom Segment */}
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 mb-1">Manually Type &amp; Add Segment:</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customSegmentText}
+                      onChange={(e) => setCustomSegmentText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddCustomSegment();
+                        }
+                      }}
+                      placeholder="e.g. Astrophysics / AI Workshop / Debate..."
+                      className="flex-1 px-3 py-1.5 rounded-xl bg-slate-950 border border-white/10 text-white placeholder:text-slate-500 text-xs focus:outline-none focus:border-emerald-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomSegment}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40 text-xs transition-colors cursor-pointer"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick Toggle Standard Segments */}
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 mb-1">Quick Add Standard Segments:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {STANDARD_SEGMENTS.map((seg, i) => {
+                      const isAdded = (editingMember.interestedSegments || []).includes(seg);
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => {
+                            const current = editingMember.interestedSegments || [];
+                            if (isAdded) {
+                              setEditingMember({
+                                ...editingMember,
+                                interestedSegments: current.filter(s => s !== seg)
+                              });
+                            } else {
+                              setEditingMember({
+                                ...editingMember,
+                                interestedSegments: [...current, seg]
+                              });
+                            }
+                          }}
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer ${
+                            isAdded
+                              ? 'bg-emerald-500/30 border-emerald-500 text-emerald-200'
+                              : 'bg-slate-900 border-white/10 text-slate-400 hover:text-white hover:bg-slate-800'
+                          }`}
+                        >
+                          {isAdded ? `✓ ${seg}` : `+ ${seg}`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Email Address</label>
-                <input
-                  type="email"
-                  value={editingMember.email}
-                  onChange={(e) => setEditingMember({ ...editingMember, email: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none"
-                />
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              {/* Modal Actions */}
+              <div className="pt-3 border-t border-white/10 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setEditingMember(null)}
-                  className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 font-bold"
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-xs shadow-[0_0_15px_rgba(0,229,153,0.3)] transition-all cursor-pointer"
                 >
                   Save Changes
                 </button>
@@ -1283,26 +1733,26 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
       {/* ===================== MODAL: EDIT EXECUTIVE (PHOTO + DESIGNATION) ===================== */}
       {editingExecutive && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="relative max-w-md w-full bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <h3 className="text-base font-extrabold text-slate-900">Edit Executive Profile</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="relative max-w-md w-full bg-slate-950/95 rounded-3xl shadow-2xl border border-white/15 overflow-hidden flex flex-col text-slate-100">
+            <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-slate-900/60">
+              <h3 className="text-base font-black text-white">Edit Executive Profile</h3>
               <button
                 type="button"
                 onClick={() => setEditingExecutive(null)}
-                className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
             <form onSubmit={handleSaveExecutive} className="p-5 space-y-4 text-xs">
               {/* Photo Preview & Upload */}
-              <div className="flex flex-col items-center gap-2">
+              <div className="flex flex-col items-center gap-2.5">
                 <img
                   src={editingExecutive.image}
                   alt={editingExecutive.name}
-                  className="w-24 h-24 rounded-2xl object-cover border-2 border-emerald-500 shadow-md"
+                  className="w-24 h-24 rounded-2xl object-cover border-2 border-emerald-400 shadow-lg"
                 />
                 <input
                   type="file"
@@ -1318,7 +1768,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                 <button
                   type="button"
                   onClick={() => execPhotoInputRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold border border-emerald-500/40 transition-colors cursor-pointer"
                 >
                   <Camera className="w-3.5 h-3.5" />
                   <span>Change Photo</span>
@@ -1326,50 +1776,50 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Executive Name</label>
+                <label className="font-bold text-slate-300 block mb-1">Executive Name</label>
                 <input
                   type="text"
                   value={editingExecutive.name}
                   onChange={(e) => setEditingExecutive({ ...editingExecutive, name: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-emerald-500 font-bold"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:border-emerald-400 font-bold"
                   required
                 />
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Role / Designation</label>
+                <label className="font-bold text-slate-300 block mb-1">Role / Designation</label>
                 <input
                   type="text"
                   value={editingExecutive.role}
                   onChange={(e) => setEditingExecutive({ ...editingExecutive, role: e.target.value })}
                   placeholder="e.g. President, Vice President, General Secretary"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:border-emerald-400 font-semibold"
                   required
                 />
               </div>
 
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Direct Image URL (Optional)</label>
+                <label className="font-bold text-slate-300 block mb-1">Direct Image URL (Optional)</label>
                 <input
                   type="url"
                   value={editingExecutive.image}
                   onChange={(e) => setEditingExecutive({ ...editingExecutive, image: e.target.value })}
                   placeholder="https://..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none font-mono text-[11px]"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none font-mono text-[11px]"
                 />
               </div>
 
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <div className="pt-3 border-t border-white/10 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setEditingExecutive(null)}
-                  className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 font-bold"
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black shadow-[0_0_15px_rgba(0,229,153,0.3)] transition-all cursor-pointer"
                 >
                   Save Executive
                 </button>
@@ -1423,6 +1873,11 @@ function AddExecutiveModal({ onClose, onAdd }: { onClose: () => void; onAdd: (e:
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handlePhotoUpload = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    if (file.size > 6 * 1024 * 1024) {
+      alert('Photo size cannot exceed 6MB.');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       setImage(e.target?.result as string);
@@ -1431,16 +1886,18 @@ function AddExecutiveModal({ onClose, onAdd }: { onClose: () => void; onAdd: (e:
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="relative max-w-md w-full bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-          <h3 className="text-base font-extrabold text-slate-900">Add New Executive Member</h3>
-          <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer">✕</button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative max-w-md w-full bg-slate-950/95 rounded-3xl shadow-2xl border border-white/15 overflow-hidden flex flex-col text-slate-100">
+        <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-slate-900/60">
+          <h3 className="text-base font-black text-white">Add New Executive Member</h3>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         <form onSubmit={(e) => onAdd(e, { id: `exec_${Date.now()}`, name, role, image })} className="p-5 space-y-4 text-xs">
-          <div className="flex flex-col items-center gap-2">
-            <img src={image} alt="Preview" className="w-20 h-20 rounded-2xl object-cover border-2 border-emerald-500 shadow-md" />
+          <div className="flex flex-col items-center gap-2.5">
+            <img src={image} alt="Preview" className="w-20 h-20 rounded-2xl object-cover border-2 border-emerald-400 shadow-md" />
             <input
               type="file"
               ref={fileInputRef}
@@ -1451,39 +1908,43 @@ function AddExecutiveModal({ onClose, onAdd }: { onClose: () => void; onAdd: (e:
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold"
+              className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40 transition-colors cursor-pointer"
             >
               Upload Photo
             </button>
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Executive Full Name</label>
+            <label className="font-bold text-slate-300 block mb-1">Executive Full Name</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Md. Rafiqul Islam"
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-emerald-500 font-bold"
+              className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:border-emerald-400 font-bold"
               required
             />
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Role / Designation</label>
+            <label className="font-bold text-slate-300 block mb-1">Role / Designation</label>
             <input
               type="text"
               value={role}
               onChange={(e) => setRole(e.target.value)}
               placeholder="e.g. Assistant General Secretary"
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-emerald-500 font-semibold"
+              className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:border-emerald-400 font-semibold"
               required
             />
           </div>
 
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-            <button type="button" onClick={onClose} className="px-3 py-2 rounded-xl bg-slate-100 font-bold">Cancel</button>
-            <button type="submit" className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold">Add Executive</button>
+          <div className="pt-3 border-t border-white/10 flex items-center justify-end gap-2">
+            <button type="button" onClick={onClose} className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold transition-colors cursor-pointer">
+              Cancel
+            </button>
+            <button type="submit" className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black shadow-[0_0_15px_rgba(0,229,153,0.3)] transition-all cursor-pointer">
+              Add Executive
+            </button>
           </div>
         </form>
       </div>
@@ -1559,43 +2020,46 @@ function NoticeEditorModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="relative max-w-lg w-full bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-          <h3 className="text-base font-extrabold text-slate-900">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative max-w-lg w-full bg-slate-950/95 rounded-3xl shadow-2xl border border-white/15 overflow-hidden flex flex-col max-h-[92vh] text-slate-100">
+        <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-slate-900/60">
+          <h3 className="text-base font-black text-white">
             {initialNotice ? 'Edit Notice' : 'Publish Notice'}
           </h3>
-          <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer">✕</button>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         <form onSubmit={handleFormSubmit} className="p-5 overflow-y-auto space-y-4 text-xs">
           {validationError && (
-            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold">
-              ⚠️ {validationError}
+            <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+              <span>{validationError}</span>
             </div>
           )}
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">
-              Notice Heading / Title <span className="text-emerald-500">*</span>
+            <label className="font-bold text-slate-300 block mb-1">
+              Notice Heading / Title <span className="text-emerald-400">*</span>
             </label>
             <input
               type="text"
               value={title}
               onChange={(e) => { setTitle(e.target.value); setValidationError(null); }}
               placeholder="e.g. Science Fair 2026 / Club Meeting Announcement"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-500 font-bold text-xs"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/10 text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-400 font-bold text-xs"
               required
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="font-bold text-slate-700 block mb-1">Category</label>
+              <label className="font-bold text-slate-300 block mb-1">Category</label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as any)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none font-bold"
+                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none font-bold"
               >
                 <option value="Notice">Notice</option>
                 <option value="Olympiad">Olympiad</option>
@@ -1606,24 +2070,24 @@ function NoticeEditorModal({
             </div>
 
             <div>
-              <label className="font-bold text-slate-700 block mb-1">Date</label>
+              <label className="font-bold text-slate-300 block mb-1">Date</label>
               <input
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none font-mono"
+                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none font-mono"
                 required
               />
             </div>
           </div>
 
-          {/* Explicit Choice: File Upload OR Text Notice (Either one is enough) */}
-          <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
+          {/* Explicit Choice: File Upload OR Text Notice */}
+          <div className="bg-slate-900/70 p-4 rounded-2xl border border-white/10 space-y-3">
             <div>
-              <label className="font-bold text-slate-800 block text-xs mb-1">
+              <label className="font-bold text-white block text-xs mb-1">
                 নোটিশের ধরন (Choose File OR Text):
               </label>
-              <p className="text-[11px] text-slate-500 mb-2">
+              <p className="text-[11px] text-slate-400 mb-2.5">
                 হয় ফাইল আপলোড করুন, অথবা টেক্সট লিখুন — যেকোনো একটি যোগ করলেই হবে।
               </p>
 
@@ -1633,8 +2097,8 @@ function NoticeEditorModal({
                   onClick={() => { setNoticeType('file'); setValidationError(null); }}
                   className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                     noticeType === 'file'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black shadow-md'
+                      : 'bg-slate-900 border border-white/10 text-slate-300 hover:bg-slate-800'
                   }`}
                 >
                   <Upload className="w-3.5 h-3.5" />
@@ -1646,8 +2110,8 @@ function NoticeEditorModal({
                   onClick={() => { setNoticeType('text'); setValidationError(null); }}
                   className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                     noticeType === 'text'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black shadow-md'
+                      : 'bg-slate-900 border border-white/10 text-slate-300 hover:bg-slate-800'
                   }`}
                 >
                   <FileText className="w-3.5 h-3.5" />
@@ -1658,7 +2122,7 @@ function NoticeEditorModal({
 
             {/* If FILE mode is selected */}
             {noticeType === 'file' && (
-              <div className="p-4 rounded-xl border-2 border-dashed border-emerald-300 bg-white text-center">
+              <div className="p-4 rounded-xl border-2 border-dashed border-emerald-500/40 bg-slate-950/60 text-center">
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -1669,29 +2133,29 @@ function NoticeEditorModal({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center gap-2 cursor-pointer shadow-xs"
+                  className="px-4 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-xs inline-flex items-center gap-2 cursor-pointer border border-emerald-500/40 shadow-xs"
                 >
                   <Upload className="w-4 h-4" />
                   <span>{fileName ? 'Change File' : 'Upload File (PDF / Image)'}</span>
                 </button>
 
                 {fileName ? (
-                  <div className="mt-3 p-2 bg-emerald-50 rounded-lg text-xs font-bold text-emerald-800 flex items-center justify-between border border-emerald-200">
+                  <div className="mt-3 p-2 bg-emerald-500/15 rounded-lg text-xs font-bold text-emerald-300 flex items-center justify-between border border-emerald-500/30">
                     <div className="flex items-center gap-1.5 truncate">
-                      <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
                       <span className="truncate max-w-[220px]">{fileName}</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => { setFileUrl(null); setFileName(null); }}
-                      className="text-red-500 hover:text-red-700 font-bold px-1.5 py-0.5"
+                      className="text-rose-400 hover:text-rose-300 font-bold px-1.5 py-0.5 cursor-pointer"
                       title="Remove file"
                     >
                       ✕
                     </button>
                   </div>
                 ) : (
-                  <p className="text-[11px] text-slate-500 mt-2">
+                  <p className="text-[11px] text-slate-400 mt-2">
                     PDF সার্কুলার ফাইল বা নোটিশের ছবি আপলোড করুন।
                   </p>
                 )}
@@ -1701,15 +2165,15 @@ function NoticeEditorModal({
             {/* If TEXT mode is selected */}
             {noticeType === 'text' && (
               <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  নোটিশের বিবরণ / টেক্সট (Notice Content) <span className="text-emerald-500">*</span>
+                <label className="font-bold text-slate-300 block mb-1">
+                  নোটিশের বিবরণ / টেক্সট (Notice Content) <span className="text-emerald-400">*</span>
                 </label>
                 <textarea
                   rows={4}
                   value={content}
                   onChange={(e) => { setContent(e.target.value); setValidationError(null); }}
                   placeholder="নোটিশের বিস্তারিত বার্তা বা নির্দেশনা এখানে লিখুন..."
-                  className="w-full p-3 rounded-xl border border-slate-300 bg-white focus:outline-none focus:border-emerald-500 text-xs leading-relaxed"
+                  className="w-full p-3 rounded-xl border border-white/10 bg-slate-950 text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-400 text-xs leading-relaxed"
                 />
               </div>
             )}
@@ -1722,18 +2186,18 @@ function NoticeEditorModal({
               id="isPinned"
               checked={isPinned}
               onChange={(e) => setIsPinned(e.target.checked)}
-              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+              className="w-4 h-4 rounded bg-slate-900 border-white/20 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
             />
-            <label htmlFor="isPinned" className="font-bold text-slate-700 cursor-pointer">
+            <label htmlFor="isPinned" className="font-bold text-slate-300 cursor-pointer">
               Pin notice to top
             </label>
           </div>
 
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-            <button type="button" onClick={onClose} className="px-3 py-2 rounded-xl bg-slate-100 font-bold cursor-pointer">
+          <div className="pt-3 border-t border-white/10 flex items-center justify-end gap-2">
+            <button type="button" onClick={onClose} className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold transition-colors cursor-pointer">
               Cancel
             </button>
-            <button type="submit" className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer">
+            <button type="submit" className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black shadow-[0_0_15px_rgba(0,229,153,0.3)] transition-all cursor-pointer">
               {initialNotice ? 'Update Notice' : 'Publish Notice'}
             </button>
           </div>
@@ -1753,20 +2217,61 @@ function AddMemberManualModal({ onClose, onAdd }: { onClose: () => void; onAdd: 
   const [section, setSection] = useState<SectionType>('A');
   const [dob, setDob] = useState('');
   const [photo, setPhoto] = useState<string | null>(null);
+  const [selectedSegments, setSelectedSegments] = useState<string[]>([
+    'Science Olympiad (Math, Physics, Bio, Chem)'
+  ]);
+  const [customSegmentInput, setCustomSegmentInput] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handlePhoto = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    if (file.size > 6 * 1024 * 1024) {
+      alert('Photo size cannot exceed 6MB.');
+      return;
+    }
     const reader = new FileReader();
-    reader.onload = (e) => setPhoto(e.target?.result as string);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 600;
+        let w = img.width, h = img.height;
+        if (w > MAX_DIM || h > MAX_DIM) {
+          if (w > h) { h = Math.round((h * MAX_DIM) / w); w = MAX_DIM; }
+          else { w = Math.round((w * MAX_DIM) / h); h = MAX_DIM; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          setPhoto(canvas.toDataURL('image/jpeg', 0.85));
+        }
+      };
+      img.src = e.target?.result as string;
+    };
     reader.readAsDataURL(file);
   };
 
+  const handleAddManualSegment = () => {
+    if (!customSegmentInput.trim()) return;
+    const trimmed = customSegmentInput.trim();
+    if (!selectedSegments.includes(trimmed)) {
+      setSelectedSegments(prev => [...prev, trimmed]);
+    }
+    setCustomSegmentInput('');
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="relative max-w-md w-full bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-          <h3 className="text-base font-extrabold text-slate-900">Manually Add Club Member</h3>
-          <button type="button" onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer">✕</button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative max-w-lg w-full bg-slate-950/95 rounded-3xl shadow-2xl border border-white/15 overflow-hidden flex flex-col max-h-[92vh] text-slate-100">
+        <div className="p-4 sm:p-5 border-b border-white/10 flex items-center justify-between bg-slate-900/60">
+          <div>
+            <h3 className="text-base font-black text-white">Manually Add Club Member</h3>
+            <p className="text-[11px] text-slate-400">Add member photo, info, and club segments</p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         <form 
@@ -1781,50 +2286,76 @@ function AddMemberManualModal({ onClose, onAdd }: { onClose: () => void; onAdd: 
             dob,
             photo,
             sameAsPhone: true,
-            interestedSegments: ['General Science'],
+            interestedSegments: selectedSegments.length > 0 ? selectedSegments : ['General Science'],
             agreedToRules: true,
             status: 'approved',
             submittedAt: new Date().toLocaleString('en-US', { timeZone: 'Asia/Dhaka' })
           })} 
-          className="p-5 overflow-y-auto space-y-3 text-xs"
+          className="p-5 overflow-y-auto space-y-4 text-xs"
         >
-          <div className="flex flex-col items-center gap-2">
-            {photo ? (
-              <img src={photo} alt="Preview" className="w-16 h-16 rounded-xl object-cover border border-emerald-500" />
-            ) : (
-              <div className="w-16 h-16 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 font-bold">
-                Photo
+          {/* Photo Upload */}
+          <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-white/10 flex flex-col sm:flex-row items-center gap-4">
+            <div className="relative group shrink-0">
+              {photo ? (
+                <img src={photo} alt="Preview" className="w-20 h-20 rounded-2xl object-cover border-2 border-emerald-400 shadow-md" />
+              ) : (
+                <div className="w-20 h-20 rounded-2xl bg-slate-800 border-2 border-dashed border-white/20 flex flex-col items-center justify-center text-slate-400 font-bold">
+                  <Camera className="w-6 h-6 text-slate-500 mb-1" />
+                  <span className="text-[10px]">No Photo</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 text-center sm:text-left space-y-1.5">
+              <p className="text-xs font-bold text-white">Member Photo</p>
+              <p className="text-[11px] text-slate-400">Attach student photo (optional, auto-compressed).</p>
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                <input type="file" ref={fileRef} accept="image/*" onChange={(e) => e.target.files?.[0] && handlePhoto(e.target.files[0])} className="hidden" />
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-xs border border-emerald-500/40 transition-colors cursor-pointer"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>{photo ? 'Change Photo' : 'Upload Photo'}</span>
+                </button>
+                {photo && (
+                  <button
+                    type="button"
+                    onClick={() => setPhoto(null)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 font-bold text-xs border border-rose-500/30 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Remove</span>
+                  </button>
+                )}
               </div>
-            )}
-            <input type="file" ref={fileRef} accept="image/*" onChange={(e) => e.target.files?.[0] && handlePhoto(e.target.files[0])} className="hidden" />
-            <button type="button" onClick={() => fileRef.current?.click()} className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-[11px]">
-              Select Photo
-            </button>
+            </div>
           </div>
 
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Full Name</label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} required className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold" />
+            <label className="font-bold text-slate-300 block mb-1">Full Name</label>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} required className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:border-emerald-400 font-bold" />
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2.5">
             <div>
-              <label className="font-bold text-slate-700 block mb-1">Roll / Student ID</label>
-              <input type="text" value={studentId} onChange={(e) => setStudentId(e.target.value)} required className="w-full px-3 py-2 rounded-xl border border-slate-200 font-mono" />
+              <label className="font-bold text-slate-300 block mb-1">Roll / Student ID</label>
+              <input type="text" value={studentId} onChange={(e) => setStudentId(e.target.value)} required className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-emerald-400 focus:outline-none focus:border-emerald-400 font-mono font-bold" />
             </div>
             <div>
-              <label className="font-bold text-slate-700 block mb-1">Batch</label>
-              <select value={batch} onChange={(e) => setBatch(e.target.value as any)} className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold">
+              <label className="font-bold text-slate-300 block mb-1">Batch</label>
+              <select value={batch} onChange={(e) => setBatch(e.target.value as any)} className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none font-bold">
                 <option value="HSC 27">HSC 27</option>
                 <option value="HSC 28">HSC 28</option>
               </select>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2.5">
             <div>
-              <label className="font-bold text-slate-700 block mb-1">Section</label>
-              <select value={section} onChange={(e) => setSection(e.target.value as any)} className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold">
+              <label className="font-bold text-slate-300 block mb-1">Section</label>
+              <select value={section} onChange={(e) => setSection(e.target.value as any)} className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none font-bold">
                 <option value="A">Section A</option>
                 <option value="B">Section B</option>
                 <option value="C">Section C</option>
@@ -1832,19 +2363,116 @@ function AddMemberManualModal({ onClose, onAdd }: { onClose: () => void; onAdd: 
               </select>
             </div>
             <div>
-              <label className="font-bold text-slate-700 block mb-1">Phone</label>
-              <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} required className="w-full px-3 py-2 rounded-xl border border-slate-200 font-mono" />
+              <label className="font-bold text-slate-300 block mb-1">Phone Number</label>
+              <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} required className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none font-mono font-bold" />
             </div>
           </div>
 
-          <div>
-            <label className="font-bold text-slate-700 block mb-1">Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-200" />
+          <div className="grid grid-cols-2 gap-2.5">
+            <div>
+              <label className="font-bold text-slate-300 block mb-1">WhatsApp (Optional)</label>
+              <input type="text" value={whatsapp} placeholder="Same as phone if blank" onChange={(e) => setWhatsapp(e.target.value)} className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white placeholder:text-slate-500 focus:outline-none font-mono" />
+            </div>
+            <div>
+              <label className="font-bold text-slate-300 block mb-1">Email (Optional)</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none" />
+            </div>
           </div>
 
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-            <button type="button" onClick={onClose} className="px-3 py-2 rounded-xl bg-slate-100 font-bold">Cancel</button>
-            <button type="submit" className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold">Save Member</button>
+          {/* Segments Selection & Manual Add */}
+          <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-white/10 space-y-2.5">
+            <label className="font-bold text-white text-xs block">
+              Interested Segments ({selectedSegments.length})
+            </label>
+
+            {/* Active Segments with Remove (X) button */}
+            <div className="flex flex-wrap gap-1.5 min-h-[32px] p-2 rounded-xl bg-slate-950/60 border border-white/5">
+              {selectedSegments.length === 0 ? (
+                <span className="text-[11px] text-slate-500 italic">No segments selected. Add below.</span>
+              ) : (
+                selectedSegments.map((seg, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/35 text-[11px] font-semibold"
+                  >
+                    <span>{seg}</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSegments(prev => prev.filter((_, i) => i !== idx))}
+                      className="hover:text-rose-400 ml-0.5 cursor-pointer font-bold"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))
+              )}
+            </div>
+
+            {/* Manual Add Custom Segment */}
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 mb-1">Manually Type &amp; Add Segment:</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={customSegmentInput}
+                  onChange={(e) => setCustomSegmentInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddManualSegment();
+                    }
+                  }}
+                  placeholder="e.g. Science Quizzing / Coding..."
+                  className="flex-1 px-3 py-1.5 rounded-xl bg-slate-950 border border-white/10 text-white placeholder:text-slate-500 text-xs focus:outline-none focus:border-emerald-400"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddManualSegment}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40 text-xs transition-colors cursor-pointer"
+                >
+                  + Add
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Toggle Standard Segments */}
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 mb-1">Quick Add Standard Segments:</p>
+              <div className="flex flex-wrap gap-1">
+                {STANDARD_SEGMENTS.map((seg, i) => {
+                  const isAdded = selectedSegments.includes(seg);
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        if (isAdded) {
+                          setSelectedSegments(prev => prev.filter(s => s !== seg));
+                        } else {
+                          setSelectedSegments(prev => [...prev, seg]);
+                        }
+                      }}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer ${
+                        isAdded
+                          ? 'bg-emerald-500/30 border-emerald-500 text-emerald-200'
+                          : 'bg-slate-900 border-white/10 text-slate-400 hover:text-white hover:bg-slate-800'
+                      }`}
+                    >
+                      {isAdded ? `✓ ${seg}` : `+ ${seg}`}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-white/10 flex items-center justify-end gap-2">
+            <button type="button" onClick={onClose} className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold transition-colors cursor-pointer">
+              Cancel
+            </button>
+            <button type="submit" className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black shadow-[0_0_15px_rgba(0,229,153,0.3)] transition-all cursor-pointer">
+              Save Member
+            </button>
           </div>
         </form>
       </div>

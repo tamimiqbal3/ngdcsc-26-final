@@ -28,8 +28,6 @@ interface NoticesPageProps {
 export default function NoticesPage({ onBack, onOpenAdmin }: NoticesPageProps) {
   const [notices, setNotices] = useState<ClubNotice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [activeNoticeModal, setActiveNoticeModal] = useState<ClubNotice | null>(null);
 
   useEffect(() => {
@@ -48,15 +46,11 @@ export default function NoticesPage({ onBack, onOpenAdmin }: NoticesPageProps) {
     }
   };
 
-  const filteredNotices = notices.filter(n => {
-    const matchesSearch = 
-      n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      n.content.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCat = selectedCategory === 'All' || n.category === selectedCategory;
-    return matchesSearch && matchesCat;
+  const sortedNotices = [...notices].sort((a, b) => {
+    if (a.isPinned && !b.isPinned) return -1;
+    if (!a.isPinned && b.isPinned) return 1;
+    return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
   });
-
-  const categories = ['All', 'Notice', 'Olympiad', 'Workshop', 'General', 'Urgent'];
 
   const getCategoryBadgeClass = (category: string) => {
     switch (category) {
@@ -75,16 +69,16 @@ export default function NoticesPage({ onBack, onOpenAdmin }: NoticesPageProps) {
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 py-8 relative z-10 formal-page-enter">
+    <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-3 pb-8 sm:pt-4 relative z-10 formal-page-enter">
       {/* Top Bar Navigation */}
-      <div className="flex items-center justify-between gap-3 mb-6">
+      <div className="flex items-center justify-between gap-3 mb-4">
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 text-slate-200 hover:text-white text-xs font-bold border border-white/10 backdrop-blur-md shadow-xs hover:shadow transition-all cursor-pointer"
+          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 text-slate-200 hover:text-white text-xs font-bold border border-white/10 backdrop-blur-md shadow-xs hover:shadow transition-all cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4 text-emerald-400" />
-          <span>Back to Registration</span>
+          <span>Back to Home</span>
         </button>
 
 
@@ -115,64 +109,23 @@ export default function NoticesPage({ onBack, onOpenAdmin }: NoticesPageProps) {
         </div>
       </div>
 
-      {/* Search & Filter Controls - Translucent Dark Glass */}
-      <div className="bg-slate-950/40 backdrop-blur-md rounded-2xl p-4 border border-white/10 shadow-sm mb-7 space-y-3">
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search notices by title, keyword, or topic..."
-            className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm rounded-xl bg-slate-900/60 border border-white/10 text-white placeholder:text-slate-500 focus:bg-slate-900/90 focus:border-emerald-500 focus:outline-none transition-all"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs cursor-pointer"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-
-        {/* Category Pills */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {categories.map(cat => (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
-                selectedCategory === cat
-                  ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/50 shadow-xs'
-                  : 'bg-slate-900/50 text-slate-400 border-white/5 hover:bg-slate-800/60 hover:text-white'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* Notices Feed - Card-based Responsive Grid Layout with Subtle Hover Effects */}
       {loading ? (
         <div className="py-20 text-center">
           <div className="w-8 h-8 border-3 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           <p className="text-xs font-bold text-slate-400">Loading notices...</p>
         </div>
-      ) : filteredNotices.length === 0 ? (
+      ) : sortedNotices.length === 0 ? (
         <div className="text-center py-16 bg-slate-950/40 backdrop-blur-md rounded-2xl border border-white/10 p-8">
           <FileText className="w-12 h-12 text-slate-600 mx-auto mb-3" />
           <h3 className="text-base font-bold text-slate-200">No notices found</h3>
           <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-            {searchQuery ? 'Try searching with a different keyword.' : 'There are no active notices in this category right now.'}
+            There are no active notices published right now. Please check back later.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {filteredNotices.map((notice) => (
+          {sortedNotices.map((notice) => (
             <div
               key={notice.id}
               onClick={() => setActiveNoticeModal(notice)}

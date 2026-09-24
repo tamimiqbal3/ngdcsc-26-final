@@ -24,13 +24,21 @@ import {
   MessageCircle,
   ExternalLink,
   ChevronRight,
-  Download
+  Download,
+  Home,
+  ArrowLeft,
+  Trophy,
+  Atom,
+  Rocket,
+  Cpu,
+  Award
 } from 'lucide-react';
 import { MembershipFormData, SubmissionRecord, SectionType, BatchType, ClubNotice } from './types';
 import ScienceBackground from './ScienceBackground';
 import ExecutiveCommitteePage from './ExecutiveCommitteePage';
 import NoticesPage from './NoticesPage';
 import AdminPanel from './AdminPanel';
+import NotFoundPage from './NotFoundPage';
 import { saveMemberToFirebase, fetchNoticesFromFirebase } from './services/firebase';
 
 const CLUB_SEGMENTS = [
@@ -57,7 +65,263 @@ const INITIAL_FORM: MembershipFormData = {
   agreedToRules: false
 };
 
-type ViewType = 'form' | 'committee' | 'notices' | 'admin';
+type ViewType = 'home' | 'form' | 'committee' | 'notices' | 'admin' | '404';
+
+// Helper to determine view from current URL path & hash
+const resolveCurrentView = (): ViewType => {
+  if (typeof window === 'undefined') return 'home';
+  const rawPath = window.location.pathname.toLowerCase().replace(/\/+$/, '');
+  const hash = window.location.hash.toLowerCase().replace(/^#\/?/, '');
+
+  if (hash === 'admin' || rawPath === '/admin' || rawPath.endsWith('/admin')) return 'admin';
+  if (hash === 'notices' || rawPath === '/notices' || rawPath.endsWith('/notices')) return 'notices';
+  if (hash === 'committee' || rawPath === '/committee' || rawPath.endsWith('/committee')) return 'committee';
+  if (hash === 'form' || hash === 'register' || rawPath === '/form' || rawPath === '/register' || rawPath.endsWith('/form') || rawPath.endsWith('/register')) return 'form';
+  if (rawPath === '' || rawPath === '/' || rawPath === '/index.html' || hash === '' || hash === 'home') return 'home';
+
+  // Any other URL shows our themed 404 forbidden page
+  return '404';
+};
+
+function ClubFooter() {
+  return (
+    <footer className="mt-auto pt-6 pb-2 text-center w-full flex flex-col items-center gap-3">
+      {/* Sleek, compact social icons */}
+      <div className="flex items-center justify-center gap-2.5">
+        <a 
+          href="https://chat.whatsapp.com/EKt85N1Te5CLY3Rby76Z0A" 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-[#25D366]/20 border border-white/15 hover:border-[#25D366]/50 text-slate-300 hover:text-[#25D366] flex items-center justify-center transition-all shadow-xs"
+          title="Official WhatsApp Community"
+        >
+          <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+            <path d="M12.031 0C5.394 0 0 5.394 0 12.031c0 2.119.553 4.185 1.603 6.007L.062 24l6.148-1.613c1.764.962 3.766 1.47 5.821 1.47 6.637 0 12.031-5.394 12.031-12.031C24.062 5.394 18.668 0 12.031 0zm0 21.848c-1.802 0-3.567-.484-5.105-1.398l-.366-.217-3.792.995 1.012-3.696-.239-.379c-1.006-1.601-1.537-3.468-1.537-5.385 0-5.515 4.485-10 10-10 5.515 0 10 4.485 10 10 0 5.515-4.485 10-10 10zm5.474-7.481c-.3-.15-1.776-.876-2.051-.976-.275-.1-.475-.15-.675.15-.2.3-.776.976-.951 1.176-.175.2-.35.225-.65.075-.3-.15-1.267-.467-2.414-1.489-.892-.796-1.495-1.779-1.67-2.079-.175-.3-.019-.462.131-.611.136-.134.3-.35.45-.525.15-.175.2-.3.3-.5.1-.2.05-.375-.025-.525-.075-.15-.675-1.626-.925-2.226-.244-.585-.492-.505-.675-.515-.175-.009-.375-.009-.575-.009s-.525.075-.8.375c-.275.3-1.05 1.026-1.05 2.501s1.075 2.899 1.225 3.099c.15.2 2.115 3.23 5.124 4.53.716.31 1.275.495 1.71.633.719.229 1.373.197 1.89.12.577-.086 1.776-.726 2.026-1.426.25-.7.25-1.301.175-1.426-.075-.125-.275-.2-.575-.35z"/>
+          </svg>
+        </a>
+
+        <a 
+          href="https://facebook.com/ngdcsc" 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-blue-500/20 border border-white/15 hover:border-blue-400/50 text-slate-300 hover:text-blue-400 flex items-center justify-center transition-all shadow-xs"
+          title="Official Facebook Page"
+        >
+          <Facebook className="w-3.5 h-3.5" />
+        </a>
+
+        <a 
+          href="https://instagram.com/ngdcsc_" 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-pink-500/20 border border-white/15 hover:border-pink-400/50 text-slate-300 hover:text-pink-400 flex items-center justify-center transition-all shadow-xs"
+          title="Official Instagram"
+        >
+          <Instagram className="w-3.5 h-3.5" />
+        </a>
+
+        <a 
+          href="mailto:ngdcsc.org@gmail.com" 
+          className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-emerald-500/20 border border-white/15 hover:border-emerald-400/50 text-slate-300 hover:text-emerald-400 flex items-center justify-center transition-all shadow-xs"
+          title="Official Email"
+        >
+          <Mail className="w-3.5 h-3.5" />
+        </a>
+      </div>
+
+      {/* Prominent Glossy Glass Badge: Developed by: Tamim Iqbal */}
+      <div className="flex items-center justify-center pt-0.5">
+        <a
+          href="https://portfolio.tamimiq.shop"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group relative inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-emerald-950/85 via-slate-900/95 to-teal-950/85 border border-emerald-400/60 hover:border-emerald-300 shadow-[0_0_20px_rgba(0,229,153,0.3),inset_0_1px_1px_rgba(255,255,255,0.45)] hover:shadow-[0_0_30px_rgba(0,229,153,0.6),inset_0_1px_2px_rgba(255,255,255,0.8)] backdrop-blur-2xl transition-all duration-300 overflow-hidden cursor-pointer transform hover:-translate-y-0.5"
+          title="Visit Portfolio of Developer Tamim Iqbal"
+        >
+          {/* Continuous subtle glossy light sheen + hover swipe */}
+          <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/30 to-transparent -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-out pointer-events-none" />
+          
+          <span className="text-slate-300 font-medium text-[11px] tracking-wide">
+            Developed by:
+          </span>
+          <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-200 via-white to-teal-200 drop-shadow-[0_1px_8px_rgba(0,229,153,0.6)] underline decoration-emerald-400 underline-offset-2 group-hover:decoration-white transition-colors text-xs">
+            Tamim Iqbal
+          </span>
+          <ExternalLink className="w-3 h-3 text-emerald-400 group-hover:text-white group-hover:rotate-12 transition-all shrink-0" />
+        </a>
+      </div>
+    </footer>
+  );
+}
+
+function HomePage({ 
+  onGoToForm,
+  onGoToNotices,
+  onGoToCommittee
+}: { 
+  onGoToForm: () => void;
+  onGoToNotices: () => void;
+  onGoToCommittee: () => void;
+}) {
+  return (
+    <div className="w-full max-w-2xl relative z-10 px-4 sm:px-6 pt-4 pb-2 formal-page-enter flex-1 flex flex-col items-center justify-between">
+      <div className="w-full flex flex-col items-center space-y-4">
+        {/* Club Logo & Official Title */}
+        <div className="text-center">
+          <div className="flex justify-center mb-2">
+            <img 
+              src="https://plain-apac-prod-public.komododecks.com/202609/21/iFpbvbXJaON4rnVidFRy/image.png" 
+              alt="NGDC Science Club Logo" 
+              className="h-20 sm:h-24 w-auto object-contain hover:scale-105 transition-transform drop-shadow-[0_0_20px_rgba(0,229,153,0.3)]"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            NGDC SCIENCE CLUB
+          </h1>
+          <p className="text-xs sm:text-sm font-bold text-emerald-400 tracking-wide uppercase mt-0.5">
+            New Government Degree College, Rajshahi
+          </p>
+        </div>
+
+        {/* Featured Event Section: 1st Inter-College Science Fest */}
+        <div className="w-full bg-slate-950/70 border border-emerald-500/30 rounded-3xl p-4 sm:p-5 backdrop-blur-xl shadow-[0_0_35px_rgba(0,229,153,0.15)] space-y-3.5">
+          <div className="flex items-center justify-start">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-black uppercase tracking-wider">
+              <Trophy className="w-3 h-3 text-emerald-400" />
+              <span>Featured Science Fest</span>
+            </span>
+          </div>
+
+          {/* Event Banner Image */}
+          <div className="w-full rounded-2xl overflow-hidden border border-emerald-500/25 bg-slate-900 shadow-md group">
+            <img 
+              src="https://plain-apac-prod-public.komododecks.com/202609/24/YmHrAHI7CXKAZBKyvjDY/image.jpg" 
+              alt="NGDC Science Club 1st Inter-College Science Fest Event" 
+              className="w-full h-auto object-cover rounded-2xl group-hover:scale-[1.01] transition-transform duration-300"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+
+          <div>
+            <h2 className="text-base sm:text-lg font-black text-white">
+              The 1st New Govt. Degree College Science Fest
+            </h2>
+          </div>
+
+          {/* See More Button for Event */}
+          <div>
+            <a
+              href="https://facebook.com/events/s/the-1st-new-govt-degree-colleg/1068668486164256/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm shadow-md hover:shadow-[0_0_18px_rgba(37,99,235,0.4)] transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-0.5 border border-blue-400/30"
+            >
+              <span>See More</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+        </div>
+
+        {/* Standalone Dedicated Membership Registration Card */}
+        <div className="w-full p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-emerald-950/50 via-slate-950/90 to-teal-950/50 border border-emerald-500/40 shadow-[0_0_30px_rgba(0,229,153,0.18)] flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="text-center sm:text-left space-y-1">
+            <h3 className="text-base sm:text-lg font-black text-white flex items-center justify-center sm:justify-start gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-400" />
+              <span>Membership Registration</span>
+            </h3>
+            <p className="text-xs text-slate-300 font-medium">
+              Join the official NGDC Science Club community for HSC Batches
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onGoToForm}
+            className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-xs sm:text-sm shadow-[0_0_22px_rgba(0,229,153,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-0.5 shrink-0"
+          >
+            <span>Registration Form</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Fast Navigation Cards: Notice Board & Executive Committee */}
+        <div className="w-full grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={onGoToNotices}
+            className="p-3.5 sm:p-4 rounded-2xl bg-slate-950/60 border border-emerald-500/25 hover:border-emerald-400/60 text-left transition-all group backdrop-blur-md cursor-pointer hover:bg-slate-900/80 shadow-xs"
+          >
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mb-2.5 group-hover:scale-105 transition-transform">
+              <Bell className="w-4 h-4" />
+            </div>
+            <h3 className="text-xs sm:text-sm font-black text-white group-hover:text-emerald-300 transition-colors flex items-center justify-between">
+              <span>Notice Board</span>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-transform" />
+            </h3>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Official circulars, schedules &amp; announcements
+            </p>
+          </button>
+
+          <button
+            type="button"
+            onClick={onGoToCommittee}
+            className="p-3.5 sm:p-4 rounded-2xl bg-slate-950/60 border border-white/15 hover:border-white/40 text-left transition-all group backdrop-blur-md cursor-pointer hover:bg-slate-900/80 shadow-xs"
+          >
+            <div className="w-8 h-8 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center justify-center mb-2.5 group-hover:scale-105 transition-transform">
+              <Users className="w-4 h-4" />
+            </div>
+            <h3 className="text-xs sm:text-sm font-black text-white group-hover:text-blue-300 transition-colors flex items-center justify-between">
+              <span>Executive Panel</span>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-transform" />
+            </h3>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Club executives, coordinators &amp; advisors
+            </p>
+          </button>
+        </div>
+
+        {/* Club Segments Overview (without emojis) */}
+        <div className="w-full bg-slate-950/50 border border-white/10 rounded-2xl p-4 sm:p-5 backdrop-blur-md space-y-3">
+          <div className="flex items-center gap-2">
+            <Atom className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-xs sm:text-sm font-black text-white uppercase tracking-wider">
+              Club Specialization Segments
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+            <div className="p-2.5 rounded-xl bg-slate-900/70 border border-white/10">
+              <span className="font-bold text-white block text-[11px]">Science Olympiad</span>
+              <span className="text-[10px] text-slate-400">Math, Physics, Bio &amp; Chem</span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-900/70 border border-white/10">
+              <span className="font-bold text-white block text-[11px]">Science Projects</span>
+              <span className="text-[10px] text-slate-400">Inventions &amp; models</span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-900/70 border border-white/10">
+              <span className="font-bold text-white block text-[11px]">Robotics &amp; Tech</span>
+              <span className="text-[10px] text-slate-400">Coding, sensors &amp; AI</span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-900/70 border border-white/10">
+              <span className="font-bold text-white block text-[11px]">Astronomy &amp; Space</span>
+              <span className="text-[10px] text-slate-400">Stargazing &amp; astrophysics</span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-900/70 border border-white/10">
+              <span className="font-bold text-white block text-[11px]">Science Quiz</span>
+              <span className="text-[10px] text-slate-400">Buzzer &amp; speed rounds</span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-900/70 border border-white/10">
+              <span className="font-bold text-white block text-[11px]">Wall Magazine</span>
+              <span className="text-[10px] text-slate-400">Articles &amp; editorials</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [formData, setFormData] = useState<MembershipFormData>(INITIAL_FORM);
@@ -66,31 +330,28 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   
-  // URL detection for Vercel /admin, /notices, /committee direct links
-  const [currentView, setCurrentView] = useState<ViewType>(() => {
-    if (typeof window !== 'undefined') {
-      const path = window.location.pathname.toLowerCase();
-      const hash = window.location.hash.toLowerCase();
-      if (path.includes('/admin') || hash.includes('admin')) return 'admin';
-      if (path.includes('/notices') || hash.includes('notices')) return 'notices';
-      if (path.includes('/committee') || hash.includes('committee')) return 'committee';
-    }
-    return 'form';
-  });
+  // URL detection for /admin, /notices, /committee, /, and unknown routes -> 404
+  const [currentView, setCurrentView] = useState<ViewType>(resolveCurrentView);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [liveNotices, setLiveNotices] = useState<ClubNotice[]>([]);
   const [selectedNotice, setSelectedNotice] = useState<ClubNotice | null>(null);
 
-  // Fetch notices from Firebase for the top infinite scrolling marquee
+  // Fetch notices from Firebase for the top notice banner
   useEffect(() => {
     fetchNoticesFromFirebase()
       .then((data) => {
         if (data && data.length > 0) {
-          setLiveNotices(data);
+          // Sort to guarantee latest notice first
+          const sorted = [...data].sort((a, b) => {
+            if (a.isPinned && !b.isPinned) return -1;
+            if (!a.isPinned && b.isPinned) return 1;
+            return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
+          });
+          setLiveNotices(sorted);
         }
       })
-      .catch((err) => console.warn('Could not fetch notices for marquee:', err));
+      .catch((err) => console.warn('Could not fetch notices for banner:', err));
   }, []);
 
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>(() => {
@@ -110,27 +371,17 @@ export default function App() {
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     try {
-      const targetPath = view === 'form' ? '/' : `/${view}`;
+      const targetPath = view === 'home' ? '/' : `/${view}`;
       window.history.pushState(null, '', targetPath);
     } catch {
       // ignore
     }
   };
 
-  // Listen to popstate for back/forward navigation
+  // Listen to popstate & hashchange for browser navigation
   useEffect(() => {
     const handlePopState = () => {
-      const path = window.location.pathname.toLowerCase();
-      const hash = window.location.hash.toLowerCase();
-      if (path.includes('/admin') || hash.includes('admin')) {
-        setCurrentView('admin');
-      } else if (path.includes('/notices') || hash.includes('notices')) {
-        setCurrentView('notices');
-      } else if (path.includes('/committee') || hash.includes('committee')) {
-        setCurrentView('committee');
-      } else {
-        setCurrentView('form');
-      }
+      setCurrentView(resolveCurrentView());
     };
     window.addEventListener('popstate', handlePopState);
     window.addEventListener('hashchange', handlePopState);
@@ -186,8 +437,8 @@ export default function App() {
       setErrorMsg('Please select a valid image file (JPG, PNG, WebP).');
       return;
     }
-    if (file.size > 12 * 1024 * 1024) {
-      setErrorMsg('Image size should be under 12MB.');
+    if (file.size > 6 * 1024 * 1024) {
+      setErrorMsg('ছবি সর্বোচ্চ ৬ মেগাবাইট (6MB) পর্যন্ত আপলোড করা যাবে। (Image size cannot exceed 6MB)');
       return;
     }
 
@@ -331,96 +582,41 @@ export default function App() {
   }
 
   return (
-    <div className="relative min-h-screen text-slate-100 pb-12 flex flex-col items-center">
+    <div className="relative min-h-screen text-slate-100 flex flex-col items-center justify-between">
       {/* Science Canvas Animation Background */}
       <ScienceBackground />
 
-      {/* Top Infinite Scrolling Notice Marquee (Dark Glass Science Style) */}
-      <div className="w-full bg-slate-950/75 backdrop-blur-xs border-b border-emerald-500/25 text-slate-200 z-40 relative py-2 overflow-hidden flex items-center shadow-xs">
-        {/* Left fixed badge */}
-        <div className="flex items-center gap-2 pl-3 sm:pl-5 pr-3.5 shrink-0 z-10 bg-slate-950/95 py-0.5 border-r border-emerald-500/30">
-          <span className="relative flex h-2.5 w-2.5">
+      {/* Top Notice Bar - Smooth Horizontal Scrolling Marquee of ONLY the Latest Notice Title */}
+      <div className="w-full bg-slate-950/90 backdrop-blur-md border-b border-emerald-500/25 text-slate-200 z-40 relative py-2 px-3 sm:px-6 flex items-center shadow-xs overflow-hidden">
+        {/* Pinned Left Badge: LATEST NOTICE: */}
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/35 text-emerald-400 text-[10px] sm:text-xs font-black shrink-0 z-10 shadow-xs mr-3">
+          <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
           </span>
-          <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1">
-            <Bell className="w-3 h-3 text-emerald-400" />
-            <span>NOTICE:</span>
-          </span>
+          <Bell className="w-3 h-3 text-emerald-400 shrink-0" />
+          <span className="tracking-wider">LATEST NOTICE:</span>
         </div>
 
-        {/* Continuous right-to-left scrolling track */}
-        <div className="overflow-hidden relative flex-1 flex items-center">
-          <div className="animate-marquee-infinite flex items-center text-xs font-bold text-slate-200">
-            {/* Set 1 */}
-            <div className="flex items-center gap-10 shrink-0 pr-10">
-              {liveNotices.length > 0 ? (
-                liveNotices.map((n) => (
-                  <button
-                    key={`n1-${n.id}`}
-                    type="button"
-                    onClick={() => setSelectedNotice(n)}
-                    className="inline-flex items-center gap-2 hover:text-emerald-300 transition-colors cursor-pointer group text-left"
-                  >
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                      {n.category || 'NOTICE'}
-                    </span>
-                    <span className="font-extrabold text-white group-hover:text-emerald-300 underline-offset-4 group-hover:underline">
-                      {n.title}
-                    </span>
-                    <span className="text-slate-400 font-mono text-[11px]">({n.date})</span>
-                    {n.fileUrl ? (
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/20 text-blue-300 border border-blue-400/40">
-                        📎 PDF / File
-                      </span>
-                    ) : (
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-500/20 text-teal-300 border border-teal-400/40">
-                        📝 Notice Text
-                      </span>
-                    )}
-                  </button>
-                ))
-              ) : (
-                <span className="font-bold text-slate-200">
-                  📢 Welcome to NGDC Science Club! HSC 27 &amp; HSC 28 Membership Registration is now ongoing • Science Fair, Project &amp; Olympiad notices will be published here.
-                </span>
-              )}
-            </div>
-
-            {/* Set 2 (Exact clone for uninterrupted infinite loop) */}
-            <div className="flex items-center gap-10 shrink-0 pr-10">
-              {liveNotices.length > 0 ? (
-                liveNotices.map((n) => (
-                  <button
-                    key={`n2-${n.id}`}
-                    type="button"
-                    onClick={() => setSelectedNotice(n)}
-                    className="inline-flex items-center gap-2 hover:text-emerald-300 transition-colors cursor-pointer group text-left"
-                  >
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                      {n.category || 'NOTICE'}
-                    </span>
-                    <span className="font-extrabold text-white group-hover:text-emerald-300 underline-offset-4 group-hover:underline">
-                      {n.title}
-                    </span>
-                    <span className="text-slate-400 font-mono text-[11px]">({n.date})</span>
-                    {n.fileUrl ? (
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/20 text-blue-300 border border-blue-400/40">
-                        📎 PDF / File
-                      </span>
-                    ) : (
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-500/20 text-teal-300 border border-teal-400/40">
-                        📝 Notice Text
-                      </span>
-                    )}
-                  </button>
-                ))
-              ) : (
-                <span className="font-bold text-slate-200">
-                  📢 Welcome to NGDC Science Club! HSC 27 &amp; HSC 28 Membership Registration is now ongoing • Science Fair, Project &amp; Olympiad notices will be published here.
-                </span>
-              )}
-            </div>
+        {/* Marquee Scrolling Ticker: ONLY the title of the latest notice */}
+        <div className="overflow-hidden flex-1 relative select-none">
+          <div 
+            onClick={() => liveNotices.length > 0 && setSelectedNotice(liveNotices[0])}
+            className="animate-marquee-infinite cursor-pointer py-0.5 items-center text-xs sm:text-sm font-extrabold text-white hover:text-emerald-300 transition-colors"
+            title="Click to read notice"
+          >
+            <span className="pr-16 inline-flex items-center">
+              {liveNotices.length > 0 ? liveNotices[0].title : 'Welcome to NGDC Science Club! HSC 27 & HSC 28 Membership Registration is now ongoing.'}
+            </span>
+            <span className="pr-16 inline-flex items-center">
+              {liveNotices.length > 0 ? liveNotices[0].title : 'Welcome to NGDC Science Club! HSC 27 & HSC 28 Membership Registration is now ongoing.'}
+            </span>
+            <span className="pr-16 inline-flex items-center">
+              {liveNotices.length > 0 ? liveNotices[0].title : 'Welcome to NGDC Science Club! HSC 27 & HSC 28 Membership Registration is now ongoing.'}
+            </span>
+            <span className="pr-16 inline-flex items-center">
+              {liveNotices.length > 0 ? liveNotices[0].title : 'Welcome to NGDC Science Club! HSC 27 & HSC 28 Membership Registration is now ongoing.'}
+            </span>
           </div>
         </div>
       </div>
@@ -444,6 +640,20 @@ export default function App() {
             id="floating-dropdown-menu"
             className="absolute right-0 mt-2 w-52 bg-slate-900/95 backdrop-blur-2xl rounded-2xl border border-white/15 shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 space-y-1"
           >
+            {/* Home button */}
+            <button
+              type="button"
+              onClick={() => navigateTo('home')}
+              className={`w-full px-4 py-2.5 rounded-xl text-left text-xs font-bold transition-all cursor-pointer flex items-center gap-2.5 ${
+                currentView === 'home' 
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs' 
+                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <Home className="w-4 h-4 text-emerald-400" />
+              <span>Home</span>
+            </button>
+
             <button
               type="button"
               onClick={() => navigateTo('form')}
@@ -550,19 +760,44 @@ export default function App() {
         </div>
       )}
 
-      {/* Conditional Page Views */}
-      {currentView === 'committee' ? (
-        <ExecutiveCommitteePage 
-          onBackToRegistration={() => navigateTo('form')} 
-        />
+      {/* Main Page Views Container - flex-1 ensures natural flow and footer at the bottom */}
+      <main className="w-full flex-1 flex flex-col items-center">
+        {currentView === 'committee' ? (
+          <ExecutiveCommitteePage 
+            onBackToRegistration={() => navigateTo('home')} 
+          />
       ) : currentView === 'notices' ? (
         <NoticesPage
-          onBack={() => navigateTo('form')}
+          onBack={() => navigateTo('home')}
           onOpenAdmin={() => navigateTo('admin')}
+        />
+      ) : currentView === '404' ? (
+        <NotFoundPage
+          onGoHome={() => navigateTo('home')}
+          onGoAdmin={() => navigateTo('admin')}
+          onGoNotices={() => navigateTo('notices')}
+          onGoCommittee={() => navigateTo('committee')}
+        />
+      ) : currentView === 'home' ? (
+        <HomePage 
+          onGoToForm={() => navigateTo('form')} 
+          onGoToNotices={() => navigateTo('notices')} 
+          onGoToCommittee={() => navigateTo('committee')} 
         />
       ) : (
         /* Form Container with formal entrance animation */
         <div className="w-full max-w-2xl relative z-10 px-4 sm:px-6 pt-6 formal-page-enter">
+          {/* Back to Home Navigation Button */}
+          <div className="mb-4 flex items-center justify-start">
+            <button
+              type="button"
+              onClick={() => navigateTo('home')}
+              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-bold border border-white/15 shadow-xs transition-all cursor-pointer group"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 text-emerald-400 group-hover:-translate-x-0.5 transition-transform" />
+              <span>Back to Home</span>
+            </button>
+          </div>
         
         {/* Simple Clean Header: Official Club Logo with No Background */}
         <div className="text-center mb-7">
@@ -581,66 +816,6 @@ export default function App() {
           <p className="text-sm sm:text-base font-bold text-emerald-400 tracking-wide uppercase mt-1">
             Membership Registration
           </p>
-
-          {/* Official Social & Community Buttons with Official WhatsApp Logo & "NGDC SC" */}
-          <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
-            {/* WhatsApp Community with official logo & label NGDC SC */}
-            <a 
-              href="https://chat.whatsapp.com/J0ooCmabbIT2dfJdXTLhni" 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/60 hover:bg-slate-800/80 backdrop-blur-xs border border-[#25D366]/50 text-white text-xs font-bold shadow-2xs hover:shadow-[0_0_15px_rgba(37,211,102,0.3)] transition-all cursor-pointer"
-              title="Official WhatsApp Community"
-            >
-              <svg className="w-4 h-4 fill-[#25D366] shrink-0" viewBox="0 0 24 24">
-                <path d="M12.031 0C5.394 0 0 5.394 0 12.031c0 2.119.553 4.185 1.603 6.007L.062 24l6.148-1.613c1.764.962 3.766 1.47 5.821 1.47 6.637 0 12.031-5.394 12.031-12.031C24.062 5.394 18.668 0 12.031 0zm0 21.848c-1.802 0-3.567-.484-5.105-1.398l-.366-.217-3.792.995 1.012-3.696-.239-.379c-1.006-1.601-1.537-3.468-1.537-5.385 0-5.515 4.485-10 10-10 5.515 0 10 4.485 10 10 0 5.515-4.485 10-10 10zm5.474-7.481c-.3-.15-1.776-.876-2.051-.976-.275-.1-.475-.15-.675.15-.2.3-.776.976-.951 1.176-.175.2-.35.225-.65.075-.3-.15-1.267-.467-2.414-1.489-.892-.796-1.495-1.779-1.67-2.079-.175-.3-.019-.462.131-.611.136-.134.3-.35.45-.525.15-.175.2-.3.3-.5.1-.2.05-.375-.025-.525-.075-.15-.675-1.626-.925-2.226-.244-.585-.492-.505-.675-.515-.175-.009-.375-.009-.575-.009s-.525.075-.8.375c-.275.3-1.05 1.026-1.05 2.501s1.075 2.899 1.225 3.099c.15.2 2.115 3.23 5.124 4.53.716.31 1.275.495 1.71.633.719.229 1.373.197 1.89.12.577-.086 1.776-.726 2.026-1.426.25-.7.25-1.301.175-1.426-.075-.125-.275-.2-.575-.35z"/>
-              </svg>
-              <span>NGDC SC</span>
-            </a>
-
-            <a 
-              href="https://facebook.com/ngdcsc" 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900/60 hover:bg-slate-800/80 backdrop-blur-xs border border-blue-500/40 text-slate-300 hover:text-blue-400 text-xs font-semibold shadow-2xs hover:shadow-[0_0_12px_rgba(37,99,235,0.25)] transition-all"
-              title="Official Facebook"
-            >
-              <Facebook className="w-3.5 h-3.5 text-blue-400" />
-              <span>Facebook</span>
-            </a>
-
-            <a 
-              href="https://instagram.com/ngdcsc_" 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900/60 hover:bg-slate-800/80 backdrop-blur-xs border border-pink-500/40 text-slate-300 hover:text-pink-400 text-xs font-semibold shadow-2xs hover:shadow-[0_0_12px_rgba(236,72,153,0.25)] transition-all"
-              title="Official Instagram"
-            >
-              <Instagram className="w-3.5 h-3.5 text-pink-400" />
-              <span>Instagram</span>
-            </a>
-          </div>
-
-          {/* Quick Sub-Navigation Pills: Notice Board & Executive Committee */}
-          <div className="flex items-center justify-center gap-2 mt-4">
-            <button
-              type="button"
-              onClick={() => navigateTo('notices')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 backdrop-blur-xs border border-emerald-500/35 text-emerald-300 text-xs font-bold transition-all cursor-pointer shadow-2xs hover:border-emerald-400"
-            >
-              <Bell className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Notice Board</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigateTo('committee')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 backdrop-blur-xs border border-white/20 text-slate-200 text-xs font-bold transition-all cursor-pointer shadow-2xs hover:border-white/40"
-            >
-              <Users className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Executive Committee</span>
-            </button>
-          </div>
         </div>
 
         {/* SUBMISSION SUCCESS VIEW */}
@@ -718,11 +893,29 @@ export default function App() {
               </div>
             </div>
 
+            {/* Official WhatsApp Group Join - Clean & Minimal */}
+            <div className="my-5 p-4 rounded-2xl bg-[#25D366]/5 border border-[#25D366]/20 text-center">
+              <p className="text-xs text-slate-300 font-medium mb-3 leading-relaxed">
+                ক্লাবের অফিসিয়াল নোটিশ, ইভেন্ট আপডেট ও ক্লাবের কার্যক্রমের সাথে যুক্ত থাকতে আমাদের অফিসিয়াল হোয়াটসঅ্যাপ গ্রুপে যুক্ত হোন।
+              </p>
+              <a
+                href="https://chat.whatsapp.com/EKt85N1Te5CLY3Rby76Z0A"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2.5 px-5 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#20ba5a] text-slate-950 text-xs font-bold transition-all shadow-md hover:shadow-[0_0_20px_rgba(37,211,102,0.35)] cursor-pointer"
+              >
+                <svg className="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
+                  <path d="M12.031 0C5.394 0 0 5.394 0 12.031c0 2.119.553 4.185 1.603 6.007L.062 24l6.148-1.613c1.764.962 3.766 1.47 5.821 1.47 6.637 0 12.031-5.394 12.031-12.031C24.062 5.394 18.668 0 12.031 0zm0 21.848c-1.802 0-3.567-.484-5.105-1.398l-.366-.217-3.792.995 1.012-3.696-.239-.379c-1.006-1.601-1.537-3.468-1.537-5.385 0-5.515 4.485-10 10-10 5.515 0 10 4.485 10 10 0 5.515-4.485 10-10 10zm5.474-7.481c-.3-.15-1.776-.876-2.051-.976-.275-.1-.475-.15-.675.15-.2.3-.776.976-.951 1.176-.175.2-.35.225-.65.075-.3-.15-1.267-.467-2.414-1.489-.892-.796-1.495-1.779-1.67-2.079-.175-.3-.019-.462.131-.611.136-.134.3-.35.45-.525.15-.175.2-.3.3-.5.1-.2.05-.375-.025-.525-.075-.15-.675-1.626-.925-2.226-.244-.585-.492-.505-.675-.515-.175-.009-.375-.009-.575-.009s-.525.075-.8.375c-.275.3-1.05 1.026-1.05 2.501s1.075 2.899 1.225 3.099c.15.2 2.115 3.23 5.124 4.53.716.31 1.275.495 1.71.633.719.229 1.373.197 1.89.12.577-.086 1.776-.726 2.026-1.426.25-.7.25-1.301.175-1.426-.075-.125-.275-.2-.575-.35z"/>
+                </svg>
+                <span>Join Official WhatsApp Group</span>
+              </a>
+            </div>
+
             <div className="pt-2">
               <button
                 type="button"
                 onClick={handleReset}
-                className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black shadow-md transition-all cursor-pointer"
+                className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Submit Another Response</span>
@@ -788,7 +981,7 @@ export default function App() {
                     <div className="p-2 flex flex-col items-center">
                       <Camera className="w-6 h-6 text-emerald-400 mb-1" />
                       <span className="text-[11px] font-bold text-slate-200">Upload</span>
-                      <span className="text-[9px] text-slate-400 font-medium">JPG, PNG</span>
+                      <span className="text-[9px] text-slate-400 font-medium">JPG, PNG (Max 6MB)</span>
                     </div>
                   )}
                   <input 
@@ -803,7 +996,7 @@ export default function App() {
 
                 <div className="text-center sm:text-left text-xs text-slate-300 space-y-1">
                   <p className="font-bold text-white">Student Formal / Passport Photo</p>
-                  <p className="text-[11px] text-slate-400">Click the box or drag and drop an image file.</p>
+                  <p className="text-[11px] text-slate-400">Click the box or drag and drop an image file (Max 6MB).</p>
                 </div>
               </div>
             </div>
@@ -1137,64 +1330,12 @@ export default function App() {
             </div>
           </form>
         )}
-
-        {/* Clean, well-structured footer */}
-        <footer className="mt-8 pt-6 border-t border-white/10 text-center space-y-3">
-          <p className="text-xs font-bold text-slate-400 tracking-wide uppercase">
-            NGDC SCIENCE CLUB &bull; OFFICIAL CONNECT
-          </p>
-
-          <div className="flex flex-wrap items-center justify-center gap-2.5">
-            {/* WhatsApp Community with official logo & label NGDC SC */}
-            <a 
-              href="https://chat.whatsapp.com/J0ooCmabbIT2dfJdXTLhni" 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-900/60 backdrop-blur-xs border border-[#25D366]/40 text-slate-200 hover:text-white hover:bg-slate-800 text-xs font-bold shadow-2xs hover:shadow-[0_0_12px_rgba(37,211,102,0.25)] transition-all cursor-pointer"
-              title="Official WhatsApp Community"
-            >
-              <svg className="w-3.5 h-3.5 fill-[#25D366] shrink-0" viewBox="0 0 24 24">
-                <path d="M12.031 0C5.394 0 0 5.394 0 12.031c0 2.119.553 4.185 1.603 6.007L.062 24l6.148-1.613c1.764.962 3.766 1.47 5.821 1.47 6.637 0 12.031-5.394 12.031-12.031C24.062 5.394 18.668 0 12.031 0zm0 21.848c-1.802 0-3.567-.484-5.105-1.398l-.366-.217-3.792.995 1.012-3.696-.239-.379c-1.006-1.601-1.537-3.468-1.537-5.385 0-5.515 4.485-10 10-10 5.515 0 10 4.485 10 10 0 5.515-4.485 10-10 10zm5.474-7.481c-.3-.15-1.776-.876-2.051-.976-.275-.1-.475-.15-.675.15-.2.3-.776.976-.951 1.176-.175.2-.35.225-.65.075-.3-.15-1.267-.467-2.414-1.489-.892-.796-1.495-1.779-1.67-2.079-.175-.3-.019-.462.131-.611.136-.134.3-.35.45-.525.15-.175.2-.3.3-.5.1-.2.05-.375-.025-.525-.075-.15-.675-1.626-.925-2.226-.244-.585-.492-.505-.675-.515-.175-.009-.375-.009-.575-.009s-.525.075-.8.375c-.275.3-1.05 1.026-1.05 2.501s1.075 2.899 1.225 3.099c.15.2 2.115 3.23 5.124 4.53.716.31 1.275.495 1.71.633.719.229 1.373.197 1.89.12.577-.086 1.776-.726 2.026-1.426.25-.7.25-1.301.175-1.426-.075-.125-.275-.2-.575-.35z"/>
-              </svg>
-              <span>NGDC SC</span>
-            </a>
-
-            <a 
-              href="https://facebook.com/ngdcsc" 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900/60 backdrop-blur-xs border border-blue-500/30 text-slate-300 hover:text-blue-400 hover:border-blue-400 text-xs font-semibold shadow-2xs hover:shadow-[0_0_12px_rgba(37,99,235,0.2)] transition-all"
-            >
-              <Facebook className="w-3.5 h-3.5 text-blue-400" />
-              <span>facebook.com/ngdcsc</span>
-            </a>
-
-            <a 
-              href="https://instagram.com/ngdcsc_" 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900/60 backdrop-blur-xs border border-pink-500/30 text-slate-300 hover:text-pink-400 hover:border-pink-400 text-xs font-semibold shadow-2xs hover:shadow-[0_0_12px_rgba(236,72,153,0.2)] transition-all"
-            >
-              <Instagram className="w-3.5 h-3.5 text-pink-400" />
-              <span>instagram.com/ngdcsc_</span>
-            </a>
-
-            <a 
-              href="mailto:ngdcsc.org@gmail.com" 
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900/60 backdrop-blur-xs border border-emerald-500/30 text-slate-300 hover:text-emerald-300 hover:border-emerald-400 text-xs font-semibold shadow-2xs hover:shadow-[0_0_12px_rgba(0,229,153,0.2)] transition-all"
-            >
-              <Mail className="w-3.5 h-3.5 text-emerald-400" />
-              <span>ngdcsc.org@gmail.com</span>
-            </a>
-          </div>
-
-          <div className="pt-2 flex items-center justify-center text-[11px] text-slate-500">
-            <span>&copy; {new Date().getFullYear()} NGDC Science Club. All rights reserved.</span>
-          </div>
-        </footer>
-
       </div>
       )}
+      </main>
+
+      {/* Global Club Footer on EVERY single page */}
+      <ClubFooter />
     </div>
   );
 }

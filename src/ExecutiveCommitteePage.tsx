@@ -117,17 +117,17 @@ export default function ExecutiveCommitteePage({ onBackToRegistration }: Executi
   }, []);
 
   return (
-    <div className="w-full max-w-6xl relative z-10 px-4 sm:px-6 pt-6 pb-20 formal-page-enter">
+    <div className="w-full max-w-6xl relative z-10 px-4 sm:px-6 pt-3 pb-8 formal-page-enter">
 
       {/* Top Bar with Clean Back Button */}
-      <div className="flex items-center justify-between gap-4 mb-8">
+      <div className="flex items-center justify-between gap-4 mb-6">
         <button
           type="button"
           onClick={onBackToRegistration}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900/70 hover:bg-slate-800/90 border border-white/10 text-white text-xs sm:text-sm font-bold shadow-2xs hover:shadow-xs transition-all cursor-pointer group backdrop-blur-md"
+          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-900/70 hover:bg-slate-800/90 border border-white/10 text-white text-xs font-bold shadow-2xs hover:shadow-xs transition-all cursor-pointer group backdrop-blur-md"
         >
           <ArrowLeft className="w-4 h-4 text-emerald-400 group-hover:-translate-x-1 transition-transform" />
-          <span>Back to Registration</span>
+          <span>Back to Home</span>
         </button>
 
         <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 rounded-full shadow-xs">
