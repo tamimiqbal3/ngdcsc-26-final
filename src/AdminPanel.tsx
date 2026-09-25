@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   ShieldCheck, 
   Users, 
+  User as UserIcon,
   Award, 
   Bell, 
   LogOut, 
@@ -29,7 +30,8 @@ import {
   XCircle,
   TrendingUp,
   Layers,
-  ChevronRight
+  ChevronRight,
+  Image as ImageIcon
 } from 'lucide-react';
 import { 
   SubmissionRecord, 
@@ -43,6 +45,7 @@ import AdminDashboardView from './AdminDashboardView';
 import { 
   auth, 
   googleProvider,
+  SUPER_ADMIN_EMAILS,
   fetchMembersFromFirebase, 
   saveMemberToFirebase,
   updateMemberInFirebase, 
@@ -53,7 +56,9 @@ import {
   seedDefaultCommittee,
   fetchNoticesFromFirebase,
   saveNoticeToFirebase,
-  deleteNoticeFromFirebase
+  deleteNoticeFromFirebase,
+  syncAllMembersToStatusDocs,
+  getNextMembershipId
 } from './services/firebase';
 import { 
   signInWithPopup, 
@@ -106,6 +111,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   const [selectedMember, setSelectedMember] = useState<SubmissionRecord | null>(null);
   const [editingMember, setEditingMember] = useState<SubmissionRecord | null>(null);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [rejectingMember, setRejectingMember] = useState<SubmissionRecord | null>(null);
 
   // Committee Modals
   const [editingExecutive, setEditingExecutive] = useState<ExecutiveMember | null>(null);
@@ -194,16 +200,17 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     reader.readAsDataURL(file);
   };
 
-  // Check auth state - strictly enforce ngdcsc.org@gmail.com
+  // Check auth state
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
         const userEmail = (user.email || '').toLowerCase().trim();
         setCurrentUser(user);
-        if (userEmail === 'ngdcsc.org@gmail.com') {
+        const authorized = SUPER_ADMIN_EMAILS.some(e => e.toLowerCase().trim() === userEmail);
+        if (authorized) {
           setLoginError(null);
         } else {
-          setLoginError(`Access Denied (${user.email}): Only the official club administration address (ngdcsc.org@gmail.com) is authorized.`);
+          setLoginError(`Access Denied: Your account (${user.email}) is not authorized to access this administration panel.`);
         }
       } else {
         setCurrentUser(null);
@@ -213,7 +220,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     return () => unsub();
   }, []);
 
-  const isAuthorized = !!currentUser && (currentUser.email || '').toLowerCase().trim() === 'ngdcsc.org@gmail.com';
+  const isAuthorized = !!currentUser && SUPER_ADMIN_EMAILS.some(e => e.toLowerCase().trim() === (currentUser.email || '').toLowerCase().trim());
   const isAuthenticated = isAuthorized;
 
   // Load all data when authenticated
@@ -234,6 +241,8 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       setMembers(membersData);
       setCommittee(committeeData);
       setNotices(noticesData);
+      // Sync member status docs in background for public phone search
+      syncAllMembersToStatusDocs(membersData).catch(() => {});
     } catch (err) {
       console.error('Error loading admin data:', err);
     } finally {
@@ -248,8 +257,9 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     try {
       const res = await signInWithPopup(auth, googleProvider);
       const userEmail = (res.user?.email || '').toLowerCase().trim();
-      if (userEmail !== 'ngdcsc.org@gmail.com') {
-        setLoginError(`Access Denied (${res.user?.email}): Only authorized club administration (ngdcsc.org@gmail.com) can access this panel.`);
+      const authorized = SUPER_ADMIN_EMAILS.some(e => e.toLowerCase().trim() === userEmail);
+      if (!authorized) {
+        setLoginError(`Access Denied: Your account (${res.user?.email}) is not authorized to access this administration panel.`);
       }
     } catch (err: any) {
       console.error('Google sign in error:', err);
@@ -275,11 +285,29 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
   // Member Actions
   const handleStatusChange = async (memberId: string, newStatus: MemberStatus) => {
-    await updateMemberInFirebase(memberId, { status: newStatus });
-    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, status: newStatus } : m));
-    if (selectedMember && selectedMember.id === memberId) {
-      setSelectedMember(prev => prev ? { ...prev, status: newStatus } : null);
+    if (newStatus === 'rejected') {
+      const target = members.find(m => m.id === memberId);
+      if (target) {
+        setRejectingMember(target);
+        return;
+      }
     }
+    await updateMemberInFirebase(memberId, { status: newStatus, rejectionReason: undefined });
+    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, status: newStatus, rejectionReason: undefined } : m));
+    if (selectedMember && selectedMember.id === memberId) {
+      setSelectedMember(prev => prev ? { ...prev, status: newStatus, rejectionReason: undefined } : null);
+    }
+  };
+
+  const handleConfirmRejection = async (reason: string) => {
+    if (!rejectingMember || !rejectingMember.id) return;
+    const memberId = rejectingMember.id;
+    await updateMemberInFirebase(memberId, { status: 'rejected', rejectionReason: reason });
+    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, status: 'rejected', rejectionReason: reason } : m));
+    if (selectedMember && selectedMember.id === memberId) {
+      setSelectedMember(prev => prev ? { ...prev, status: 'rejected', rejectionReason: reason } : null);
+    }
+    setRejectingMember(null);
   };
 
   const handleDeleteMember = async (memberId: string) => {
@@ -300,7 +328,9 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   const handleAddMemberSubmit = async (e: React.FormEvent, newRecord: SubmissionRecord) => {
     e.preventDefault();
     const id = await saveMemberToFirebase(newRecord);
-    setMembers(prev => [{ ...newRecord, id }, ...prev]);
+    const cached = JSON.parse(localStorage.getItem('ngdc_sc_firebase_members_v1') || '[]');
+    const saved = cached.find((m: SubmissionRecord) => m.id === id) || { ...newRecord, id };
+    setMembers(prev => [saved, ...prev.filter(m => m.id !== id)]);
     setShowAddMemberModal(false);
   };
 
@@ -310,6 +340,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       return;
     }
     const headers = [
+      'Membership ID',
       'Submission Date',
       'Name',
       'Student ID / Roll',
@@ -320,10 +351,12 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       'Section',
       'Date of Birth',
       'Interested Segments',
-      'Status'
+      'Status',
+      'Rejection Reason'
     ];
 
     const rows = members.map(m => [
+      `"${m.membershipId || ''}"`,
       `"${m.submittedAt || ''}"`,
       `"${m.name || ''}"`,
       `"${m.studentId || ''}"`,
@@ -334,7 +367,8 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       `"${m.section || ''}"`,
       `"${m.dob || ''}"`,
       `"${(m.interestedSegments || []).join('; ')}"`,
-      `"${m.status || 'pending'}"`
+      `"${m.status || 'pending'}"`,
+      `"${m.rejectionReason || ''}"`
     ]);
 
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
@@ -373,13 +407,18 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
   // Notice Actions
   const handleSaveNotice = async (notice: ClubNotice) => {
-    await saveNoticeToFirebase(notice);
-    setNotices(prev => {
-      const exists = prev.some(n => n.id === notice.id);
-      return exists ? prev.map(n => n.id === notice.id ? notice : n) : [notice, ...prev];
-    });
-    setEditingNotice(null);
-    setShowAddNoticeModal(false);
+    try {
+      await saveNoticeToFirebase(notice);
+      setNotices(prev => {
+        const exists = prev.some(n => n.id === notice.id);
+        return exists ? prev.map(n => n.id === notice.id ? notice : n) : [notice, ...prev];
+      });
+      setEditingNotice(null);
+      setShowAddNoticeModal(false);
+    } catch (err: any) {
+      console.error('Error saving notice:', err);
+      alert('Failed to save notice: ' + (err?.message || 'Check attachment size and try again.'));
+    }
   };
 
   const handleDeleteNotice = async (noticeId: string | undefined) => {
@@ -510,7 +549,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
             </div>
             <p className="text-[10px] text-slate-500 flex items-center gap-1 truncate font-medium">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-              <span className="truncate">ngdcsc.org@gmail.com</span>
+              <span className="truncate">{currentUser?.email || 'Authorized Administrator'}</span>
             </p>
           </div>
         </div>
@@ -794,9 +833,14 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                           >
                             {member.name}
                           </p>
-                          <p className="text-xs text-slate-500 font-mono">
-                            ID: {member.studentId || 'N/A'} • {member.batch} (Sec {member.section})
-                          </p>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-xs text-slate-500 font-mono">
+                            {member.membershipId && (
+                              <span className="font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-300 text-[10px] tracking-wide">
+                                {member.membershipId}
+                              </span>
+                            )}
+                            <span>Roll: {member.studentId || 'N/A'} • {member.batch} (Sec {member.section})</span>
+                          </div>
                         </div>
                       </div>
 
@@ -844,7 +888,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                       <select
                         value={member.status || 'pending'}
                         onChange={(e) => handleStatusChange(member.id!, e.target.value as MemberStatus)}
-                        className="text-xs font-bold py-1 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700"
+                        className="text-xs font-bold py-1 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 cursor-pointer"
                       >
                         <option value="pending">Pending</option>
                         <option value="approved">Approve</option>
@@ -855,7 +899,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                         <button
                           type="button"
                           onClick={() => setSelectedMember(member)}
-                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700"
+                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
                           title="View"
                         >
                           <Eye className="w-4 h-4" />
@@ -863,7 +907,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                         <button
                           type="button"
                           onClick={() => setEditingMember(member)}
-                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700"
+                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
                           title="Edit"
                         >
                           <Edit3 className="w-4 h-4" />
@@ -871,13 +915,33 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                         <button
                           type="button"
                           onClick={() => handleDeleteMember(member.id!)}
-                          className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600"
+                          className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 cursor-pointer"
                           title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
+
+                    {member.status === 'rejected' && (
+                      <div className="mt-2.5 p-2 rounded-xl bg-rose-50 border border-rose-200 text-xs">
+                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                          <span className="text-[10px] font-bold text-rose-800 uppercase tracking-wider">
+                            Rejection Reason:
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setRejectingMember(member)}
+                            className="text-[10px] font-bold text-rose-700 hover:text-rose-900 underline cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-rose-950 font-medium line-clamp-2">
+                          {member.rejectionReason || 'No reason provided'}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
@@ -932,6 +996,11 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                                 >
                                   {member.name}
                                 </p>
+                                {member.membershipId && (
+                                  <span className="inline-block px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-800 border border-emerald-300 font-mono font-bold text-[10px] tracking-wide my-0.5">
+                                    {member.membershipId}
+                                  </span>
+                                )}
                                 {member.email ? (
                                   <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                                     <span className="truncate max-w-[150px]">{member.email}</span>
@@ -1005,6 +1074,21 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                             }`}>
                               {member.status || 'pending'}
                             </span>
+                            {member.status === 'rejected' && (
+                              <div className="mt-1 flex items-center gap-1 text-[10px] text-rose-700">
+                                <span className="truncate max-w-[120px]" title={member.rejectionReason || 'No reason provided'}>
+                                  {member.rejectionReason || 'No reason'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setRejectingMember(member)}
+                                  className="underline font-bold text-rose-800 hover:text-rose-950 cursor-pointer"
+                                  title="Edit rejection reason"
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                            )}
                           </td>
 
                           <td className="py-3 px-4 text-right">
@@ -1271,7 +1355,12 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                   <h4 className="text-lg font-black text-slate-900">{selectedMember.name}</h4>
                   <p className="text-xs font-mono font-bold text-emerald-700 mt-0.5">Roll: {selectedMember.studentId || 'N/A'}</p>
                   <p className="text-xs text-slate-500">{selectedMember.batch} • Section {selectedMember.section}</p>
-                  <div className="mt-1.5">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    {selectedMember.membershipId && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black uppercase bg-emerald-50 text-emerald-800 border border-emerald-300">
+                        ID: {selectedMember.membershipId}
+                      </span>
+                    )}
                     <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
                       selectedMember.status === 'approved' 
                         ? 'bg-emerald-100 text-emerald-800' 
@@ -1358,6 +1447,29 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                   ))}
                 </div>
               </div>
+
+              {/* Rejection Reason if Rejected */}
+              {selectedMember.status === 'rejected' && (
+                <div className="pt-2 border-t border-slate-100">
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold text-rose-800 uppercase tracking-wider">
+                        Rejection Reason:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setRejectingMember(selectedMember)}
+                        className="text-[11px] font-bold text-rose-700 hover:text-rose-900 underline cursor-pointer"
+                      >
+                        Edit Reason
+                      </button>
+                    </div>
+                    <p className="text-xs text-rose-950 font-medium whitespace-pre-wrap leading-relaxed">
+                      {selectedMember.rejectionReason || 'No reason provided'}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Modal Bottom Actions */}
@@ -1455,6 +1567,23 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                     )}
                   </div>
                 </div>
+              </div>
+
+              {/* Membership ID (Editable by Admin) */}
+              <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200">
+                <label className="font-bold text-emerald-950 block mb-1 text-xs uppercase tracking-wider">
+                  Membership ID (e.g. NGDCSC-001)
+                </label>
+                <input
+                  type="text"
+                  value={editingMember.membershipId || ''}
+                  onChange={(e) => setEditingMember({ ...editingMember, membershipId: e.target.value.toUpperCase() })}
+                  placeholder="NGDCSC-001"
+                  className="w-full px-3 py-1.5 rounded-xl bg-white border border-emerald-300 text-slate-900 focus:outline-none focus:border-emerald-600 font-mono font-black text-sm tracking-wider uppercase"
+                />
+                <span className="text-[10px] text-emerald-700 mt-1 block">
+                  Students can search and check their application status using this Membership ID.
+                </span>
               </div>
 
               {/* Basic Fields */}
@@ -1575,6 +1704,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       {/* ===================== MODAL: FAST MANUAL ADD MEMBER (FLEXIBLE & ALL FIELDS OPTIONAL) ===================== */}
       {showAddMemberModal && (
         <AddMemberManualModal
+          suggestedId={getNextMembershipId(members)}
           onClose={() => setShowAddMemberModal(false)}
           onAdd={handleAddMemberSubmit}
         />
@@ -1597,6 +1727,15 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
           onSave={handleSaveNotice}
         />
       )}
+
+      {/* ===================== MODAL: REJECT MEMBER REASON ===================== */}
+      {rejectingMember && (
+        <RejectModal
+          member={rejectingMember}
+          onClose={() => setRejectingMember(null)}
+          onConfirm={handleConfirmRejection}
+        />
+      )}
     </div>
   );
 }
@@ -1605,12 +1744,15 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 // FLEXIBLE MANUAL ADD MODAL (All fields are optional for Admin)
 // -------------------------------------------------------------
 function AddMemberManualModal({ 
+  suggestedId,
   onClose, 
   onAdd 
 }: { 
+  suggestedId?: string;
   onClose: () => void; 
   onAdd: (e: React.FormEvent, record: SubmissionRecord) => void 
 }) {
+  const [membershipId, setMembershipId] = useState(suggestedId || '');
   const [name, setName] = useState('');
   const [studentId, setStudentId] = useState('');
   const [phone, setPhone] = useState('');
@@ -1663,6 +1805,7 @@ function AddMemberManualModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onAdd(e, {
+      membershipId: (membershipId.trim() || suggestedId || '').toUpperCase(),
       name: name.trim() || 'Club Member',
       studentId: studentId.trim() || 'N/A',
       phone: phone.trim() || 'N/A',
@@ -1694,8 +1837,25 @@ function AddMemberManualModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4 text-xs">
+          {/* Membership ID */}
+          <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200">
+            <label className="font-bold text-emerald-950 block mb-1 text-xs uppercase tracking-wider">
+              Membership ID (Auto-serial)
+            </label>
+            <input
+              type="text"
+              value={membershipId}
+              onChange={(e) => setMembershipId(e.target.value.toUpperCase())}
+              placeholder="e.g. NGDCSC-001"
+              className="w-full px-3.5 py-2 rounded-xl bg-white border border-emerald-300 text-slate-900 focus:outline-none focus:border-emerald-600 font-mono font-black text-sm tracking-wider uppercase"
+            />
+            <span className="text-[10px] text-emerald-700 mt-1 block">
+              Serially assigned. You can customize or edit this ID if needed.
+            </span>
+          </div>
+
           {/* Quick Notice for Admin */}
-          <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] leading-relaxed">
+          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-[11px] leading-relaxed">
             💡 <strong>Fast Admin Entry:</strong> আপনি চাইলে যে কোনো ফিল্ড ফাঁকা রাখতে পারেন (Name, Phone বা Roll যেটুকু তথ্য আছে সেটুকুই দিতে পারবেন)।
           </div>
 
@@ -2029,7 +2189,125 @@ function ExecutiveModal({
 }
 
 // -------------------------------------------------------------
-// NOTICE MODAL (Light Theme)
+// REJECT REASON MODAL (Allows manual custom reason input)
+// -------------------------------------------------------------
+function RejectModal({
+  member,
+  onClose,
+  onConfirm
+}: {
+  member: SubmissionRecord;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState(member.rejectionReason || '');
+  const [submitting, setSubmitting] = useState(false);
+
+  const quickReasons = [
+    'Invalid or unclear photo',
+    'Student ID does not match official college records',
+    'Incorrect HSC Batch or Section',
+    'Duplicate registration submission',
+    'Contact information unreachable'
+  ];
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reason.trim()) {
+      alert('Please enter a rejection reason.');
+      return;
+    }
+    setSubmitting(true);
+    onConfirm(reason.trim());
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="relative max-w-md w-full bg-white rounded-3xl shadow-2xl border border-rose-200 overflow-hidden text-slate-900 font-sans">
+        <div className="p-4 sm:p-5 border-b border-rose-100 flex items-center justify-between bg-rose-50/70">
+          <div className="flex items-center gap-2 text-rose-800">
+            <XCircle className="w-5 h-5 text-rose-600" />
+            <h3 className="text-base font-black">Reject Member Application</h3>
+          </div>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
+            <div className="w-10 h-12 rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+              {member.photo ? (
+                <img src={member.photo} alt={member.name} className="w-full h-full object-cover" />
+              ) : (
+                <UserIcon className="w-5 h-5 text-slate-500" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <h4 className="font-black text-slate-900 text-sm truncate">{member.name}</h4>
+              <p className="text-[11px] text-slate-500 font-mono">
+                {member.batch} • Section {member.section} • ID: {member.studentId || 'N/A'}
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <label className="font-bold text-slate-700 block mb-1">
+              Reason for Rejection (Visible to Member during status check):
+            </label>
+            <textarea
+              rows={3}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g., Student ID does not match official college records. Please submit with your correct 10-digit ID."
+              required
+              className="w-full p-3 rounded-xl bg-slate-50 border border-rose-300 focus:border-rose-500 focus:bg-white text-xs leading-relaxed font-sans"
+            />
+          </div>
+
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+              Quick Suggestions (Click to add):
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {quickReasons.map((qr) => (
+                <button
+                  key={qr}
+                  type="button"
+                  onClick={() => setReason(prev => prev ? `${prev}. ${qr}` : qr)}
+                  className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 text-slate-600 border border-slate-200 text-[10px] font-semibold transition-all cursor-pointer text-left"
+                >
+                  + {qr}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              <span>{submitting ? 'Rejecting...' : 'Confirm Rejection'}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------
+// NOTICE MODAL (Light Theme with Robust File Upload & Compression)
 // -------------------------------------------------------------
 function NoticeModal({
   initialNotice,
@@ -2038,37 +2316,108 @@ function NoticeModal({
 }: {
   initialNotice: ClubNotice | null;
   onClose: () => void;
-  onSave: (notice: ClubNotice) => void;
+  onSave: (notice: ClubNotice) => Promise<void> | void;
 }) {
   const [title, setTitle] = useState(initialNotice?.title || '');
+  const [category, setCategory] = useState<'General' | 'Olympiad' | 'Workshop' | 'Notice' | 'Urgent' | 'Event'>(
+    (initialNotice?.category as any) || 'Notice'
+  );
   const [content, setContent] = useState(initialNotice?.content || '');
   const [date, setDate] = useState(initialNotice?.date || new Date().toISOString().split('T')[0]);
   const [fileUrl, setFileUrl] = useState<string | null>(initialNotice?.fileUrl || null);
   const [fileName, setFileName] = useState<string | null>(initialNotice?.fileName || null);
+  const [fileType, setFileType] = useState<'image' | 'pdf' | 'doc' | null>(initialNotice?.fileType || null);
   const [isPinned, setIsPinned] = useState(initialNotice?.isPinned || false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = (file: File) => {
-    setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setFileUrl(e.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+    setFileError(null);
+    const isImage = file.type.startsWith('image/');
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+    if (isImage) {
+      setUploadingFile(true);
+      setFileName(file.name);
+      setFileType('image');
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const rawData = e.target?.result as string;
+        const img = new Image();
+        img.onload = () => {
+          let w = img.width;
+          let h = img.height;
+          const MAX_DIM = 1200;
+          if (w > MAX_DIM || h > MAX_DIM) {
+            if (w > h) { h = Math.round((h * MAX_DIM) / w); w = MAX_DIM; }
+            else { w = Math.round((w * MAX_DIM) / h); h = MAX_DIM; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, w, h);
+            const compressed = canvas.toDataURL('image/jpeg', 0.82);
+            setFileUrl(compressed);
+          } else {
+            setFileUrl(rawData);
+          }
+          setUploadingFile(false);
+        };
+        img.onerror = () => {
+          setFileUrl(rawData);
+          setUploadingFile(false);
+        };
+        img.src = rawData;
+      };
+      reader.readAsDataURL(file);
+    } else {
+      // PDF or other document
+      if (file.size > 800 * 1024) {
+        setFileError('File size exceeds 800KB. For reliable storage in Firestore, please upload a document under 800KB.');
+        return;
+      }
+      setUploadingFile(true);
+      setFileName(file.name);
+      setFileType(isPdf ? 'pdf' : 'doc');
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setFileUrl(e.target?.result as string);
+        setUploadingFile(false);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleRemoveFile = () => {
+    setFileUrl(null);
+    setFileName(null);
+    setFileType(null);
+    setFileError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({
-      id: initialNotice?.id || `notice_${Date.now()}`,
-      title,
-      category: initialNotice?.category || 'Notice',
-      content,
-      date,
-      fileUrl: fileUrl || undefined,
-      fileName: fileName || undefined,
-      isPinned
-    });
+    if (!title.trim()) return;
+    setSubmitting(true);
+    try {
+      await onSave({
+        id: initialNotice?.id || `notice_${Date.now()}`,
+        title: title.trim(),
+        category,
+        content: content.trim(),
+        date,
+        fileUrl: fileUrl || undefined,
+        fileName: fileName || undefined,
+        fileType: fileType || undefined,
+        isPinned
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -2085,13 +2434,44 @@ function NoticeModal({
 
         <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4 text-xs">
           <div>
-            <label className="font-bold text-slate-700 block mb-1">Notice Title</label>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} required className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white font-bold" />
+            <label className="font-bold text-slate-700 block mb-1">Notice Title *</label>
+            <input 
+              type="text" 
+              value={title} 
+              onChange={(e) => setTitle(e.target.value)} 
+              required 
+              placeholder="e.g. Science Fair Registration Open"
+              className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white font-bold" 
+            />
           </div>
 
-          <div>
-            <label className="font-bold text-slate-700 block mb-1">Date</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white font-mono" />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="font-bold text-slate-700 block mb-1">Category</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value as any)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white font-bold cursor-pointer"
+              >
+                <option value="Notice">Notice</option>
+                <option value="General">General</option>
+                <option value="Urgent">Urgent</option>
+                <option value="Olympiad">Olympiad</option>
+                <option value="Workshop">Workshop</option>
+                <option value="Event">Event</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="font-bold text-slate-700 block mb-1">Date *</label>
+              <input 
+                type="date" 
+                value={date} 
+                onChange={(e) => setDate(e.target.value)} 
+                required 
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white font-mono" 
+              />
+            </div>
           </div>
 
           <div>
@@ -2100,24 +2480,90 @@ function NoticeModal({
               rows={4}
               value={content}
               onChange={(e) => setContent(e.target.value)}
+              placeholder="Detailed description of the announcement..."
               className="w-full p-3 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white text-xs leading-relaxed"
             />
           </div>
 
-          {/* Attachment */}
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-            <input type="file" ref={fileInputRef} accept="image/*,application/pdf" onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])} className="hidden" />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>{fileName ? 'Change File' : 'Upload File (PDF / Image)'}</span>
-            </button>
-            {fileName && (
-              <p className="text-[11px] text-emerald-700 font-semibold mt-1 truncate">
-                Selected: {fileName}
+          {/* Attachment Box with Preview & Validation */}
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-slate-700 flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Notice Attachment (Image or PDF)</span>
+              </label>
+              {fileUrl && (
+                <button
+                  type="button"
+                  onClick={handleRemoveFile}
+                  className="text-rose-600 hover:text-rose-800 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Remove</span>
+                </button>
+              )}
+            </div>
+
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              accept="image/*,application/pdf" 
+              onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])} 
+              className="hidden" 
+            />
+
+            {uploadingFile ? (
+              <div className="p-4 rounded-xl bg-slate-100 flex items-center justify-center gap-2 text-slate-600 font-semibold">
+                <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                <span>Processing &amp; optimizing file...</span>
+              </div>
+            ) : fileUrl ? (
+              <div className="p-2.5 rounded-xl bg-white border border-slate-200 flex items-center gap-3">
+                {fileType === 'image' ? (
+                  <div className="w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                    <img src={fileUrl} alt="Preview" className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 flex items-center justify-center shrink-0">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-slate-900 text-xs truncate">
+                    {fileName || (fileType === 'image' ? 'Attached Image' : 'Attached Document')}
+                  </p>
+                  <span className="inline-block mt-0.5 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase border border-emerald-200">
+                    {fileType === 'image' ? 'Image Attached' : 'PDF Document Attached'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors cursor-pointer"
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-2.5 px-3 rounded-xl border border-dashed border-slate-300 hover:border-emerald-500 bg-white hover:bg-emerald-50/40 text-slate-600 hover:text-emerald-700 font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Upload className="w-4 h-4 text-emerald-600" />
+                  <span>Choose Image or PDF Document</span>
+                </button>
+                <p className="text-[10px] text-slate-400 text-center mt-1">
+                  Supported: JPG, PNG, WebP (auto-compressed) &amp; PDF (up to 800KB)
+                </p>
+              </div>
+            )}
+
+            {fileError && (
+              <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1 mt-1">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{fileError}</span>
               </p>
             )}
           </div>
@@ -2136,11 +2582,26 @@ function NoticeModal({
           </div>
 
           <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors cursor-pointer">
+            <button 
+              type="button" 
+              onClick={onClose} 
+              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors cursor-pointer"
+            >
               Cancel
             </button>
-            <button type="submit" className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs transition-colors cursor-pointer">
-              {initialNotice ? 'Update Notice' : 'Publish Notice'}
+            <button 
+              type="submit" 
+              disabled={submitting || uploadingFile}
+              className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-2"
+            >
+              {submitting ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <span>{initialNotice ? 'Update Notice' : 'Publish Notice'}</span>
+              )}
             </button>
           </div>
         </form>

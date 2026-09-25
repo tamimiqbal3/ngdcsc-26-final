@@ -31,15 +31,19 @@ import {
   Atom,
   Rocket,
   Cpu,
-  Award
+  Award,
+  Search,
+  Copy,
+  CreditCard
 } from 'lucide-react';
 import { MembershipFormData, SubmissionRecord, SectionType, BatchType, ClubNotice } from './types';
 import ScienceBackground from './ScienceBackground';
 import ExecutiveCommitteePage from './ExecutiveCommitteePage';
 import NoticesPage from './NoticesPage';
+import MemberStatusSearch from './MemberStatusSearch';
 import AdminPanel from './AdminPanel';
 import NotFoundPage from './NotFoundPage';
-import { saveMemberToFirebase, fetchNoticesFromFirebase } from './services/firebase';
+import { saveMemberToFirebase, fetchNoticesFromFirebase, getNextMembershipId } from './services/firebase';
 
 const CLUB_SEGMENTS = [
   'Science Olympiad (Math, Physics, Bio, Chem)',
@@ -65,7 +69,7 @@ const INITIAL_FORM: MembershipFormData = {
   agreedToRules: false
 };
 
-type ViewType = 'home' | 'form' | 'committee' | 'notices' | 'admin' | '404';
+type ViewType = 'home' | 'form' | 'committee' | 'notices' | 'status' | 'admin' | '404';
 
 // Helper to determine view from current URL path & hash
 const resolveCurrentView = (): ViewType => {
@@ -76,6 +80,7 @@ const resolveCurrentView = (): ViewType => {
   if (hash === 'admin' || rawPath === '/admin' || rawPath.endsWith('/admin')) return 'admin';
   if (hash === 'notices' || rawPath === '/notices' || rawPath.endsWith('/notices')) return 'notices';
   if (hash === 'committee' || rawPath === '/committee' || rawPath.endsWith('/committee')) return 'committee';
+  if (hash === 'status' || hash === 'check-status' || rawPath === '/status' || rawPath.endsWith('/status')) return 'status';
   if (hash === 'form' || hash === 'register' || rawPath === '/form' || rawPath === '/register' || rawPath.endsWith('/form') || rawPath.endsWith('/register')) return 'form';
   if (rawPath === '' || rawPath === '/' || rawPath === '/index.html' || hash === '' || hash === 'home') return 'home';
 
@@ -157,11 +162,13 @@ function ClubFooter() {
 function HomePage({ 
   onGoToForm,
   onGoToNotices,
-  onGoToCommittee
+  onGoToCommittee,
+  onGoToStatus
 }: { 
   onGoToForm: () => void;
   onGoToNotices: () => void;
   onGoToCommittee: () => void;
+  onGoToStatus: () => void;
 }) {
   return (
     <div className="w-full max-w-2xl relative z-10 px-4 sm:px-6 pt-4 pb-2 formal-page-enter flex-1 flex flex-col items-center justify-between">
@@ -242,6 +249,32 @@ function HomePage({
           >
             <span>Registration Form</span>
             <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Dedicated Member Application Status Search Card */}
+        <div className="w-full p-4 sm:p-4.5 rounded-3xl bg-slate-950/70 border border-emerald-500/30 backdrop-blur-xl shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3.5 group hover:border-emerald-400/50 transition-all">
+          <div className="flex items-center gap-3 text-center sm:text-left">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/35 text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+              <Search className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm sm:text-base font-black text-white flex items-center justify-center sm:justify-start gap-2">
+                <span>Check Application Status</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">Status</span>
+              </h3>
+              <p className="text-[11px] text-slate-300">
+                Enter your phone number to check if your membership is Pending, Approved, or Rejected
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onGoToStatus}
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-emerald-300 hover:text-white border border-emerald-500/40 hover:border-emerald-400 font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+          >
+            <span>Check Status</span>
+            <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
@@ -534,8 +567,12 @@ export default function App() {
 
     setIsSubmitting(true);
 
+    const cached = JSON.parse(localStorage.getItem('ngdc_sc_firebase_members_v1') || '[]');
+    const nextMid = getNextMembershipId(cached.length > 0 ? cached : submissions);
+
     const newRecord: SubmissionRecord = {
       ...formData,
+      membershipId: nextMid,
       status: 'pending',
       submittedAt: new Date().toLocaleString('en-GB', {
         dateStyle: 'medium',
@@ -667,6 +704,20 @@ export default function App() {
               <span>Registration Form</span>
             </button>
 
+            {/* Check Member Status in Menu */}
+            <button
+              type="button"
+              onClick={() => navigateTo('status')}
+              className={`w-full px-4 py-2.5 rounded-xl text-left text-xs font-bold transition-all cursor-pointer flex items-center gap-2.5 ${
+                currentView === 'status' 
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs' 
+                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <Search className="w-4 h-4 text-emerald-400" />
+              <span>Check Member Status</span>
+            </button>
+
             {/* Notice Section in 3-Dot Menu */}
             <button
               type="button"
@@ -778,17 +829,23 @@ export default function App() {
           onGoNotices={() => navigateTo('notices')}
           onGoCommittee={() => navigateTo('committee')}
         />
+      ) : currentView === 'status' ? (
+        <MemberStatusSearch
+          onBackToHome={() => navigateTo('home')}
+          onGoToRegistration={() => navigateTo('form')}
+        />
       ) : currentView === 'home' ? (
         <HomePage 
           onGoToForm={() => navigateTo('form')} 
           onGoToNotices={() => navigateTo('notices')} 
           onGoToCommittee={() => navigateTo('committee')} 
+          onGoToStatus={() => navigateTo('status')}
         />
       ) : (
         /* Form Container with formal entrance animation */
         <div className="w-full max-w-2xl relative z-10 px-4 sm:px-6 pt-6 formal-page-enter">
-          {/* Back to Home Navigation Button */}
-          <div className="mb-4 flex items-center justify-start">
+          {/* Back to Home Navigation & Check Status */}
+          <div className="mb-4 flex items-center justify-between">
             <button
               type="button"
               onClick={() => navigateTo('home')}
@@ -796,6 +853,15 @@ export default function App() {
             >
               <ArrowLeft className="w-3.5 h-3.5 text-emerald-400 group-hover:-translate-x-0.5 transition-transform" />
               <span>Back to Home</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigateTo('status')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-bold border border-emerald-500/30 shadow-xs transition-all cursor-pointer"
+            >
+              <Search className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Check Status</span>
             </button>
           </div>
         
@@ -828,9 +894,39 @@ export default function App() {
             <h2 className="text-xl sm:text-2xl font-black text-white">
               Membership Submission Received!
             </h2>
-            <p className="text-xs sm:text-sm text-slate-400 mt-1 mb-6">
+            <p className="text-xs sm:text-sm text-slate-400 mt-1 mb-4">
               Thank you, <strong className="text-white">{submittedData.name}</strong>. Your membership form has been submitted to NGDC Science Club.
             </p>
+
+            {/* Serial Membership ID Banner */}
+            {submittedData.membershipId && (
+              <div className="mb-6 p-4 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/25 border border-emerald-400/50 text-emerald-300 flex items-center justify-center shrink-0">
+                    <CreditCard className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block">
+                      Your Serial Membership ID
+                    </span>
+                    <span className="text-xl font-black text-white font-mono tracking-widest">
+                      {submittedData.membershipId}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(submittedData.membershipId!);
+                    alert('Copied Membership ID: ' + submittedData.membershipId);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy ID</span>
+                </button>
+              </div>
+            )}
 
             {/* Clean summary of submitted details */}
             <div className="bg-slate-900/60 rounded-2xl border border-white/15 p-5 text-left mb-6 space-y-3.5">
@@ -911,11 +1007,19 @@ export default function App() {
               </a>
             </div>
 
-            <div className="pt-2">
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => navigateTo('status')}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black shadow-sm transition-all cursor-pointer"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>Check Application Status</span>
+              </button>
               <button
                 type="button"
                 onClick={handleReset}
-                className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Submit Another Response</span>
@@ -929,6 +1033,21 @@ export default function App() {
             className="bg-slate-950/40 hover:bg-slate-950/50 backdrop-blur-[2px] rounded-3xl border border-white/15 shadow-[0_12px_45px_rgba(0,0,0,0.5)] p-6 sm:p-9 space-y-6 transition-all"
             id="ngdc-science-club-form"
           >
+            {/* Quick link to check status if already registered */}
+            <div className="p-3 rounded-2xl bg-emerald-950/30 border border-emerald-500/25 flex items-center justify-between gap-3 text-xs">
+              <span className="text-slate-300 text-[11px] sm:text-xs">
+                Already submitted an application? Check your status anytime.
+              </span>
+              <button
+                type="button"
+                onClick={() => navigateTo('status')}
+                className="px-3 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1.5"
+              >
+                <Search className="w-3 h-3" />
+                <span>Check Status</span>
+              </button>
+            </div>
+
             {errorMsg && (
               <div className="p-3.5 rounded-xl bg-red-500/20 border border-red-500/40 flex items-center gap-2.5 text-red-200 text-xs font-bold">
                 <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />

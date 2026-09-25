@@ -19,9 +19,23 @@ export interface MembershipFormData {
 
 export interface SubmissionRecord extends MembershipFormData {
   id?: string;
+  membershipId?: string;
   submittedAt: string;
   status?: MemberStatus;
+  rejectionReason?: string;
   createdAt?: string;
+}
+
+export interface PublicMemberStatus {
+  id?: string;
+  membershipId?: string;
+  name: string;
+  photo: string | null;
+  status: MemberStatus;
+  rejectionReason?: string;
+  batch?: BatchType | string;
+  section?: SectionType | string;
+  submittedAt?: string;
 }
 
 export interface ExecutiveMember {

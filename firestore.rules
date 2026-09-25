@@ -2,27 +2,41 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    // Helper function to check if the user is an authorized admin
+    function isSuperAdmin() {
+      return request.auth != null && 
+        (request.auth.token.email.lower() == 'ngdcsc.org@gmail.com' || 
+         request.auth.token.email.lower() == 'info.tamimiq@gmail.com');
+    }
+
     // 1. Club Notices: Anyone can read; only authorized club admin can create/edit/delete
     match /notices/{noticeId} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.token.email.lower() == 'ngdcsc.org@gmail.com';
+      allow write: if isSuperAdmin();
     }
 
     // 2. Executive Committee: Anyone can read; only authorized club admin can create/edit/delete
     match /executive_committee/{memberId} {
       allow read: if true;
-      allow write: if request.auth != null && request.auth.token.email.lower() == 'ngdcsc.org@gmail.com';
+      allow write: if isSuperAdmin();
     }
 
     // 3. Member Registrations: Anyone can submit registration (create); only authorized club admin can read/update/delete
     match /members/{memberId} {
       allow create: if true;
-      allow read, update, delete: if request.auth != null && request.auth.token.email.lower() == 'ngdcsc.org@gmail.com';
+      allow read, update, delete: if isSuperAdmin();
+    }
+
+    // 4. Public Member Status Search: Anyone can read status by phone key; create/update allowed for submission & admin
+    match /member_status/{phoneKey} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isSuperAdmin();
     }
 
     // Fallback: Default deny for any other collections
     match /{document=**} {
-      allow read, write: if request.auth != null && request.auth.token.email.lower() == 'ngdcsc.org@gmail.com';
+      allow read, write: if isSuperAdmin();
     }
   }
 }
