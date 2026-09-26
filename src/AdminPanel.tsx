@@ -297,6 +297,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
         }
       }
       await updateMemberInFirebase(member.id, {
+        ...member,
         status: 'approved',
         membershipId,
         rejectionReason: null as any
@@ -340,7 +341,11 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     }
 
     // Set back to pending
-    await updateMemberInFirebase(memberId, { status: newStatus, rejectionReason: null as any });
+    await updateMemberInFirebase(memberId, {
+      ...target,
+      status: newStatus,
+      rejectionReason: null as any
+    });
     setMembers(prev => prev.map(m => m.id === memberId ? { ...m, status: newStatus, rejectionReason: undefined } : m));
     if (selectedMember && selectedMember.id === memberId) {
       setSelectedMember(prev => prev ? { ...prev, status: newStatus, rejectionReason: undefined } : null);
@@ -351,7 +356,11 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     if (!rejectingMember || !rejectingMember.id) return;
     const memberId = rejectingMember.id;
     try {
-      await updateMemberInFirebase(memberId, { status: 'rejected', rejectionReason: reason });
+      await updateMemberInFirebase(memberId, {
+        ...rejectingMember,
+        status: 'rejected',
+        rejectionReason: reason
+      });
       setMembers(prev => prev.map(m => m.id === memberId ? { ...m, status: 'rejected', rejectionReason: reason } : m));
       if (selectedMember && selectedMember.id === memberId) {
         setSelectedMember(prev => prev ? { ...prev, status: 'rejected', rejectionReason: reason } : null);

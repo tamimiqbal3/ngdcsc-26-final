@@ -37,8 +37,9 @@ export default function MemberStatusSearch({
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const query = searchInput.trim();
-    if (!query || query.length < 2) {
-      setErrorMsg('অনুগ্রহ করে আপনার নিবন্ধিত ফোন নম্বর (+88/01) বা মেম্বারশিপ আইডি দিন (Please enter phone or Membership ID)');
+    const cleanDigits = query.replace(/\D/g, '');
+    if (!cleanDigits || cleanDigits.length < 10) {
+      setErrorMsg('Please enter a valid phone number (01XXXXXXXXX)');
       return;
     }
 
@@ -96,7 +97,7 @@ export default function MemberStatusSearch({
       {/* Main Card */}
       <div className="bg-slate-950/70 backdrop-blur-xl border border-white/20 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
         {/* Title and Header */}
-        <div className="text-center space-y-2">
+        <div className="text-center space-y-1">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-black uppercase tracking-wider">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
             <span>Membership Verification</span>
@@ -104,29 +105,32 @@ export default function MemberStatusSearch({
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
             Check Member Status
           </h1>
-          <p className="text-xs sm:text-sm text-slate-300">
-            Enter your registered Phone Number to check your club membership application status.
+          <p className="text-xs text-slate-400">
+            Enter your registered Phone Number
           </p>
         </div>
 
         {/* Search Input Box */}
-        <form onSubmit={handleSearch} className="space-y-3">
-          <label className="block text-xs font-bold text-slate-200 uppercase tracking-wider">
-            Registered Phone Number or Membership ID (+88 / 01 / NGDCSC-008)
+        <form onSubmit={handleSearch} className="space-y-2">
+          <label className="block text-xs font-bold text-slate-300">
+            Phone Number
           </label>
           <div className="relative flex items-center">
             <div className="absolute left-3.5 text-emerald-400 pointer-events-none flex items-center">
               <Phone className="w-4 h-4" />
             </div>
             <input
-              type="text"
+              type="tel"
+              inputMode="tel"
               value={searchInput}
               onChange={(e) => {
-                setSearchInput(e.target.value);
+                const val = e.target.value.replace(/[^0-9+]/g, '');
+                setSearchInput(val);
                 if (errorMsg) setErrorMsg(null);
               }}
-              placeholder="e.g. 017XXXXXXXX, +88017..., or NGDCSC-008"
-              className="w-full pl-10 pr-24 py-3 bg-slate-900/90 border border-white/20 focus:border-emerald-400 rounded-2xl text-white placeholder-slate-500 text-sm font-medium tracking-wide focus:outline-hidden focus:ring-2 focus:ring-emerald-400/20 transition-all font-mono"
+              placeholder="01XXXXXXXXX"
+              maxLength={14}
+              className="w-full pl-10 pr-24 py-3 bg-slate-900/90 border border-white/20 focus:border-emerald-400 rounded-2xl text-white placeholder-slate-500 text-sm font-semibold tracking-wider focus:outline-hidden focus:ring-2 focus:ring-emerald-400/20 transition-all font-mono"
             />
             <button
               type="submit"

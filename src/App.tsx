@@ -1060,14 +1060,11 @@ export default function App() {
               </div>
             )}
 
-            {/* 1. PHOTO (STRICTLY REQUIRED WITH ADJUST / CROP OPTION) */}
+            {/* 1. PHOTO (WITH ADJUST / CROP OPTION) */}
             <div id="photo-upload-section" className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
-                  Passport Size Photo <span className="text-rose-400 font-black text-sm">*</span>
-                  <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">
-                    ছবি আপলোড বাধ্যতামূলক (Strictly Required)
-                  </span>
+                  Passport Size Photo <span className="text-emerald-400 font-bold">*</span>
                 </label>
                 {formData.photo && (
                   <button
@@ -1136,12 +1133,12 @@ export default function App() {
                 <div className="text-center sm:text-left text-xs text-slate-300 space-y-1.5">
                   <p className="font-bold text-white flex items-center justify-center sm:justify-start gap-1">
                     <span>Student Formal / Passport Photo</span>
-                    <span className="text-rose-400 font-bold">*</span>
+                    <span className="text-emerald-400 font-bold">*</span>
                   </p>
                   <p className="text-[11px] text-slate-400">
                     Click the box or drag and drop an image file (Max 8MB). You can adjust zoom, rotate, and center face after selecting.
                   </p>
-                  {formData.photo ? (
+                  {formData.photo && (
                     <div className="flex items-center gap-2 pt-1 flex-wrap justify-center sm:justify-start">
                       <button
                         type="button"
@@ -1159,10 +1156,6 @@ export default function App() {
                         Change Photo
                       </button>
                     </div>
-                  ) : (
-                    <p className="text-[11px] text-amber-300 font-semibold">
-                      ⚠️ ফরম সাবমিট করার পূর্বে ছবি আপলোড করা আবশ্যক।
-                    </p>
                   )}
                 </div>
               </div>

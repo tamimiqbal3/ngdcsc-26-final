@@ -347,15 +347,34 @@ export async function updateMemberInFirebase(id: string, updates: Partial<Submis
   }
 
   // Update 'member_status' public collection documents
-  const effectiveMid = updates.membershipId !== undefined ? updates.membershipId : targetMember?.membershipId;
-  const effectivePhone = updates.phone || targetMember?.phone;
-  const effectiveName = updates.name || targetMember?.name || 'Club Member';
-  const effectivePhoto = updates.photo !== undefined ? updates.photo : (targetMember?.photo || null);
-  const effectiveStatus = updates.status !== undefined ? updates.status : (targetMember?.status || 'pending');
-  const effectiveReason = updates.rejectionReason !== undefined ? updates.rejectionReason : (targetMember?.rejectionReason || null);
-  const effectiveBatch = updates.batch !== undefined ? updates.batch : (targetMember?.batch || null);
-  const effectiveSection = updates.section !== undefined ? updates.section : (targetMember?.section || null);
-  const effectiveSubmittedAt = updates.submittedAt || targetMember?.submittedAt || targetMember?.createdAt || null;
+  let effectivePhone = updates.phone || targetMember?.phone;
+  let effectiveName = updates.name || targetMember?.name || 'Club Member';
+  let effectivePhoto = updates.photo !== undefined ? updates.photo : (targetMember?.photo || null);
+  let effectiveStatus = updates.status !== undefined ? updates.status : (targetMember?.status || 'pending');
+  let effectiveReason = updates.rejectionReason !== undefined ? updates.rejectionReason : (targetMember?.rejectionReason || null);
+  let effectiveBatch = updates.batch !== undefined ? updates.batch : (targetMember?.batch || null);
+  let effectiveSection = updates.section !== undefined ? updates.section : (targetMember?.section || null);
+  let effectiveSubmittedAt = updates.submittedAt || targetMember?.submittedAt || targetMember?.createdAt || null;
+  let effectiveMid = updates.membershipId !== undefined ? updates.membershipId : targetMember?.membershipId;
+
+  // If phone is missing, fetch from Firestore 'members' collection
+  if (!effectivePhone) {
+    try {
+      const docSnap = await getDoc(doc(db, 'members', id));
+      if (docSnap.exists()) {
+        const d = docSnap.data();
+        if (d.phone) effectivePhone = d.phone;
+        if (!effectiveName && d.name) effectiveName = d.name;
+        if (!effectivePhoto && d.photo) effectivePhoto = d.photo;
+        if (!effectiveMid && d.membershipId) effectiveMid = d.membershipId;
+        if (!effectiveBatch && d.batch) effectiveBatch = d.batch;
+        if (!effectiveSection && d.section) effectiveSection = d.section;
+        if (!effectiveSubmittedAt && (d.submittedAt || d.createdAt)) effectiveSubmittedAt = d.submittedAt || d.createdAt;
+      }
+    } catch (err) {
+      console.warn('Firestore member lookup error:', err);
+    }
+  }
 
   const statusPayload: any = {
     id,
@@ -368,11 +387,14 @@ export async function updateMemberInFirebase(id: string, updates: Partial<Submis
     submittedAt: effectiveSubmittedAt,
     updatedAt: serverTimestamp()
   };
+  if (effectivePhone) {
+    statusPayload.phone = effectivePhone;
+  }
   if (effectiveMid) {
     statusPayload.membershipId = effectiveMid.toUpperCase().trim();
   }
 
-  // Write to all key variations in member_status so phone or ID search always finds it
+  // Write to all key variations in member_status so phone search always finds the latest status
   const lookupKeys = new Set<string>();
   if (effectivePhone) {
     const norm = normalizePhoneNumber(effectivePhone);
@@ -502,7 +524,12 @@ export async function searchMemberStatus(query: string): Promise<PublicMemberSta
         // Check phone match
         if (cleanPhone) {
           const docNorm = normalizePhoneNumber(docId);
-          if (docNorm === cleanPhone || (cleanPhone.length >= 10 && docNorm.endsWith(cleanPhone.slice(-10)))) {
+          const dataPhoneNorm = data.phone ? normalizePhoneNumber(data.phone) : '';
+          if (
+            docNorm === cleanPhone ||
+            dataPhoneNorm === cleanPhone ||
+            (cleanPhone.length >= 10 && (docNorm.endsWith(cleanPhone.slice(-10)) || dataPhoneNorm.endsWith(cleanPhone.slice(-10))))
+          ) {
             return {
               id: data.id || d.id,
               membershipId: data.membershipId,
