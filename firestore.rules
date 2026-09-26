@@ -21,10 +21,10 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
-    // 3. Member Registrations: Anyone can submit registration (create); only authorized club admin can read/update/delete
+    // 3. Member Registrations: Anyone can submit registration (create) and check status (read); only authorized club admin can update/delete
     match /members/{memberId} {
-      allow create: if true;
-      allow read, update, delete: if isSuperAdmin();
+      allow create, read: if true;
+      allow update, delete: if isSuperAdmin();
     }
 
     // 4. Public Member Status Search: Anyone can read status by phone key; create/update allowed for submission & admin

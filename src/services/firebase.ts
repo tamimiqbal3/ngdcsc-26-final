@@ -18,6 +18,7 @@ import {
   updateDoc, 
   deleteDoc, 
   query, 
+  where,
   orderBy,
   serverTimestamp 
 } from 'firebase/firestore';
@@ -463,9 +464,10 @@ export async function deleteMemberFromFirebase(id: string): Promise<void> {
 
 /**
  * Public Search for Member Status using Phone Number (+88 or 01) OR Membership ID (e.g. NGDCSC-008, 008)
+ * Checks the live Firestore 'members' collection first, then 'member_status', then local cache.
  */
-export async function searchMemberStatus(query: string): Promise<PublicMemberStatus | null> {
-  const trimmed = query.trim();
+export async function searchMemberStatus(queryStr: string): Promise<PublicMemberStatus | null> {
+  const trimmed = queryStr.trim();
   if (!trimmed || trimmed.length < 2) return null;
 
   const cleanPhone = normalizePhoneNumber(trimmed);
@@ -474,7 +476,100 @@ export async function searchMemberStatus(query: string): Promise<PublicMemberSta
     ? trimmed.toUpperCase() 
     : (/^\d+$/.test(trimmed) ? `NGDCSC-${trimmed.padStart(3, '0')}` : trimmed.toUpperCase());
 
-  // Set of keys to check in member_status
+  // 1. First priority: Check live Firestore 'members' collection (Source of Truth for Admin Panel)
+  try {
+    const membersCol = collection(db, 'members');
+    
+    // Fast targeted query by exact phone candidates
+    const phoneCandidates = Array.from(new Set([cleanPhone, `+88${cleanPhone}`, `88${cleanPhone}`, trimmed].filter(Boolean)));
+    for (const phoneVal of phoneCandidates) {
+      try {
+        const q = query(membersCol, where('phone', '==', phoneVal));
+        const qSnap = await getDocs(q);
+        if (!qSnap.empty) {
+          const docSnap = qSnap.docs[0];
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            membershipId: data.membershipId,
+            name: data.name || 'Member',
+            photo: data.photo || null,
+            status: (data.status as MemberStatus) || 'pending',
+            rejectionReason: data.rejectionReason || undefined,
+            batch: data.batch,
+            section: data.section,
+            submittedAt: data.submittedAt || data.createdAt
+          };
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    // Check whatsapp candidates
+    for (const phoneVal of phoneCandidates) {
+      try {
+        const q = query(membersCol, where('whatsapp', '==', phoneVal));
+        const qSnap = await getDocs(q);
+        if (!qSnap.empty) {
+          const docSnap = qSnap.docs[0];
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            membershipId: data.membershipId,
+            name: data.name || 'Member',
+            photo: data.photo || null,
+            status: (data.status as MemberStatus) || 'pending',
+            rejectionReason: data.rejectionReason || undefined,
+            batch: data.batch,
+            section: data.section,
+            submittedAt: data.submittedAt || data.createdAt
+          };
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    // Direct scan across all documents in 'members' collection (handles non-standard spacing, dashes, etc.)
+    const allMembersSnap = await getDocs(membersCol);
+    if (!allMembersSnap.empty) {
+      for (const d of allMembersSnap.docs) {
+        const data = d.data();
+        const pNorm = normalizePhoneNumber(data.phone || '');
+        const wNorm = normalizePhoneNumber(data.whatsapp || '');
+        
+        const isPhoneMatch = cleanPhone && (
+          pNorm === cleanPhone || 
+          wNorm === cleanPhone ||
+          (cleanPhone.length >= 10 && (pNorm.endsWith(cleanPhone.slice(-10)) || wNorm.endsWith(cleanPhone.slice(-10))))
+        );
+        const isRawPhoneMatch = (data.phone && data.phone.trim() === trimmed) || (data.whatsapp && data.whatsapp.trim() === trimmed);
+        const isMidMatch = data.membershipId && (
+          data.membershipId.toUpperCase().trim() === trimmed.toUpperCase() ||
+          (midStandard && data.membershipId.toUpperCase().trim() === midStandard)
+        );
+
+        if (isPhoneMatch || isRawPhoneMatch || isMidMatch) {
+          return {
+            id: d.id,
+            membershipId: data.membershipId,
+            name: data.name || 'Member',
+            photo: data.photo || null,
+            status: (data.status as MemberStatus) || 'pending',
+            rejectionReason: data.rejectionReason || undefined,
+            batch: data.batch,
+            section: data.section,
+            submittedAt: data.submittedAt || data.createdAt
+          };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Firestore members direct lookup error:', err);
+  }
+
+  // 2. Second priority: Direct doc lookups in 'member_status'
   const keysToCheck = new Set<string>();
   if (cleanPhone) {
     keysToCheck.add(cleanPhone);
@@ -489,7 +584,6 @@ export async function searchMemberStatus(query: string): Promise<PublicMemberSta
     if (digitsOnly) keysToCheck.add(digitsOnly);
   }
 
-  // 1. First attempt: Direct doc lookups in 'member_status'
   for (const k of Array.from(keysToCheck)) {
     try {
       const snap = await getDoc(doc(db, 'member_status', k));
@@ -512,7 +606,7 @@ export async function searchMemberStatus(query: string): Promise<PublicMemberSta
     }
   }
 
-  // 2. Second attempt: Collection scan of member_status (in case of subtle formatting mismatch)
+  // 3. Third priority: Collection scan of member_status
   try {
     const colRef = collection(db, 'member_status');
     const snap = await getDocs(colRef);
@@ -567,7 +661,7 @@ export async function searchMemberStatus(query: string): Promise<PublicMemberSta
     console.warn('Firestore member_status scan error:', err);
   }
 
-  // 3. Third attempt: Local cache fallback
+  // 4. Fourth priority: Local cache fallback
   const cached = getCachedMembers();
   const matchedMember = cached.find(m => {
     // Check membership ID match
@@ -582,7 +676,12 @@ export async function searchMemberStatus(query: string): Promise<PublicMemberSta
     }
     // Check phone match
     const mPhone = normalizePhoneNumber(m.phone || '');
-    if (cleanPhone && (mPhone === cleanPhone || (cleanPhone.length >= 10 && mPhone.endsWith(cleanPhone.slice(-10))))) {
+    const mWp = normalizePhoneNumber(m.whatsapp || '');
+    if (cleanPhone && (
+      mPhone === cleanPhone || 
+      mWp === cleanPhone ||
+      (cleanPhone.length >= 10 && (mPhone.endsWith(cleanPhone.slice(-10)) || mWp.endsWith(cleanPhone.slice(-10))))
+    )) {
       return true;
     }
     return false;
@@ -614,6 +713,7 @@ export const searchMemberStatusByPhone = searchMemberStatus;
 export async function syncAllMembersToStatusDocs(members: SubmissionRecord[]): Promise<void> {
   if (!members || members.length === 0) return;
   try {
+    const promises: Promise<any>[] = [];
     for (const member of members) {
       const statusPayload = {
         id: member.id,
@@ -624,20 +724,22 @@ export async function syncAllMembersToStatusDocs(members: SubmissionRecord[]): P
         rejectionReason: member.rejectionReason || null,
         batch: member.batch,
         section: member.section,
+        phone: member.phone,
         submittedAt: member.submittedAt || member.createdAt,
         updatedAt: serverTimestamp()
       };
 
       const cleanPhone = normalizePhoneNumber(member.phone);
       if (cleanPhone) {
-        await setDoc(doc(db, 'member_status', cleanPhone), statusPayload, { merge: true });
-        await setDoc(doc(db, 'member_status', `+88${cleanPhone}`), statusPayload, { merge: true });
+        promises.push(setDoc(doc(db, 'member_status', cleanPhone), statusPayload, { merge: true }).catch(() => {}));
+        promises.push(setDoc(doc(db, 'member_status', `+88${cleanPhone}`), statusPayload, { merge: true }).catch(() => {}));
       }
 
       if (member.membershipId) {
-        await setDoc(doc(db, 'member_status', member.membershipId.toUpperCase().trim()), statusPayload, { merge: true });
+        promises.push(setDoc(doc(db, 'member_status', member.membershipId.toUpperCase().trim()), statusPayload, { merge: true }).catch(() => {}));
       }
     }
+    await Promise.allSettled(promises);
   } catch (err) {
     console.warn('Batch sync member_status notice:', err);
   }
