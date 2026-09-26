@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ShieldCheck, 
   Users, 
@@ -58,6 +58,7 @@ import {
   saveNoticeToFirebase,
   deleteNoticeFromFirebase,
   syncAllMembersToStatusDocs,
+  extractSerial,
   getNextMembershipId,
   generateNextMembershipId
 } from './services/firebase';
@@ -291,7 +292,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       let membershipId = member.membershipId;
       if (!membershipId) {
         try {
-          membershipId = await generateNextMembershipId();
+          membershipId = await generateNextMembershipId(members);
         } catch {
           membershipId = getNextMembershipId(members);
         }
@@ -490,20 +491,41 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     setNotices(prev => prev.filter(n => n.id !== noticeId));
   };
 
-  // Filtered members list
-  const filteredMembers = members.filter(m => {
-    const matchSearch = 
-      (m.name || '').toLowerCase().includes(memberSearch.toLowerCase()) ||
-      (m.studentId || '').toLowerCase().includes(memberSearch.toLowerCase()) ||
-      (m.phone || '').includes(memberSearch) ||
-      (m.email || '').toLowerCase().includes(memberSearch.toLowerCase());
+  // Filtered and serially ordered members list (1, 2, 3...)
+  const filteredMembers = useMemo(() => {
+    return [...members]
+      .filter(m => {
+        const matchSearch = 
+          (m.name || '').toLowerCase().includes(memberSearch.toLowerCase()) ||
+          (m.studentId || '').toLowerCase().includes(memberSearch.toLowerCase()) ||
+          (m.phone || '').includes(memberSearch) ||
+          (m.membershipId || '').toLowerCase().includes(memberSearch.toLowerCase()) ||
+          (m.email || '').toLowerCase().includes(memberSearch.toLowerCase());
 
-    const matchBatch = filterBatch === 'All' || m.batch === filterBatch;
-    const matchSection = filterSection === 'All' || m.section === filterSection;
-    const matchStatus = filterStatus === 'All' || m.status === filterStatus;
+        const matchBatch = filterBatch === 'All' || m.batch === filterBatch;
+        const matchSection = filterSection === 'All' || m.section === filterSection;
+        const matchStatus = filterStatus === 'All' || m.status === filterStatus;
 
-    return matchSearch && matchBatch && matchSection && matchStatus;
-  });
+        return matchSearch && matchBatch && matchSection && matchStatus;
+      })
+      .sort((a, b) => {
+        const aNum = extractSerial(a.membershipId);
+        const bNum = extractSerial(b.membershipId);
+
+        // If both have assigned serial IDs, sort numerically: 1, 2, 3, 4, 5...
+        if (aNum > 0 && bNum > 0) {
+          return aNum - bNum;
+        }
+        // Member with assigned serial comes first
+        if (aNum > 0) return -1;
+        if (bNum > 0) return 1;
+
+        // Otherwise sort by submission date
+        const aDate = a.createdAt || a.submittedAt || '';
+        const bDate = b.createdAt || b.submittedAt || '';
+        return aDate.localeCompare(bDate);
+      });
+  }, [members, memberSearch, filterBatch, filterSection, filterStatus]);
 
   // Loading Screen
   if (authLoading) {
@@ -869,25 +891,32 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                   No registered members found matching filter criteria.
                 </div>
               ) : (
-                filteredMembers.map((member) => (
+                filteredMembers.map((member, index) => {
+                  const serialNum = extractSerial(member.membershipId) || (index + 1);
+                  return (
                   <div key={member.id || member.submittedAt} className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
-                        {member.photo ? (
-                          <img
-                            src={member.photo}
-                            alt={member.name}
-                            className="w-11 h-11 rounded-xl object-cover border border-slate-200 shrink-0"
-                            onClick={() => setSelectedMember(member)}
-                          />
-                        ) : (
-                          <div 
-                            onClick={() => setSelectedMember(member)}
-                            className="w-11 h-11 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 font-bold shrink-0"
-                          >
-                            {member.name ? member.name.charAt(0) : '?'}
-                          </div>
-                        )}
+                        <div className="relative shrink-0">
+                          {member.photo ? (
+                            <img
+                              src={member.photo}
+                              alt={member.name}
+                              className="w-11 h-11 rounded-xl object-cover border border-slate-200 shrink-0"
+                              onClick={() => setSelectedMember(member)}
+                            />
+                          ) : (
+                            <div 
+                              onClick={() => setSelectedMember(member)}
+                              className="w-11 h-11 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 font-bold shrink-0"
+                            >
+                              {member.name ? member.name.charAt(0) : '?'}
+                            </div>
+                          )}
+                          <span className="absolute -top-1.5 -left-1.5 px-1.5 py-0.2 rounded-md bg-emerald-700 text-white font-mono font-black text-[9px] shadow-xs">
+                            #{serialNum}
+                          </span>
+                        </div>
                         <div className="min-w-0">
                           <p 
                             className="font-bold text-slate-900 text-sm truncate cursor-pointer hover:text-emerald-600"
@@ -896,9 +925,13 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                             {member.name}
                           </p>
                           <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-xs text-slate-500 font-mono">
-                            {member.membershipId && (
+                            {member.membershipId ? (
                               <span className="font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-300 text-[10px] tracking-wide">
                                 {member.membershipId}
+                              </span>
+                            ) : (
+                              <span className="font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 text-[9px]">
+                                Pending ID
                               </span>
                             )}
                             <span>Roll: {member.studentId || 'N/A'} • {member.batch} (Sec {member.section})</span>
@@ -1024,7 +1057,8 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                       </div>
                     )}
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -1034,6 +1068,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      <th className="py-3 px-3 w-14 text-center">SL</th>
                       <th className="py-3 px-4">Photo &amp; Name</th>
                       <th className="py-3 px-4">Roll / ID</th>
                       <th className="py-3 px-4">Batch &amp; Sec</th>
@@ -1046,13 +1081,20 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                   <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                     {filteredMembers.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="text-center py-12 text-slate-500 font-semibold">
+                        <td colSpan={8} className="text-center py-12 text-slate-500 font-semibold">
                           No registered members found matching the filter criteria.
                         </td>
                       </tr>
                     ) : (
-                      filteredMembers.map((member) => (
+                      filteredMembers.map((member, index) => {
+                        const serialNum = extractSerial(member.membershipId) || (index + 1);
+                        return (
                         <tr key={member.id || member.submittedAt} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-3 text-center">
+                            <span className="inline-flex items-center justify-center w-8 h-7 rounded-lg bg-emerald-50 text-emerald-800 font-black text-xs border border-emerald-200 font-mono shadow-2xs">
+                              #{serialNum}
+                            </span>
+                          </td>
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-3">
                               {member.photo ? (
@@ -1227,7 +1269,8 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                             </div>
                           </td>
                         </tr>
-                      ))
+                      );
+                    })
                     )}
                   </tbody>
                 </table>

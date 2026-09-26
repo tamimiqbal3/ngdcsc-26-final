@@ -35,6 +35,7 @@ import {
   Search,
   Copy,
   CreditCard,
+  Clock,
   Scissors
 } from 'lucide-react';
 import { MembershipFormData, SubmissionRecord, SectionType, BatchType, ClubNotice } from './types';
@@ -557,16 +558,9 @@ export default function App() {
 
     setIsSubmitting(true);
 
-    let nextMid = '';
-    try {
-      nextMid = await generateNextMembershipId();
-    } catch {
-      nextMid = getNextMembershipId(submissions);
-    }
-
     const newRecord: SubmissionRecord = {
       ...formData,
-      membershipId: nextMid,
+      membershipId: undefined,
       status: 'pending',
       submittedAt: new Date().toLocaleString('en-GB', {
         dateStyle: 'medium',
@@ -903,8 +897,8 @@ export default function App() {
               Thank you, <strong className="text-white">{submittedData.name}</strong>. Your membership form has been submitted to NGDC Science Club.
             </p>
 
-            {/* Serial Membership ID Banner */}
-            {submittedData.membershipId && (
+            {/* Serial Membership ID Banner / Pending Banner */}
+            {submittedData.status === 'approved' && submittedData.membershipId ? (
               <div className="mb-6 p-4 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left shadow-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-emerald-500/25 border border-emerald-400/50 text-emerald-300 flex items-center justify-center shrink-0">
@@ -929,6 +923,30 @@ export default function App() {
                 >
                   <Copy className="w-3.5 h-3.5" />
                   <span>Copy ID</span>
+                </button>
+              </div>
+            ) : (
+              <div className="mb-6 p-4 rounded-2xl bg-amber-500/15 border border-amber-400/35 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/25 border border-amber-400/50 text-amber-300 flex items-center justify-center shrink-0">
+                    <Clock className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block">
+                      Application Status: Pending Review
+                    </span>
+                    <span className="text-sm font-bold text-slate-200 block">
+                      Membership ID: এডমিন প্যানেলে অনুমোদনের (Approve) পর প্রদান করা হবে
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigateTo('status')}
+                  className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span>Check Status</span>
                 </button>
               </div>
             )}

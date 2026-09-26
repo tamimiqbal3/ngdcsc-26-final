@@ -10,6 +10,7 @@ import {
 } from 'firebase/auth';
 import { 
   getFirestore, 
+  initializeFirestore,
   collection, 
   doc, 
   setDoc, 
@@ -40,7 +41,19 @@ export const firebaseConfig = {
 // Initialize Firebase singleton
 export const firebaseApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(firebaseApp);
-export const db = getFirestore(firebaseApp);
+
+// Initialize Firestore with resilient connection handling:
+// experimentalAutoDetectLongPolling allows Firestore to automatically fallback to HTTP long polling
+// when WebSockets or WebChannel streams are interrupted or blocked by proxies/firewalls.
+export const db = (() => {
+  try {
+    return initializeFirestore(firebaseApp, {
+      experimentalAutoDetectLongPolling: true
+    });
+  } catch {
+    return getFirestore(firebaseApp);
+  }
+})();
 
 // Initialize analytics safely if supported
 export let analytics: any = null;
@@ -68,9 +81,17 @@ const LS_NOTICES_KEY = 'ngdcsc_firebase_notices_cache';
 // ==================== MEMBER / REGISTRATION OPERATIONS ====================
 
 /**
- * Starting serial for membership IDs as requested by club admin: starts at 008
+ * Extracts numeric serial from membership ID or serial string (e.g. NGDCSC-001 -> 1, NGDCSC-12 -> 12, 5 -> 5)
  */
-export const STARTING_SERIAL = 8;
+export function extractSerial(idOrMid?: string | null): number {
+  if (!idOrMid) return 0;
+  const match = idOrMid.match(/(\d+)/);
+  if (match) {
+    const num = parseInt(match[1], 10);
+    return isNaN(num) ? 0 : num;
+  }
+  return 0;
+}
 
 /**
  * Normalizes a phone number to standard Bangladeshi 11 digits format (e.g. 017xxxxxxxx)
@@ -101,16 +122,11 @@ export function normalizePhoneNumber(raw: string): string {
  * Synchronous serial helper for local fallback or cache
  */
 export function getNextMembershipId(existingMembers: SubmissionRecord[]): string {
-  let maxNum = STARTING_SERIAL - 1; // 7, so next is 8
+  let maxNum = 0;
   for (const m of existingMembers) {
-    if (m.membershipId) {
-      const match = m.membershipId.match(/NGDCSC-(\d+)/i);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (!isNaN(num) && num > maxNum) {
-          maxNum = num;
-        }
-      }
+    const num = extractSerial(m.membershipId);
+    if (num > maxNum) {
+      maxNum = num;
     }
   }
 
@@ -119,59 +135,60 @@ export function getNextMembershipId(existingMembers: SubmissionRecord[]): string
 }
 
 /**
- * Generate next serial membership ID starting at NGDCSC-008
- * Cross-checks Firestore 'system_meta/membership_serial' counter and existing members
+ * Generate next serial membership ID by scanning all existing members
+ * in Admin Panel, localStorage and live Firestore to prevent any duplicates.
  */
-export async function generateNextMembershipId(): Promise<string> {
-  let highestSerial = STARTING_SERIAL - 1; // 7
+export async function generateNextMembershipId(currentList?: SubmissionRecord[]): Promise<string> {
+  let maxSerial = 0;
 
-  // Check local cache
-  const cached = getCachedMembers();
-  for (const m of cached) {
-    if (m.membershipId) {
-      const match = m.membershipId.match(/NGDCSC-(\d+)/i);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (!isNaN(num) && num > highestSerial) highestSerial = num;
-      }
+  // 1. Check in-memory list if provided
+  if (currentList && Array.isArray(currentList)) {
+    for (const m of currentList) {
+      const num = extractSerial(m.membershipId);
+      if (num > maxSerial) maxSerial = num;
     }
   }
 
-  // Check Firestore
-  try {
-    const counterRef = doc(db, 'system_meta', 'membership_serial');
-    const counterSnap = await getDoc(counterRef);
-    if (counterSnap.exists()) {
-      const val = counterSnap.data()?.lastSerial;
-      if (typeof val === 'number' && val > highestSerial) {
-        highestSerial = val;
-      }
-    }
+  // 2. Check local storage cache
+  const cached = getCachedMembers();
+  for (const m of cached) {
+    const num = extractSerial(m.membershipId);
+    if (num > maxSerial) maxSerial = num;
+  }
 
-    // Also scan recent members in Firestore
+  // 3. Check live Firestore
+  try {
     const membersSnap = await getDocs(collection(db, 'members'));
     membersSnap.forEach(d => {
       const data = d.data();
-      if (data.membershipId) {
-        const match = data.membershipId.match(/NGDCSC-(\d+)/i);
-        if (match) {
-          const num = parseInt(match[1], 10);
-          if (!isNaN(num) && num > highestSerial) highestSerial = num;
-        }
-      }
+      const num = extractSerial(data.membershipId);
+      if (num > maxSerial) maxSerial = num;
     });
 
-    const nextSerial = highestSerial + 1;
-    // Update counter
-    await setDoc(counterRef, {
-      lastSerial: nextSerial,
-      updatedAt: serverTimestamp()
-    }, { merge: true });
+    try {
+      const counterRef = doc(db, 'system_meta', 'membership_serial');
+      const counterSnap = await getDoc(counterRef);
+      if (counterSnap.exists()) {
+        const val = counterSnap.data()?.lastSerial;
+        if (typeof val === 'number' && val > maxSerial) {
+          maxSerial = val;
+        }
+      }
 
-    return `NGDCSC-${String(nextSerial).padStart(3, '0')}`;
+      const nextSerial = maxSerial + 1;
+      await setDoc(counterRef, {
+        lastSerial: nextSerial,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      return `NGDCSC-${String(nextSerial).padStart(3, '0')}`;
+    } catch {
+      const nextSerial = maxSerial + 1;
+      return `NGDCSC-${String(nextSerial).padStart(3, '0')}`;
+    }
   } catch (err) {
-    console.warn('Firestore serial counter warning:', err);
-    const nextSerial = highestSerial + 1;
+    console.warn('Firestore serial lookup warning:', err);
+    const nextSerial = maxSerial + 1;
     return `NGDCSC-${String(nextSerial).padStart(3, '0')}`;
   }
 }
@@ -181,9 +198,12 @@ export async function generateNextMembershipId(): Promise<string> {
  */
 export async function saveMemberToFirebase(member: SubmissionRecord): Promise<string> {
   const cached = getCachedMembers();
+  const status = member.status || 'pending';
   let membershipId = member.membershipId ? member.membershipId.trim().toUpperCase() : '';
 
-  if (!membershipId) {
+  // Only assign ID if member is approved (or admin explicitly provided ID)
+  // Pending student registrations receive official Membership ID upon Admin approval
+  if (!membershipId && status === 'approved') {
     try {
       membershipId = await generateNextMembershipId();
     } catch {
@@ -195,8 +215,8 @@ export async function saveMemberToFirebase(member: SubmissionRecord): Promise<st
   const recordWithId: SubmissionRecord = {
     ...member,
     id: memberId,
-    membershipId,
-    status: member.status || 'pending',
+    membershipId: membershipId || undefined,
+    status,
     createdAt: member.createdAt || new Date().toISOString()
   };
 
@@ -273,25 +293,20 @@ export async function fetchMembersFromFirebase(): Promise<SubmissionRecord[]> {
         records.push({ id: d.id, ...d.data() } as SubmissionRecord);
       });
 
-      // Find current max serial number among existing membership IDs (minimum STARTING_SERIAL - 1)
-      let maxSerial = STARTING_SERIAL - 1; // 7
+      // Find current max serial number among existing membership IDs
+      let maxSerial = 0;
       records.forEach(r => {
-        if (r.membershipId) {
-          const match = r.membershipId.match(/NGDCSC-(\d+)/i);
-          if (match) {
-            const num = parseInt(match[1], 10);
-            if (!isNaN(num) && num > maxSerial) maxSerial = num;
-          }
-        }
+        const num = extractSerial(r.membershipId);
+        if (num > maxSerial) maxSerial = num;
       });
 
-      // If any existing records lack a membershipId, assign them serially by registration date starting from 008
-      const missingIdRecords = records.filter(r => !r.membershipId);
-      if (missingIdRecords.length > 0) {
-        missingIdRecords.sort((a, b) => 
+      // If any approved records lack a membershipId, assign them serially
+      const missingIdApproved = records.filter(r => !r.membershipId && r.status === 'approved');
+      if (missingIdApproved.length > 0) {
+        missingIdApproved.sort((a, b) => 
           new Date(a.submittedAt || a.createdAt || 0).getTime() - new Date(b.submittedAt || b.createdAt || 0).getTime()
         );
-        for (const item of missingIdRecords) {
+        for (const item of missingIdApproved) {
           maxSerial += 1;
           item.membershipId = `NGDCSC-${String(maxSerial).padStart(3, '0')}`;
           if (item.id) {
@@ -476,6 +491,8 @@ export async function searchMemberStatus(queryStr: string): Promise<PublicMember
     ? trimmed.toUpperCase() 
     : (/^\d+$/.test(trimmed) ? `NGDCSC-${trimmed.padStart(3, '0')}` : trimmed.toUpperCase());
 
+  let hadPermissionDenied = false;
+
   // 1. First priority: Check live Firestore 'members' collection (Source of Truth for Admin Panel)
   try {
     const membersCol = collection(db, 'members');
@@ -501,8 +518,8 @@ export async function searchMemberStatus(queryStr: string): Promise<PublicMember
             submittedAt: data.submittedAt || data.createdAt
           };
         }
-      } catch {
-        // continue
+      } catch (e: any) {
+        if (e?.code === 'permission-denied') hadPermissionDenied = true;
       }
     }
 
@@ -526,8 +543,8 @@ export async function searchMemberStatus(queryStr: string): Promise<PublicMember
             submittedAt: data.submittedAt || data.createdAt
           };
         }
-      } catch {
-        // continue
+      } catch (e: any) {
+        if (e?.code === 'permission-denied') hadPermissionDenied = true;
       }
     }
 
@@ -565,7 +582,8 @@ export async function searchMemberStatus(queryStr: string): Promise<PublicMember
         }
       }
     }
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') hadPermissionDenied = true;
     console.warn('Firestore members direct lookup error:', err);
   }
 
@@ -601,8 +619,8 @@ export async function searchMemberStatus(queryStr: string): Promise<PublicMember
           submittedAt: data.submittedAt
         };
       }
-    } catch {
-      // try next key
+    } catch (e: any) {
+      if (e?.code === 'permission-denied') hadPermissionDenied = true;
     }
   }
 
@@ -657,7 +675,8 @@ export async function searchMemberStatus(queryStr: string): Promise<PublicMember
         }
       }
     }
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') hadPermissionDenied = true;
     console.warn('Firestore member_status scan error:', err);
   }
 
@@ -699,6 +718,10 @@ export async function searchMemberStatus(queryStr: string): Promise<PublicMember
       section: matchedMember.section,
       submittedAt: matchedMember.submittedAt || matchedMember.createdAt
     };
+  }
+
+  if (hadPermissionDenied) {
+    throw new Error('PERMISSION_DENIED');
   }
 
   return null;
