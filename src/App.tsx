@@ -34,7 +34,8 @@ import {
   Award,
   Search,
   Copy,
-  CreditCard
+  CreditCard,
+  Scissors
 } from 'lucide-react';
 import { MembershipFormData, SubmissionRecord, SectionType, BatchType, ClubNotice } from './types';
 import ScienceBackground from './ScienceBackground';
@@ -43,7 +44,8 @@ import NoticesPage from './NoticesPage';
 import MemberStatusSearch from './MemberStatusSearch';
 import AdminPanel from './AdminPanel';
 import NotFoundPage from './NotFoundPage';
-import { saveMemberToFirebase, fetchNoticesFromFirebase, getNextMembershipId } from './services/firebase';
+import ImageAdjustModal from './components/ImageAdjustModal';
+import { saveMemberToFirebase, fetchNoticesFromFirebase, getNextMembershipId, generateNextMembershipId } from './services/firebase';
 
 const CLUB_SEGMENTS = [
   'Science Olympiad (Math, Physics, Bio, Chem)',
@@ -362,6 +364,7 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [adjustingPhoto, setAdjustingPhoto] = useState<string | null>(null);
   
   // URL detection for /admin, /notices, /committee, /, and unknown routes -> 404
   const [currentView, setCurrentView] = useState<ViewType>(resolveCurrentView);
@@ -464,14 +467,14 @@ export default function App() {
     });
   };
 
-  // Image Upload Handling with client-side compression
+  // Image Upload Handling with client-side compression & Adjuster
   const handleFile = (file: File) => {
     if (!file.type.startsWith('image/')) {
       setErrorMsg('Please select a valid image file (JPG, PNG, WebP).');
       return;
     }
-    if (file.size > 6 * 1024 * 1024) {
-      setErrorMsg('ছবি সর্বোচ্চ ৬ মেগাবাইট (6MB) পর্যন্ত আপলোড করা যাবে। (Image size cannot exceed 6MB)');
+    if (file.size > 8 * 1024 * 1024) {
+      setErrorMsg('ছবি সর্বোচ্চ ৮ মেগাবাইট (8MB) পর্যন্ত আপলোড করা যাবে। (Image size cannot exceed 8MB)');
       return;
     }
 
@@ -479,38 +482,17 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = (e) => {
       const rawData = e.target?.result as string;
-      const img = new Image();
-      img.onload = () => {
-        const MAX_DIM = 800;
-        let width = img.width;
-        let height = img.height;
-        if (width > MAX_DIM || height > MAX_DIM) {
-          if (width > height) {
-            height = Math.round((height * MAX_DIM) / width);
-            width = MAX_DIM;
-          } else {
-            width = Math.round((width * MAX_DIM) / height);
-            height = MAX_DIM;
-          }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-          setFormData(prev => ({ ...prev, photo: compressedDataUrl }));
-        } else {
-          setFormData(prev => ({ ...prev, photo: rawData }));
-        }
-      };
-      img.onerror = () => {
-        setFormData(prev => ({ ...prev, photo: rawData }));
-      };
-      img.src = rawData;
+      if (rawData) {
+        setAdjustingPhoto(rawData);
+      }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleAdjustedPhoto = (adjustedDataUrl: string) => {
+    setFormData(prev => ({ ...prev, photo: adjustedDataUrl }));
+    setAdjustingPhoto(null);
+    setErrorMsg(null);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -531,6 +513,14 @@ export default function App() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+
+    // 1. Photo is strictly compulsory
+    if (!formData.photo) {
+      setErrorMsg('ছবি আপলোড করা বাধ্যতামূলক! অনুগ্রহ করে পাসপোর্ট সাইজ ছবি আপলোড করুন। (Student photo is strictly required!)');
+      const photoEl = document.getElementById('photo-upload-section');
+      if (photoEl) photoEl.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
 
     if (!formData.name.trim()) {
       setErrorMsg('Please enter your full name.');
@@ -567,8 +557,12 @@ export default function App() {
 
     setIsSubmitting(true);
 
-    const cached = JSON.parse(localStorage.getItem('ngdc_sc_firebase_members_v1') || '[]');
-    const nextMid = getNextMembershipId(cached.length > 0 ? cached : submissions);
+    let nextMid = '';
+    try {
+      nextMid = await generateNextMembershipId();
+    } catch {
+      nextMid = getNextMembershipId(submissions);
+    }
 
     const newRecord: SubmissionRecord = {
       ...formData,
@@ -776,25 +770,27 @@ export default function App() {
 
             {selectedNotice.fileUrl && (
               <div className="p-4 rounded-2xl bg-slate-950/60 border border-emerald-500/30 mb-4">
-                <p className="text-xs font-bold text-emerald-300 mb-2 flex items-center gap-1.5">
-                  <FileText className="w-4 h-4 text-emerald-400" />
-                  <span>Attached Notice Document</span>
-                </p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-emerald-400" />
+                    <span>Attached Notice Document</span>
+                  </p>
+                  <a
+                    href={selectedNotice.fileUrl}
+                    download={selectedNotice.fileName || 'NGDCSC_Notice'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download</span>
+                  </a>
+                </div>
                 {(selectedNotice.fileType === 'image' || selectedNotice.fileUrl.startsWith('data:image')) && (
-                  <div className="rounded-xl overflow-hidden border border-white/15 mb-3 max-h-72 bg-black/40 flex items-center justify-center">
-                    <img src={selectedNotice.fileUrl} alt="Notice document" className="w-full h-full object-contain" />
+                  <div className="rounded-xl overflow-hidden border border-white/15 mb-3 max-h-[65vh] bg-black/60 flex items-center justify-center p-1.5">
+                    <img src={selectedNotice.fileUrl} alt="Notice document" className="w-full h-auto max-h-[65vh] object-contain rounded-lg" />
                   </div>
                 )}
-                <a
-                  href={selectedNotice.fileUrl}
-                  download={selectedNotice.fileName || 'NGDCSC_Notice'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-slate-950 text-xs font-extrabold shadow-xs transition-colors cursor-pointer"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Download Attached File ({selectedNotice.fileName || 'File'})</span>
-                </a>
               </div>
             )}
 
@@ -809,6 +805,15 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Image Adjust / Crop Modal */}
+      {adjustingPhoto && (
+        <ImageAdjustModal
+          imageSrc={adjustingPhoto}
+          onApply={handleAdjustedPhoto}
+          onClose={() => setAdjustingPhoto(null)}
+        />
       )}
 
       {/* Main Page Views Container - flex-1 ensures natural flow and footer at the bottom */}
@@ -1055,11 +1060,26 @@ export default function App() {
               </div>
             )}
 
-            {/* 1. PHOTO */}
-            <div>
-              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-                Photo <span className="text-emerald-400 font-bold">*</span>
-              </label>
+            {/* 1. PHOTO (STRICTLY REQUIRED WITH ADJUST / CROP OPTION) */}
+            <div id="photo-upload-section" className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  Passport Size Photo <span className="text-rose-400 font-black text-sm">*</span>
+                  <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">
+                    ছবি আপলোড বাধ্যতামূলক (Strictly Required)
+                  </span>
+                </label>
+                {formData.photo && (
+                  <button
+                    type="button"
+                    onClick={() => setAdjustingPhoto(formData.photo)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all cursor-pointer shadow-xs"
+                  >
+                    <Scissors className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Adjust Photo (ক্রপ / এডজাস্ট)</span>
+                  </button>
+                )}
+              </div>
 
               <div className="flex flex-col sm:flex-row items-center gap-5">
                 <div 
@@ -1100,7 +1120,7 @@ export default function App() {
                     <div className="p-2 flex flex-col items-center">
                       <Camera className="w-6 h-6 text-emerald-400 mb-1" />
                       <span className="text-[11px] font-bold text-slate-200">Upload</span>
-                      <span className="text-[9px] text-slate-400 font-medium">JPG, PNG (Max 6MB)</span>
+                      <span className="text-[9px] text-slate-400 font-medium">JPG, PNG (Max 8MB)</span>
                     </div>
                   )}
                   <input 
@@ -1113,9 +1133,37 @@ export default function App() {
                   />
                 </div>
 
-                <div className="text-center sm:text-left text-xs text-slate-300 space-y-1">
-                  <p className="font-bold text-white">Student Formal / Passport Photo</p>
-                  <p className="text-[11px] text-slate-400">Click the box or drag and drop an image file (Max 6MB).</p>
+                <div className="text-center sm:text-left text-xs text-slate-300 space-y-1.5">
+                  <p className="font-bold text-white flex items-center justify-center sm:justify-start gap-1">
+                    <span>Student Formal / Passport Photo</span>
+                    <span className="text-rose-400 font-bold">*</span>
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Click the box or drag and drop an image file (Max 8MB). You can adjust zoom, rotate, and center face after selecting.
+                  </p>
+                  {formData.photo ? (
+                    <div className="flex items-center gap-2 pt-1 flex-wrap justify-center sm:justify-start">
+                      <button
+                        type="button"
+                        onClick={() => setAdjustingPhoto(formData.photo)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-bold border border-emerald-500/30 cursor-pointer"
+                      >
+                        <Scissors className="w-3 h-3 text-emerald-400" />
+                        <span>Adjust / Crop (ছবি এডজাস্ট)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 text-[11px] font-medium cursor-pointer"
+                      >
+                        Change Photo
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-amber-300 font-semibold">
+                      ⚠️ ফরম সাবমিট করার পূর্বে ছবি আপলোড করা আবশ্যক।
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

@@ -37,9 +37,8 @@ export default function MemberStatusSearch({
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const query = searchInput.trim();
-    const cleanDigits = query.replace(/[^0-9]/g, '');
-    if (!cleanDigits || cleanDigits.length < 10) {
-      setErrorMsg('Please enter a valid 11-digit registered phone number (e.g. 017XXXXXXXX)');
+    if (!query || query.length < 2) {
+      setErrorMsg('অনুগ্রহ করে আপনার নিবন্ধিত ফোন নম্বর (+88/01) বা মেম্বারশিপ আইডি দিন (Please enter phone or Membership ID)');
       return;
     }
 
@@ -113,20 +112,20 @@ export default function MemberStatusSearch({
         {/* Search Input Box */}
         <form onSubmit={handleSearch} className="space-y-3">
           <label className="block text-xs font-bold text-slate-200 uppercase tracking-wider">
-            Registered Phone Number
+            Registered Phone Number or Membership ID (+88 / 01 / NGDCSC-008)
           </label>
           <div className="relative flex items-center">
             <div className="absolute left-3.5 text-emerald-400 pointer-events-none flex items-center">
               <Phone className="w-4 h-4" />
             </div>
             <input
-              type="tel"
+              type="text"
               value={searchInput}
               onChange={(e) => {
                 setSearchInput(e.target.value);
                 if (errorMsg) setErrorMsg(null);
               }}
-              placeholder="e.g. 01XXXXXXXXX"
+              placeholder="e.g. 017XXXXXXXX, +88017..., or NGDCSC-008"
               className="w-full pl-10 pr-24 py-3 bg-slate-900/90 border border-white/20 focus:border-emerald-400 rounded-2xl text-white placeholder-slate-500 text-sm font-medium tracking-wide focus:outline-hidden focus:ring-2 focus:ring-emerald-400/20 transition-all font-mono"
             />
             <button

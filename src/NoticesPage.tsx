@@ -166,28 +166,32 @@ export default function NoticesPage({ onBack, onOpenAdmin }: NoticesPageProps) {
                   {notice.content}
                 </p>
 
-                {/* Optional Attached File / Image Thumbnail Preview */}
+                {/* Optional Attached File / Image Preview - Show Full File Cleanly */}
                 {notice.fileUrl && (
                   <div className="mt-3.5 pt-3 border-t border-white/10">
-                    {notice.fileType === 'image' ? (
-                      <div className="relative rounded-xl overflow-hidden bg-slate-900/80 border border-white/10 h-32 w-full flex items-center justify-center">
+                    {notice.fileType === 'image' || notice.fileUrl.startsWith('data:image') ? (
+                      <div className="relative rounded-xl overflow-hidden bg-slate-950/80 border border-white/15 w-full flex flex-col items-center justify-center p-1.5 group/img">
                         <img 
                           src={notice.fileUrl} 
                           alt={notice.title} 
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          className="w-full max-h-56 object-contain rounded-lg transition-transform duration-300 group-hover/img:scale-[1.01]"
                           referrerPolicy="no-referrer"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent flex items-end p-2.5">
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-white drop-shadow-md">
-                            <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>Attached Image</span>
+                        <div className="w-full mt-1.5 flex items-center justify-between px-2 py-1 bg-slate-900/90 rounded-lg text-[10px] text-slate-300">
+                          <span className="inline-flex items-center gap-1 font-bold text-emerald-300">
+                            <ImageIcon className="w-3 h-3" />
+                            <span>Attached Notice Paper</span>
                           </span>
+                          <span className="text-[9px] text-slate-400">Click card for full view</span>
                         </div>
                       </div>
                     ) : (
-                      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-500/10 border border-blue-400/30 text-blue-300 text-xs font-bold">
-                        <FileText className="w-3.5 h-3.5 text-blue-400" />
-                        <span className="truncate max-w-[200px]">{notice.fileName || 'Attached Notice Document'}</span>
+                      <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-500/10 border border-blue-400/30 text-blue-300 text-xs font-bold w-full justify-between">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="w-4 h-4 text-blue-400 shrink-0" />
+                          <span className="truncate">{notice.fileName || 'Attached Notice Document'}</span>
+                        </div>
+                        <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-200 shrink-0">Open</span>
                       </div>
                     )}
                   </div>
@@ -248,49 +252,59 @@ export default function NoticesPage({ onBack, onOpenAdmin }: NoticesPageProps) {
 
             {/* Attached File / Document */}
             {activeNoticeModal.fileUrl && (
-              <div className="mb-6 p-4 rounded-2xl bg-slate-900/60 border border-white/10">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+              <div className="mb-6 p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-emerald-500/30 shadow-lg">
+                <div className="flex items-center justify-between mb-3.5 flex-wrap gap-2">
+                  <span className="text-xs sm:text-sm font-bold text-emerald-300 flex items-center gap-1.5">
                     <FileText className="w-4 h-4 text-emerald-400" />
-                    <span>Attached Document</span>
+                    <span>Official Notice Document ({activeNoticeModal.fileName || 'Attachment'})</span>
                   </span>
-                  <a
-                    href={activeNoticeModal.fileUrl}
-                    download={activeNoticeModal.fileName || 'NGDCSC_Notice'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download File</span>
-                  </a>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={activeNoticeModal.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all cursor-pointer"
+                    >
+                      <span>Open in New Tab</span>
+                    </a>
+                    <a
+                      href={activeNoticeModal.fileUrl}
+                      download={activeNoticeModal.fileName || 'NGDCSC_Official_Notice'}
+                      className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black transition-all cursor-pointer shadow-md"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download</span>
+                    </a>
+                  </div>
                 </div>
 
-                {activeNoticeModal.fileType === 'image' ? (
-                  <div className="rounded-xl overflow-hidden bg-black/40 border border-white/10 max-h-96 flex items-center justify-center">
+                {activeNoticeModal.fileType === 'image' || activeNoticeModal.fileUrl.startsWith('data:image') ? (
+                  <div className="rounded-xl overflow-hidden bg-black/60 border border-white/15 w-full flex items-center justify-center p-2">
                     <img 
                       src={activeNoticeModal.fileUrl} 
                       alt="Notice attachment" 
-                      className="w-full h-auto max-h-96 object-contain"
+                      className="w-full h-auto max-h-[75vh] object-contain rounded-lg shadow-2xl"
                       referrerPolicy="no-referrer"
                     />
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-white/10 text-xs">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-5 h-5 text-blue-400 shrink-0" />
+                  <div className="p-4 rounded-xl bg-slate-950/70 border border-white/15 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
+                        <FileText className="w-6 h-6" />
+                      </div>
                       <div>
-                        <p className="font-bold text-white">{activeNoticeModal.fileName || 'Notice Document'}</p>
-                        <p className="text-[10px] text-slate-400 font-mono">PDF / Document File</p>
+                        <p className="font-bold text-white text-sm">{activeNoticeModal.fileName || 'Notice Document'}</p>
+                        <p className="text-[11px] text-slate-400 font-mono">PDF / Document File</p>
                       </div>
                     </div>
                     <a
                       href={activeNoticeModal.fileUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-bold text-xs"
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md transition-colors"
                     >
-                      Open
+                      Open Document
                     </a>
                   </div>
                 )}

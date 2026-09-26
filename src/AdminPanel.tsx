@@ -58,7 +58,8 @@ import {
   saveNoticeToFirebase,
   deleteNoticeFromFirebase,
   syncAllMembersToStatusDocs,
-  getNextMembershipId
+  getNextMembershipId,
+  generateNextMembershipId
 } from './services/firebase';
 import { 
   signInWithPopup, 
@@ -284,15 +285,62 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   };
 
   // Member Actions
-  const handleStatusChange = async (memberId: string, newStatus: MemberStatus) => {
-    if (newStatus === 'rejected') {
-      const target = members.find(m => m.id === memberId);
-      if (target) {
-        setRejectingMember(target);
-        return;
+  const handleQuickApprove = async (member: SubmissionRecord) => {
+    if (!member.id) return;
+    try {
+      let membershipId = member.membershipId;
+      if (!membershipId) {
+        try {
+          membershipId = await generateNextMembershipId();
+        } catch {
+          membershipId = getNextMembershipId(members);
+        }
       }
+      await updateMemberInFirebase(member.id, {
+        status: 'approved',
+        membershipId,
+        rejectionReason: null as any
+      });
+      setMembers(prev => prev.map(m => m.id === member.id ? {
+        ...m,
+        status: 'approved',
+        membershipId,
+        rejectionReason: undefined
+      } : m));
+      if (selectedMember && selectedMember.id === member.id) {
+        setSelectedMember(prev => prev ? {
+          ...prev,
+          status: 'approved',
+          membershipId,
+          rejectionReason: undefined
+        } : null);
+      }
+    } catch (err: any) {
+      console.error('Error approving member:', err);
+      alert('Error approving member: ' + (err?.message || 'Check connection'));
     }
-    await updateMemberInFirebase(memberId, { status: newStatus, rejectionReason: undefined });
+  };
+
+  const handleQuickReject = (member: SubmissionRecord) => {
+    setRejectingMember(member);
+  };
+
+  const handleStatusChange = async (memberId: string, newStatus: MemberStatus) => {
+    const target = members.find(m => m.id === memberId);
+    if (!target) return;
+
+    if (newStatus === 'rejected') {
+      setRejectingMember(target);
+      return;
+    }
+
+    if (newStatus === 'approved') {
+      await handleQuickApprove(target);
+      return;
+    }
+
+    // Set back to pending
+    await updateMemberInFirebase(memberId, { status: newStatus, rejectionReason: null as any });
     setMembers(prev => prev.map(m => m.id === memberId ? { ...m, status: newStatus, rejectionReason: undefined } : m));
     if (selectedMember && selectedMember.id === memberId) {
       setSelectedMember(prev => prev ? { ...prev, status: newStatus, rejectionReason: undefined } : null);
@@ -302,12 +350,17 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   const handleConfirmRejection = async (reason: string) => {
     if (!rejectingMember || !rejectingMember.id) return;
     const memberId = rejectingMember.id;
-    await updateMemberInFirebase(memberId, { status: 'rejected', rejectionReason: reason });
-    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, status: 'rejected', rejectionReason: reason } : m));
-    if (selectedMember && selectedMember.id === memberId) {
-      setSelectedMember(prev => prev ? { ...prev, status: 'rejected', rejectionReason: reason } : null);
+    try {
+      await updateMemberInFirebase(memberId, { status: 'rejected', rejectionReason: reason });
+      setMembers(prev => prev.map(m => m.id === memberId ? { ...m, status: 'rejected', rejectionReason: reason } : m));
+      if (selectedMember && selectedMember.id === memberId) {
+        setSelectedMember(prev => prev ? { ...prev, status: 'rejected', rejectionReason: reason } : null);
+      }
+      setRejectingMember(null);
+    } catch (err: any) {
+      console.error('Error rejecting member:', err);
+      alert('Error rejecting member: ' + (err?.message || 'Check connection'));
     }
-    setRejectingMember(null);
   };
 
   const handleDeleteMember = async (memberId: string) => {
@@ -884,18 +937,37 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center justify-between pt-1">
-                      <select
-                        value={member.status || 'pending'}
-                        onChange={(e) => handleStatusChange(member.id!, e.target.value as MemberStatus)}
-                        className="text-xs font-bold py-1 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 cursor-pointer"
-                      >
-                        <option value="pending">Pending</option>
-                        <option value="approved">Approve</option>
-                        <option value="rejected">Reject</option>
-                      </select>
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {member.status !== 'approved' && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickApprove(member)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Approve</span>
+                          </button>
+                        )}
+                        {member.status !== 'rejected' && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickReject(member)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-700 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>Reject</span>
+                          </button>
+                        )}
+                        {member.status === 'approved' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase">
+                            <Check className="w-3 h-3" />
+                            <span>Approved</span>
+                          </span>
+                        )}
+                      </div>
 
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1">
                         <button
                           type="button"
                           onClick={() => setSelectedMember(member)}
@@ -1092,7 +1164,31 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                           </td>
 
                           <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
+                            <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                              {member.status !== 'approved' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickApprove(member)}
+                                  title="Approve Member"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Approve</span>
+                                </button>
+                              )}
+
+                              {member.status !== 'rejected' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickReject(member)}
+                                  title="Reject Member"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-700 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+                                >
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  <span>Reject</span>
+                                </button>
+                              )}
+
                               <button
                                 type="button"
                                 onClick={() => setSelectedMember(member)}
@@ -2410,10 +2506,10 @@ function NoticeModal({
         category,
         content: content.trim(),
         date,
-        fileUrl: fileUrl || undefined,
-        fileName: fileName || undefined,
-        fileType: fileType || undefined,
-        isPinned
+        fileUrl: fileUrl ? fileUrl : null,
+        fileName: fileUrl && fileName ? fileName : null,
+        fileType: fileUrl && fileType ? fileType : null,
+        isPinned: Boolean(isPinned)
       });
     } finally {
       setSubmitting(false);

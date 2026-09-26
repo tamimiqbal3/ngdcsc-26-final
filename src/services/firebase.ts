@@ -67,28 +67,40 @@ const LS_NOTICES_KEY = 'ngdcsc_firebase_notices_cache';
 // ==================== MEMBER / REGISTRATION OPERATIONS ====================
 
 /**
+ * Starting serial for membership IDs as requested by club admin: starts at 008
+ */
+export const STARTING_SERIAL = 8;
+
+/**
  * Normalizes a phone number to standard Bangladeshi 11 digits format (e.g. 017xxxxxxxx)
+ * Works reliably with +8801..., 8801..., 01..., spaces, dashes, or 10-digit without leading 0.
  */
 export function normalizePhoneNumber(raw: string): string {
   if (!raw) return '';
-  // Strip all non-digit characters
   const digits = raw.replace(/\D/g, '');
-  // If starts with 880 (e.g. 8801712345678)
-  if (digits.startsWith('880') && digits.length >= 13) {
-    return '0' + digits.slice(3);
+  if (!digits) return '';
+
+  // If it contains a standard 11-digit BD number starting with 01
+  if (digits.length >= 11) {
+    const idx = digits.lastIndexOf('01');
+    if (idx !== -1 && digits.length - idx >= 11) {
+      return digits.substring(idx, idx + 11);
+    }
   }
+
   // If 10 digits starting with 1 (e.g. 1712345678)
   if (digits.length === 10 && digits.startsWith('1')) {
     return '0' + digits;
   }
+
   return digits;
 }
 
 /**
- * Generate next serial membership ID in format NGDCSC-001, NGDCSC-002, etc.
+ * Synchronous serial helper for local fallback or cache
  */
 export function getNextMembershipId(existingMembers: SubmissionRecord[]): string {
-  let maxNum = 0;
+  let maxNum = STARTING_SERIAL - 1; // 7, so next is 8
   for (const m of existingMembers) {
     if (m.membershipId) {
       const match = m.membershipId.match(/NGDCSC-(\d+)/i);
@@ -101,9 +113,66 @@ export function getNextMembershipId(existingMembers: SubmissionRecord[]): string
     }
   }
 
-  // If no serial found yet, fallback to total count or 0
-  const nextNum = maxNum > 0 ? maxNum + 1 : (existingMembers.length > 0 ? existingMembers.length + 1 : 1);
+  const nextNum = maxNum + 1;
   return `NGDCSC-${String(nextNum).padStart(3, '0')}`;
+}
+
+/**
+ * Generate next serial membership ID starting at NGDCSC-008
+ * Cross-checks Firestore 'system_meta/membership_serial' counter and existing members
+ */
+export async function generateNextMembershipId(): Promise<string> {
+  let highestSerial = STARTING_SERIAL - 1; // 7
+
+  // Check local cache
+  const cached = getCachedMembers();
+  for (const m of cached) {
+    if (m.membershipId) {
+      const match = m.membershipId.match(/NGDCSC-(\d+)/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > highestSerial) highestSerial = num;
+      }
+    }
+  }
+
+  // Check Firestore
+  try {
+    const counterRef = doc(db, 'system_meta', 'membership_serial');
+    const counterSnap = await getDoc(counterRef);
+    if (counterSnap.exists()) {
+      const val = counterSnap.data()?.lastSerial;
+      if (typeof val === 'number' && val > highestSerial) {
+        highestSerial = val;
+      }
+    }
+
+    // Also scan recent members in Firestore
+    const membersSnap = await getDocs(collection(db, 'members'));
+    membersSnap.forEach(d => {
+      const data = d.data();
+      if (data.membershipId) {
+        const match = data.membershipId.match(/NGDCSC-(\d+)/i);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > highestSerial) highestSerial = num;
+        }
+      }
+    });
+
+    const nextSerial = highestSerial + 1;
+    // Update counter
+    await setDoc(counterRef, {
+      lastSerial: nextSerial,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    return `NGDCSC-${String(nextSerial).padStart(3, '0')}`;
+  } catch (err) {
+    console.warn('Firestore serial counter warning:', err);
+    const nextSerial = highestSerial + 1;
+    return `NGDCSC-${String(nextSerial).padStart(3, '0')}`;
+  }
 }
 
 /**
@@ -111,9 +180,15 @@ export function getNextMembershipId(existingMembers: SubmissionRecord[]): string
  */
 export async function saveMemberToFirebase(member: SubmissionRecord): Promise<string> {
   const cached = getCachedMembers();
-  const membershipId = (member.membershipId && member.membershipId.trim()) 
-    ? member.membershipId.trim().toUpperCase() 
-    : getNextMembershipId(cached);
+  let membershipId = member.membershipId ? member.membershipId.trim().toUpperCase() : '';
+
+  if (!membershipId) {
+    try {
+      membershipId = await generateNextMembershipId();
+    } catch {
+      membershipId = getNextMembershipId(cached);
+    }
+  }
 
   const memberId = member.id || `ngdc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const recordWithId: SubmissionRecord = {
@@ -143,9 +218,9 @@ export async function saveMemberToFirebase(member: SubmissionRecord): Promise<st
     console.warn('Firestore write warning (data retained in local cache):', err);
   }
 
-  // 3. Save lightweight public status to 'member_status' by normalized phone & membership ID
+  // 3. Save lightweight public status to 'member_status' by multiple keys for instant lookup
   const cleanPhone = normalizePhoneNumber(recordWithId.phone);
-  const statusPayload = {
+  const statusPayload: any = {
     id: memberId,
     membershipId: recordWithId.membershipId,
     name: recordWithId.name,
@@ -158,19 +233,24 @@ export async function saveMemberToFirebase(member: SubmissionRecord): Promise<st
     updatedAt: serverTimestamp()
   };
 
+  const lookupKeys = new Set<string>();
   if (cleanPhone) {
-    try {
-      const statusRef = doc(db, 'member_status', cleanPhone);
-      await setDoc(statusRef, statusPayload, { merge: true });
-    } catch (err) {
-      console.warn('Firestore member_status sync warning:', err);
-    }
+    lookupKeys.add(cleanPhone);
+    lookupKeys.add(`+88${cleanPhone}`);
+    lookupKeys.add(`88${cleanPhone}`);
+  }
+  if (recordWithId.phone) {
+    lookupKeys.add(recordWithId.phone.trim());
+  }
+  if (membershipId) {
+    lookupKeys.add(membershipId.toUpperCase().trim());
+    const digitsOnly = membershipId.replace(/\D/g, '');
+    if (digitsOnly) lookupKeys.add(digitsOnly);
   }
 
-  if (membershipId) {
+  for (const k of Array.from(lookupKeys)) {
     try {
-      const idRef = doc(db, 'member_status', membershipId.toUpperCase().trim());
-      await setDoc(idRef, statusPayload, { merge: true });
+      await setDoc(doc(db, 'member_status', k), statusPayload, { merge: true });
     } catch {
       // ignore
     }
@@ -192,8 +272,8 @@ export async function fetchMembersFromFirebase(): Promise<SubmissionRecord[]> {
         records.push({ id: d.id, ...d.data() } as SubmissionRecord);
       });
 
-      // Find current max serial number among existing membership IDs
-      let maxSerial = 0;
+      // Find current max serial number among existing membership IDs (minimum STARTING_SERIAL - 1)
+      let maxSerial = STARTING_SERIAL - 1; // 7
       records.forEach(r => {
         if (r.membershipId) {
           const match = r.membershipId.match(/NGDCSC-(\d+)/i);
@@ -204,17 +284,15 @@ export async function fetchMembersFromFirebase(): Promise<SubmissionRecord[]> {
         }
       });
 
-      // If any existing records lack a membershipId, assign them serially by registration date
+      // If any existing records lack a membershipId, assign them serially by registration date starting from 008
       const missingIdRecords = records.filter(r => !r.membershipId);
       if (missingIdRecords.length > 0) {
-        // Sort oldest first for chronological serial numbering
         missingIdRecords.sort((a, b) => 
           new Date(a.submittedAt || a.createdAt || 0).getTime() - new Date(b.submittedAt || b.createdAt || 0).getTime()
         );
         for (const item of missingIdRecords) {
           maxSerial += 1;
           item.membershipId = `NGDCSC-${String(maxSerial).padStart(3, '0')}`;
-          // Persist back to Firestore in background
           if (item.id) {
             setDoc(doc(db, 'members', item.id), { membershipId: item.membershipId }, { merge: true }).catch(() => {});
           }
@@ -242,6 +320,7 @@ export async function fetchMembersFromFirebase(): Promise<SubmissionRecord[]> {
 
 /**
  * Update member details or status (pending, approved, rejected, membershipId)
+ * Sanitizes all undefined values so Firestore does not throw errors
  */
 export async function updateMemberInFirebase(id: string, updates: Partial<SubmissionRecord>): Promise<void> {
   // Update local cache
@@ -250,52 +329,72 @@ export async function updateMemberInFirebase(id: string, updates: Partial<Submis
   const updated = cached.map(m => m.id === id ? { ...m, ...updates } : m);
   localStorage.setItem(LS_MEMBERS_KEY, JSON.stringify(updated));
 
+  // Sanitize updates to replace undefined with null for Firestore compatibility
+  const sanitizedUpdates: Record<string, any> = {};
+  for (const [key, val] of Object.entries(updates)) {
+    sanitizedUpdates[key] = val === undefined ? null : val;
+  }
+
   // Update Firestore 'members' collection
   try {
     const docRef = doc(db, 'members', id);
-    await updateDoc(docRef, {
-      ...updates,
+    await setDoc(docRef, {
+      ...sanitizedUpdates,
       updatedAt: serverTimestamp()
-    });
+    }, { merge: true });
   } catch (err) {
     console.warn('Firestore update error (updated locally):', err);
   }
 
-  // Update 'member_status' public collection by phone and membership ID
+  // Update 'member_status' public collection documents
   const effectiveMid = updates.membershipId !== undefined ? updates.membershipId : targetMember?.membershipId;
-  const statusPayload: any = { updatedAt: serverTimestamp() };
-  if (updates.status !== undefined) statusPayload.status = updates.status;
-  if (updates.rejectionReason !== undefined) statusPayload.rejectionReason = updates.rejectionReason;
-  if (updates.name !== undefined) statusPayload.name = updates.name;
-  if (updates.photo !== undefined) statusPayload.photo = updates.photo;
-  if (updates.batch !== undefined) statusPayload.batch = updates.batch;
-  if (updates.section !== undefined) statusPayload.section = updates.section;
-  if (effectiveMid) statusPayload.membershipId = effectiveMid.toUpperCase().trim();
+  const effectivePhone = updates.phone || targetMember?.phone;
+  const effectiveName = updates.name || targetMember?.name || 'Club Member';
+  const effectivePhoto = updates.photo !== undefined ? updates.photo : (targetMember?.photo || null);
+  const effectiveStatus = updates.status !== undefined ? updates.status : (targetMember?.status || 'pending');
+  const effectiveReason = updates.rejectionReason !== undefined ? updates.rejectionReason : (targetMember?.rejectionReason || null);
+  const effectiveBatch = updates.batch !== undefined ? updates.batch : (targetMember?.batch || null);
+  const effectiveSection = updates.section !== undefined ? updates.section : (targetMember?.section || null);
+  const effectiveSubmittedAt = updates.submittedAt || targetMember?.submittedAt || targetMember?.createdAt || null;
 
-  const memberPhone = updates.phone || targetMember?.phone;
-  if (memberPhone) {
-    const cleanPhone = normalizePhoneNumber(memberPhone);
-    if (cleanPhone) {
-      try {
-        const statusRef = doc(db, 'member_status', cleanPhone);
-        await setDoc(statusRef, statusPayload, { merge: true });
-      } catch (err) {
-        console.warn('Firestore member_status update error:', err);
-      }
-    }
+  const statusPayload: any = {
+    id,
+    name: effectiveName,
+    photo: effectivePhoto,
+    status: effectiveStatus,
+    rejectionReason: effectiveStatus === 'approved' ? null : effectiveReason,
+    batch: effectiveBatch,
+    section: effectiveSection,
+    submittedAt: effectiveSubmittedAt,
+    updatedAt: serverTimestamp()
+  };
+  if (effectiveMid) {
+    statusPayload.membershipId = effectiveMid.toUpperCase().trim();
   }
 
-  // Update/cleanup membership ID lookup doc
+  // Write to all key variations in member_status so phone or ID search always finds it
+  const lookupKeys = new Set<string>();
+  if (effectivePhone) {
+    const norm = normalizePhoneNumber(effectivePhone);
+    if (norm) {
+      lookupKeys.add(norm);
+      lookupKeys.add(`+88${norm}`);
+      lookupKeys.add(`88${norm}`);
+    }
+    lookupKeys.add(effectivePhone.trim());
+  }
   if (effectiveMid) {
+    const cleanMid = effectiveMid.toUpperCase().trim();
+    lookupKeys.add(cleanMid);
+    const digitsOnly = cleanMid.replace(/\D/g, '');
+    if (digitsOnly) lookupKeys.add(digitsOnly);
+  }
+
+  for (const k of Array.from(lookupKeys)) {
     try {
-      const cleanMid = effectiveMid.toUpperCase().trim();
-      await setDoc(doc(db, 'member_status', cleanMid), statusPayload, { merge: true });
-      // If previous membershipId was different, clean up old lookup doc
-      if (targetMember?.membershipId && targetMember.membershipId.toUpperCase().trim() !== cleanMid) {
-        await deleteDoc(doc(db, 'member_status', targetMember.membershipId.toUpperCase().trim())).catch(() => {});
-      }
-    } catch {
-      // ignore
+      await setDoc(doc(db, 'member_status', k), statusPayload, { merge: true });
+    } catch (e) {
+      console.warn(`Firestore member_status sync warning for key ${k}:`, e);
     }
   }
 }
@@ -304,13 +403,11 @@ export async function updateMemberInFirebase(id: string, updates: Partial<Submis
  * Delete a member registration from Firebase
  */
 export async function deleteMemberFromFirebase(id: string): Promise<void> {
-  // Delete from local cache
   const cached = getCachedMembers();
   const targetMember = cached.find(m => m.id === id);
   const updated = cached.filter(m => m.id !== id);
   localStorage.setItem(LS_MEMBERS_KEY, JSON.stringify(updated));
 
-  // Delete from Firestore 'members' collection
   try {
     const docRef = doc(db, 'members', id);
     await deleteDoc(docRef);
@@ -318,22 +415,24 @@ export async function deleteMemberFromFirebase(id: string): Promise<void> {
     console.warn('Firestore delete error (deleted locally):', err);
   }
 
-  // Delete from 'member_status' public collection by phone
+  // Delete status docs
+  const keysToDelete = new Set<string>();
   if (targetMember?.phone) {
-    const cleanPhone = normalizePhoneNumber(targetMember.phone);
-    if (cleanPhone) {
-      try {
-        await deleteDoc(doc(db, 'member_status', cleanPhone));
-      } catch {
-        // ignore
-      }
+    const norm = normalizePhoneNumber(targetMember.phone);
+    if (norm) {
+      keysToDelete.add(norm);
+      keysToDelete.add(`+88${norm}`);
+      keysToDelete.add(`88${norm}`);
     }
+    keysToDelete.add(targetMember.phone.trim());
+  }
+  if (targetMember?.membershipId) {
+    keysToDelete.add(targetMember.membershipId.toUpperCase().trim());
   }
 
-  // Delete from 'member_status' public collection by membership ID
-  if (targetMember?.membershipId) {
+  for (const k of Array.from(keysToDelete)) {
     try {
-      await deleteDoc(doc(db, 'member_status', targetMember.membershipId.toUpperCase().trim()));
+      await deleteDoc(doc(db, 'member_status', k));
     } catch {
       // ignore
     }
@@ -341,61 +440,125 @@ export async function deleteMemberFromFirebase(id: string): Promise<void> {
 }
 
 /**
- * Public Search for Member Status using Phone Number OR Membership ID (e.g. NGDCSC-001)
- * Returns strictly: id, membershipId, name, photo, status, rejectionReason (plus batch & section)
+ * Public Search for Member Status using Phone Number (+88 or 01) OR Membership ID (e.g. NGDCSC-008, 008)
  */
 export async function searchMemberStatus(query: string): Promise<PublicMemberStatus | null> {
   const trimmed = query.trim();
-  if (!trimmed || trimmed.length < 3) return null;
+  if (!trimmed || trimmed.length < 2) return null;
 
-  const isMembershipId = /^[a-zA-Z0-9-]+$/.test(trimmed) && (
-    trimmed.toUpperCase().startsWith('NGDCSC') || 
-    trimmed.includes('-')
-  );
-  const cleanKey = isMembershipId ? trimmed.toUpperCase().trim() : normalizePhoneNumber(trimmed);
+  const cleanPhone = normalizePhoneNumber(trimmed);
+  const isMid = trimmed.toUpperCase().startsWith('NGDCSC') || /^\d{1,4}$/.test(trimmed);
+  const midStandard = trimmed.toUpperCase().startsWith('NGDCSC') 
+    ? trimmed.toUpperCase() 
+    : (/^\d+$/.test(trimmed) ? `NGDCSC-${trimmed.padStart(3, '0')}` : trimmed.toUpperCase());
 
-  if (!cleanKey) return null;
-
-  // 1. First attempt: check public 'member_status' Firestore collection
-  try {
-    const statusRef = doc(db, 'member_status', cleanKey);
-    const snap = await getDoc(statusRef);
-    if (snap.exists()) {
-      const data = snap.data();
-      return {
-        id: data.id || snap.id,
-        membershipId: data.membershipId || (isMembershipId ? cleanKey : undefined),
-        name: data.name || 'Member',
-        photo: data.photo || null,
-        status: (data.status as MemberStatus) || 'pending',
-        rejectionReason: data.rejectionReason || undefined,
-        batch: data.batch,
-        section: data.section,
-        submittedAt: data.submittedAt
-      };
-    }
-  } catch (err) {
-    console.warn('Firestore member_status lookup check:', err);
+  // Set of keys to check in member_status
+  const keysToCheck = new Set<string>();
+  if (cleanPhone) {
+    keysToCheck.add(cleanPhone);
+    keysToCheck.add(`+88${cleanPhone}`);
+    keysToCheck.add(`88${cleanPhone}`);
+  }
+  keysToCheck.add(trimmed);
+  keysToCheck.add(trimmed.toUpperCase());
+  if (midStandard) keysToCheck.add(midStandard);
+  if (isMid) {
+    const digitsOnly = trimmed.replace(/\D/g, '');
+    if (digitsOnly) keysToCheck.add(digitsOnly);
   }
 
-  // 2. Second attempt: Check local storage cached members
+  // 1. First attempt: Direct doc lookups in 'member_status'
+  for (const k of Array.from(keysToCheck)) {
+    try {
+      const snap = await getDoc(doc(db, 'member_status', k));
+      if (snap.exists()) {
+        const data = snap.data();
+        return {
+          id: data.id || snap.id,
+          membershipId: data.membershipId || (isMid ? midStandard : undefined),
+          name: data.name || 'Member',
+          photo: data.photo || null,
+          status: (data.status as MemberStatus) || 'pending',
+          rejectionReason: data.rejectionReason || undefined,
+          batch: data.batch,
+          section: data.section,
+          submittedAt: data.submittedAt
+        };
+      }
+    } catch {
+      // try next key
+    }
+  }
+
+  // 2. Second attempt: Collection scan of member_status (in case of subtle formatting mismatch)
+  try {
+    const colRef = collection(db, 'member_status');
+    const snap = await getDocs(colRef);
+    if (!snap.empty) {
+      for (const d of snap.docs) {
+        const data = d.data();
+        const docId = d.id;
+
+        // Check phone match
+        if (cleanPhone) {
+          const docNorm = normalizePhoneNumber(docId);
+          if (docNorm === cleanPhone || (cleanPhone.length >= 10 && docNorm.endsWith(cleanPhone.slice(-10)))) {
+            return {
+              id: data.id || d.id,
+              membershipId: data.membershipId,
+              name: data.name || 'Member',
+              photo: data.photo || null,
+              status: (data.status as MemberStatus) || 'pending',
+              rejectionReason: data.rejectionReason || undefined,
+              batch: data.batch,
+              section: data.section,
+              submittedAt: data.submittedAt
+            };
+          }
+        }
+
+        // Check membership ID match
+        if (data.membershipId) {
+          const mIdClean = data.membershipId.toUpperCase().replace(/\s/g, '');
+          if (mIdClean === trimmed.toUpperCase().replace(/\s/g, '') || (midStandard && mIdClean === midStandard)) {
+            return {
+              id: data.id || d.id,
+              membershipId: data.membershipId,
+              name: data.name || 'Member',
+              photo: data.photo || null,
+              status: (data.status as MemberStatus) || 'pending',
+              rejectionReason: data.rejectionReason || undefined,
+              batch: data.batch,
+              section: data.section,
+              submittedAt: data.submittedAt
+            };
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Firestore member_status scan error:', err);
+  }
+
+  // 3. Third attempt: Local cache fallback
   const cached = getCachedMembers();
-  const cleanKeyNorm = cleanKey.toUpperCase().replace(/\s/g, '');
   const matchedMember = cached.find(m => {
     // Check membership ID match
     if (m.membershipId) {
       const mIdNorm = m.membershipId.toUpperCase().replace(/\s/g, '');
-      if (mIdNorm === cleanKeyNorm) return true;
-      // Allow partial match if digits match (e.g., "NGDCSC-001" vs "001")
+      if (mIdNorm === trimmed.toUpperCase().replace(/\s/g, '') || (midStandard && mIdNorm === midStandard)) return true;
       const idNum = m.membershipId.replace(/[^0-9]/g, '');
       const qNum = trimmed.replace(/[^0-9]/g, '');
-      if (idNum && qNum && parseInt(idNum, 10) === parseInt(qNum, 10) && (trimmed.toLowerCase().includes('ngdc') || idNum.length >= 3)) {
+      if (idNum && qNum && parseInt(idNum, 10) === parseInt(qNum, 10)) {
         return true;
       }
     }
     // Check phone match
     const mPhone = normalizePhoneNumber(m.phone || '');
-    return mPhone === cleanKey || (cleanKey.length >= 10 && mPhone.endsWith(cleanKey.slice(-10)));
+    if (cleanPhone && (mPhone === cleanPhone || (cleanPhone.length >= 10 && mPhone.endsWith(cleanPhone.slice(-10))))) {
+      return true;
+    }
+    return false;
   });
 
   if (matchedMember) {
@@ -419,7 +582,7 @@ export async function searchMemberStatus(query: string): Promise<PublicMemberSta
 export const searchMemberStatusByPhone = searchMemberStatus;
 
 /**
- * Sync all existing members into member_status collection (called by admin upon loading)
+ * Sync all existing members into member_status collection
  */
 export async function syncAllMembersToStatusDocs(members: SubmissionRecord[]): Promise<void> {
   if (!members || members.length === 0) return;
@@ -441,6 +604,7 @@ export async function syncAllMembersToStatusDocs(members: SubmissionRecord[]): P
       const cleanPhone = normalizePhoneNumber(member.phone);
       if (cleanPhone) {
         await setDoc(doc(db, 'member_status', cleanPhone), statusPayload, { merge: true });
+        await setDoc(doc(db, 'member_status', `+88${cleanPhone}`), statusPayload, { merge: true });
       }
 
       if (member.membershipId) {
@@ -644,7 +808,14 @@ export async function fetchNoticesFromFirebase(): Promise<ClubNotice[]> {
  */
 export async function saveNoticeToFirebase(notice: ClubNotice): Promise<void> {
   const noticeId = notice.id || `notice_${Date.now()}`;
-  const record: ClubNotice = { ...notice, id: noticeId };
+  const record: ClubNotice = {
+    ...notice,
+    id: noticeId,
+    fileUrl: notice.fileUrl || null,
+    fileName: notice.fileUrl && notice.fileName ? notice.fileName : null,
+    fileType: notice.fileUrl && notice.fileType ? notice.fileType : null,
+    isPinned: Boolean(notice.isPinned)
+  };
 
   // Update local cache
   try {
@@ -658,15 +829,25 @@ export async function saveNoticeToFirebase(notice: ClubNotice): Promise<void> {
     // ignore
   }
 
-  // Update Firestore
+  // Update Firestore: Replace document so removed fields (like fileUrl) are explicitly updated/cleared
   try {
     const docRef = doc(db, 'notices', noticeId);
     await setDoc(docRef, {
-      ...record,
+      id: record.id,
+      title: record.title.trim(),
+      category: record.category,
+      content: record.content.trim(),
+      date: record.date,
+      fileUrl: record.fileUrl,
+      fileName: record.fileName,
+      fileType: record.fileType,
+      isPinned: record.isPinned,
+      publishedBy: record.publishedBy || 'Executive Committee',
       updatedAt: serverTimestamp()
-    }, { merge: true });
+    });
   } catch (err) {
     console.warn('Firestore notice save error:', err);
+    throw err;
   }
 }
 
