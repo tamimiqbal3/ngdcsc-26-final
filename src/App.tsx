@@ -466,7 +466,7 @@ export default function App() {
       return;
     }
     if (file.size > 8 * 1024 * 1024) {
-      setErrorMsg('ছবি সর্বোচ্চ ৮ মেগাবাইট (8MB) পর্যন্ত আপলোড করা যাবে। (Image size cannot exceed 8MB)');
+      setErrorMsg('Image size cannot exceed 8MB.');
       return;
     }
 
@@ -508,7 +508,7 @@ export default function App() {
 
     // 1. Photo is strictly compulsory
     if (!formData.photo) {
-      setErrorMsg('ছবি আপলোড করা বাধ্যতামূলক! অনুগ্রহ করে পাসপোর্ট সাইজ ছবি আপলোড করুন। (Student photo is strictly required!)');
+      setErrorMsg('Photo is strictly required! Please upload a passport-size student photo.');
       const photoEl = document.getElementById('photo-upload-section');
       if (photoEl) photoEl.scrollIntoView({ behavior: 'smooth' });
       return;
@@ -927,7 +927,7 @@ export default function App() {
                       Application Status: Pending Review
                     </span>
                     <span className="text-sm font-bold text-slate-200 block">
-                      Membership ID: এডমিন প্যানেলে অনুমোদনের (Approve) পর প্রদান করা হবে
+                      Membership ID: Will be assigned upon Admin approval
                     </span>
                   </div>
                 </div>
@@ -1006,7 +1006,7 @@ export default function App() {
             {/* Official WhatsApp Group Join - Clean & Minimal */}
             <div className="my-5 p-4 rounded-2xl bg-[#25D366]/5 border border-[#25D366]/20 text-center">
               <p className="text-xs text-slate-300 font-medium mb-3 leading-relaxed">
-                ক্লাবের অফিসিয়াল নোটিশ, ইভেন্ট আপডেট ও ক্লাবের কার্যক্রমের সাথে যুক্ত থাকতে আমাদের অফিসিয়াল হোয়াটসঅ্যাপ গ্রুপে যুক্ত হোন।
+                Stay updated with official club notices, science competitions, events, and workshops by joining our official WhatsApp group.
               </p>
               <a
                 href="https://chat.whatsapp.com/J0ooCmabbIT2dfJdXTLhni"
@@ -1082,7 +1082,7 @@ export default function App() {
                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all cursor-pointer shadow-xs"
                   >
                     <Scissors className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Adjust Photo (ক্রপ / এডজাস্ট)</span>
+                    <span>Adjust Photo</span>
                   </button>
                 )}
               </div>
@@ -1155,7 +1155,7 @@ export default function App() {
                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-bold border border-emerald-500/30 cursor-pointer"
                       >
                         <Scissors className="w-3 h-3 text-emerald-400" />
-                        <span>Adjust / Crop (ছবি এডজাস্ট)</span>
+                        <span>Adjust / Crop Photo</span>
                       </button>
                       <button
                         type="button"

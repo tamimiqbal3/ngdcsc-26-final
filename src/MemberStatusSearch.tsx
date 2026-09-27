@@ -156,11 +156,11 @@ export default function MemberStatusSearch({
               <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 space-y-2 text-left animate-in fade-in">
                 <div className="flex items-center gap-2 font-bold text-amber-300">
                   <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>ফায়ারবেস ডাটাবেজ পারমিশন সমস্যা (Firestore Rules)</span>
+                  <span>Firebase Database Permission Notice (Firestore Rules)</span>
                 </div>
                 <p className="text-slate-300 text-[11px] leading-relaxed">
-                  আপনার ফায়ারবেস প্রজেক্ট <strong>(ngdcsc-a8228)</strong> এ সাধারণ ভিজিটরদের জন্য Firestore রিড পারমিশন এখনো কার্যকর করা হয়নি। 
-                  এডমিন প্যানেলে জমা থাকা সদস্যদের সার্চ চালু করতে Firebase Console-এ গিয়ে নিচের রুলটি Publish করুন:
+                  Public member search read permission is not enabled on project <strong>(ngdcsc-a8228)</strong>. 
+                  To enable public member searches, publish the following rule in the Firebase Console:
                 </p>
                 <div className="p-2.5 rounded-xl bg-black/60 font-mono text-[11px] text-emerald-400 border border-white/10 select-all overflow-x-auto">
                   match /members/{'{'}memberId{'}'} {'{'} allow read, create: if true; allow update, delete: if request.auth != null; {'}'}
@@ -172,7 +172,7 @@ export default function MemberStatusSearch({
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold transition-all"
                   >
-                    <span>Firebase Console Rules এ যান</span> &rarr;
+                    <span>Open Firebase Console Rules</span> &rarr;
                   </a>
                 </div>
               </div>
@@ -189,7 +189,7 @@ export default function MemberStatusSearch({
         {loading && (
           <div className="pt-6 pb-4 flex flex-col items-center justify-center gap-3 animate-in fade-in">
             <div className="w-8 h-8 border-3 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-            <span className="text-xs text-slate-300 font-medium">মেম্বারশিপ রেকর্ড খোঁজা হচ্ছে...</span>
+            <span className="text-xs text-slate-300 font-medium">Searching member record...</span>
           </div>
         )}
 
@@ -236,7 +236,7 @@ export default function MemberStatusSearch({
                   ) : memberResult.status === 'pending' ? (
                     <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/35 text-amber-300 font-medium text-xs shadow-xs">
                       <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      <span>Membership ID: <strong className="text-amber-200">Approval-এর পর প্রদান করা হবে</strong></span>
+                      <span>Membership ID: <strong className="text-amber-200">Will be assigned upon approval</strong></span>
                     </div>
                   ) : null}
 
@@ -267,10 +267,10 @@ export default function MemberStatusSearch({
                       <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 space-y-1.5">
                         <div className="flex items-center justify-center gap-2 text-sm font-black text-emerald-400">
                           <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                          <span>Status: Approved (অনুমোদিত)</span>
+                          <span>Status: Approved</span>
                         </div>
                         <p className="text-xs text-slate-300 font-medium">
-                          অভিনন্দন! আপনার ক্লাবের মেম্বারশিপ আবেদনটি অনুমোদিত হয়েছে।
+                          Congratulations! Your club membership application has been approved.
                         </p>
                         <div className="pt-2">
                           <a
@@ -292,10 +292,10 @@ export default function MemberStatusSearch({
                       <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 space-y-1.5">
                         <div className="flex items-center justify-center gap-2 text-sm font-black text-amber-400">
                           <Clock className="w-5 h-5 text-amber-400" />
-                          <span>Status: Pending (অপেক্ষমান)</span>
+                          <span>Status: Pending Review</span>
                         </div>
                         <p className="text-xs text-slate-300 font-medium">
-                          আপনার আবেদনটি পর্যালোচনায় রয়েছে। এডমিন প্যানেল থেকে অনুমোদনের (Approve) পর আপনার অফিশিয়াল Membership ID সক্রিয় হবে।
+                          Your application is currently under review by the Executive Committee. Your official Membership ID will be activated upon approval.
                         </p>
                         <div className="pt-2">
                           <a

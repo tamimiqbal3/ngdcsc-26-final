@@ -48,7 +48,7 @@ export default function NotFoundPage({
 
         <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/10 text-left space-y-2 mb-6">
           <p className="text-xs text-slate-300 leading-relaxed font-medium">
-            ⚠️ <strong className="text-white">অনুরোধকৃত পেইজটি পাওয়া যায়নি অথবা এটি একটি সংরক্ষিত রুট।</strong> ক্লাবের অফিসিয়াল ওয়েবসাইট, মেম্বারশিপ ফর্ম অথবা নোটিশ দেখতে নিচের বাটনগুলো ব্যবহার করুন।
+            ⚠️ <strong className="text-white">The requested page was not found or is a protected route.</strong> Please use the buttons below to return to the official club website, registration form, or notices.
           </p>
           <p className="text-[11px] text-slate-400 leading-normal">
             The URL you requested does not exist or you do not have permission to view it.

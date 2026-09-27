@@ -179,7 +179,7 @@ export default function ImageAdjustModal({
             <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
               <Scissors className="w-4 h-4" />
             </div>
-            <h3 className="text-sm font-bold">ছবি এডজাস্ট করুন (Adjust Photo)</h3>
+            <h3 className="text-sm font-bold">Adjust Photo</h3>
           </div>
           <button
             type="button"
@@ -216,7 +216,7 @@ export default function ImageAdjustModal({
             {/* Subtle drag hint */}
             <div className="absolute bottom-2 right-2 pointer-events-none px-2 py-0.5 rounded-md bg-slate-950/80 border border-white/10 text-[9px] text-slate-300 flex items-center gap-1">
               <Move className="w-2.5 h-2.5 text-emerald-400" />
-              <span>টেনে সরান (Drag)</span>
+              <span>Drag to Reposition</span>
             </div>
           </div>
         </div>
@@ -260,7 +260,7 @@ export default function ImageAdjustModal({
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold transition-colors cursor-pointer"
             >
               <RotateCw className="w-3.5 h-3.5 text-emerald-400" />
-              <span>ঘোরান (90°)</span>
+              <span>Rotate 90°</span>
             </button>
 
             <button
@@ -269,7 +269,7 @@ export default function ImageAdjustModal({
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
             >
               <RotateCcw className="w-3 h-3 text-slate-400" />
-              <span>রিসেট (Reset)</span>
+              <span>Reset</span>
             </button>
           </div>
         </div>
@@ -281,7 +281,7 @@ export default function ImageAdjustModal({
             onClick={onClose}
             className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
           >
-            বাতিল (Cancel)
+            Cancel
           </button>
           <button
             type="button"
@@ -289,7 +289,7 @@ export default function ImageAdjustModal({
             className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black transition-all cursor-pointer shadow-lg shadow-emerald-500/25 active:scale-95"
           >
             <Check className="w-4 h-4 stroke-[3]" />
-            <span>ছবি সেভ করুন (Save)</span>
+            <span>Save Photo</span>
           </button>
         </div>
       </div>

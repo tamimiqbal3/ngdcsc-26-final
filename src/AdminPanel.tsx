@@ -640,12 +640,12 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                 <span>Google Sign-in Not Enabled</span>
               </div>
               <p className="text-[11px] text-amber-700 leading-snug">
-                Firebase Console-এ Google Sign-in এনাবল করা হয়নি।
+                Google Sign-in is not enabled in your Firebase Console project.
               </p>
               <div className="text-[10px] text-slate-700 space-y-1 bg-white p-2.5 rounded-lg border border-slate-200 font-mono">
-                <p>1. console.firebase.google.com-এ যান</p>
-                <p>2. Authentication → Sign-in method</p>
-                <p>3. Google সিলেক্ট করে Enable করুন ও Save দিন</p>
+                <p>1. Go to console.firebase.google.com</p>
+                <p>2. Authentication &rarr; Sign-in method</p>
+                <p>3. Select Google, toggle Enable, and click Save</p>
               </div>
             </div>
           ) : loginError ? (
@@ -2102,7 +2102,7 @@ function AddMemberManualModal({
 
           {/* Quick Notice for Admin */}
           <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-[11px] leading-relaxed">
-            💡 <strong>Fast Admin Entry:</strong> আপনি চাইলে যে কোনো ফিল্ড ফাঁকা রাখতে পারেন (Name, Phone বা Roll যেটুকু তথ্য আছে সেটুকুই দিতে পারবেন)।
+            💡 <strong>Fast Admin Entry:</strong> All fields are optional. Enter any available details (Name, Roll, or Phone).
           </div>
 
           {/* Photo Upload */}
