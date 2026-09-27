@@ -435,11 +435,12 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
   const handleDeleteMember = async (memberId: string) => {
     if (!window.confirm('Are you sure you want to permanently delete this member registration?')) return;
+    const target = members.find(m => m.id === memberId);
     // Optimistic delete
     setMembers(prev => prev.filter(m => m.id !== memberId));
     if (selectedMember?.id === memberId) setSelectedMember(null);
     try {
-      await deleteMemberFromFirebase(memberId);
+      await deleteMemberFromFirebase(memberId, target);
     } catch (err) {
       console.warn('Delete warning:', err);
     }

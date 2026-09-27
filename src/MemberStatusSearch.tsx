@@ -38,8 +38,9 @@ export default function MemberStatusSearch({
     if (e) e.preventDefault();
     const query = searchInput.trim();
     const cleanDigits = query.replace(/\D/g, '');
-    if (!cleanDigits || cleanDigits.length < 10) {
-      setErrorMsg('Please enter a valid phone number (01XXXXXXXXX)');
+    const isMidSearch = query.toUpperCase().startsWith('NGDCSC') || (/^\d{1,4}$/.test(query) && query.length < 10);
+    if (!isMidSearch && (!cleanDigits || cleanDigits.length < 10)) {
+      setErrorMsg('Please enter a valid phone number (01XXXXXXXXX) or Membership ID (e.g. NGDCSC-001)');
       return;
     }
 
@@ -183,6 +184,14 @@ export default function MemberStatusSearch({
             )
           )}
         </form>
+
+        {/* Loading Spinner */}
+        {loading && (
+          <div className="pt-6 pb-4 flex flex-col items-center justify-center gap-3 animate-in fade-in">
+            <div className="w-8 h-8 border-3 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs text-slate-300 font-medium">মেম্বারশিপ রেকর্ড খোঁজা হচ্ছে...</span>
+          </div>
+        )}
 
         {/* Result Area */}
         {searched && !loading && (

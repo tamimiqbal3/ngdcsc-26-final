@@ -23,6 +23,7 @@ import {
   orderBy,
   serverTimestamp,
   onSnapshot,
+  limit,
   Unsubscribe
 } from 'firebase/firestore';
 import { SubmissionRecord, ExecutiveMember, ClubNotice, PublicMemberStatus, MemberStatus } from '../types';
@@ -471,20 +472,45 @@ export async function updateMemberInFirebase(id: string, updates: Partial<Submis
 /**
  * Delete a member registration from Firebase
  */
-export async function deleteMemberFromFirebase(id: string): Promise<void> {
+export async function deleteMemberFromFirebase(id: string, memberData?: SubmissionRecord): Promise<void> {
   const cached = getCachedMembers();
-  const targetMember = cached.find(m => m.id === id);
-  const updated = cached.filter(m => m.id !== id);
-  localStorage.setItem(LS_MEMBERS_KEY, JSON.stringify(updated));
+  let targetMember = memberData || cached.find(m => m.id === id);
 
+  // If phone is missing from cached/target, try to fetch doc once before deleting
+  if (!targetMember?.phone && !targetMember?.membershipId) {
+    try {
+      const snap = await getDoc(doc(db, 'members', id));
+      if (snap.exists()) {
+        targetMember = { id, ...snap.data() } as SubmissionRecord;
+      }
+    } catch {}
+  }
+
+  // 1. Remove from all local caches
+  const updated = cached.filter(m => m.id !== id);
+  try {
+    localStorage.setItem(LS_MEMBERS_KEY, JSON.stringify(updated));
+    const rawSub = localStorage.getItem('ngdc_sc_submissions_v1');
+    if (rawSub) {
+      const subList = JSON.parse(rawSub);
+      localStorage.setItem('ngdc_sc_submissions_v1', JSON.stringify(subList.filter((m: any) => m.id !== id)));
+    }
+    const rawFb = localStorage.getItem('ngdc_sc_firebase_members_v1');
+    if (rawFb) {
+      const fbList = JSON.parse(rawFb);
+      localStorage.setItem('ngdc_sc_firebase_members_v1', JSON.stringify(fbList.filter((m: any) => m.id !== id)));
+    }
+  } catch {}
+
+  // 2. Delete main document from Firestore 'members' collection
   try {
     const docRef = doc(db, 'members', id);
     await deleteDoc(docRef);
   } catch (err) {
-    console.warn('Firestore delete error (deleted locally):', err);
+    console.warn('Firestore delete error:', err);
   }
 
-  // Delete status docs
+  // 3. Delete all associated status documents from 'member_status' collection
   const keysToDelete = new Set<string>();
   if (targetMember?.phone) {
     const norm = normalizePhoneNumber(targetMember.phone);
@@ -495,267 +521,164 @@ export async function deleteMemberFromFirebase(id: string): Promise<void> {
     }
     keysToDelete.add(targetMember.phone.trim());
   }
-  if (targetMember?.membershipId) {
-    keysToDelete.add(targetMember.membershipId.toUpperCase().trim());
-  }
-
-  for (const k of Array.from(keysToDelete)) {
-    try {
-      await deleteDoc(doc(db, 'member_status', k));
-    } catch {
-      // ignore
+  if (targetMember?.whatsapp) {
+    const normW = normalizePhoneNumber(targetMember.whatsapp);
+    if (normW) {
+      keysToDelete.add(normW);
+      keysToDelete.add(`+88${normW}`);
+      keysToDelete.add(`88${normW}`);
     }
+    keysToDelete.add(targetMember.whatsapp.trim());
   }
+  if (targetMember?.membershipId) {
+    const midClean = targetMember.membershipId.toUpperCase().trim();
+    keysToDelete.add(midClean);
+    const digits = midClean.replace(/\D/g, '');
+    if (digits) keysToDelete.add(digits);
+  }
+  keysToDelete.add(id);
+
+  const deletePromises = Array.from(keysToDelete).map(k => 
+    deleteDoc(doc(db, 'member_status', k)).catch(() => {})
+  );
+  await Promise.allSettled(deletePromises);
 }
 
 /**
  * Public Search for Member Status using Phone Number (+88 or 01) OR Membership ID (e.g. NGDCSC-008, 008)
  * Checks the live Firestore 'members' collection first, then 'member_status', then local cache.
  */
-export async function searchMemberStatus(queryStr: string): Promise<PublicMemberStatus | null> {
-  const trimmed = queryStr.trim();
-  if (!trimmed || trimmed.length < 2) return null;
-
-  const cleanPhone = normalizePhoneNumber(trimmed);
-  const isMid = trimmed.toUpperCase().startsWith('NGDCSC') || /^\d{1,4}$/.test(trimmed);
-  const midStandard = trimmed.toUpperCase().startsWith('NGDCSC') 
-    ? trimmed.toUpperCase() 
-    : (/^\d+$/.test(trimmed) ? `NGDCSC-${trimmed.padStart(3, '0')}` : trimmed.toUpperCase());
-
-  let hadPermissionDenied = false;
-
-  // 1. First priority: Check live Firestore 'members' collection (Source of Truth for Admin Panel)
+/**
+ * Helper to purge stale deleted records from client localStorage
+ */
+function cleanStaleLocalMember(cleanPhone?: string, mid?: string) {
   try {
-    const membersCol = collection(db, 'members');
-    
-    // Fast targeted query by exact phone candidates
-    const phoneCandidates = Array.from(new Set([cleanPhone, `+88${cleanPhone}`, `88${cleanPhone}`, trimmed].filter(Boolean)));
-    for (const phoneVal of phoneCandidates) {
-      try {
-        const q = query(membersCol, where('phone', '==', phoneVal));
-        const qSnap = await getDocs(q);
-        if (!qSnap.empty) {
-          const docSnap = qSnap.docs[0];
-          const data = docSnap.data();
-          return {
-            id: docSnap.id,
-            membershipId: data.membershipId,
-            name: data.name || 'Member',
-            photo: data.photo || null,
-            status: (data.status as MemberStatus) || 'pending',
-            rejectionReason: data.rejectionReason || undefined,
-            batch: data.batch,
-            section: data.section,
-            submittedAt: data.submittedAt || data.createdAt
-          };
-        }
-      } catch (e: any) {
-        if (e?.code === 'permission-denied') hadPermissionDenied = true;
-      }
-    }
-
-    // Check whatsapp candidates
-    for (const phoneVal of phoneCandidates) {
-      try {
-        const q = query(membersCol, where('whatsapp', '==', phoneVal));
-        const qSnap = await getDocs(q);
-        if (!qSnap.empty) {
-          const docSnap = qSnap.docs[0];
-          const data = docSnap.data();
-          return {
-            id: docSnap.id,
-            membershipId: data.membershipId,
-            name: data.name || 'Member',
-            photo: data.photo || null,
-            status: (data.status as MemberStatus) || 'pending',
-            rejectionReason: data.rejectionReason || undefined,
-            batch: data.batch,
-            section: data.section,
-            submittedAt: data.submittedAt || data.createdAt
-          };
-        }
-      } catch (e: any) {
-        if (e?.code === 'permission-denied') hadPermissionDenied = true;
-      }
-    }
-
-    // Direct scan across all documents in 'members' collection (handles non-standard spacing, dashes, etc.)
-    const allMembersSnap = await getDocs(membersCol);
-    if (!allMembersSnap.empty) {
-      for (const d of allMembersSnap.docs) {
-        const data = d.data();
-        const pNorm = normalizePhoneNumber(data.phone || '');
-        const wNorm = normalizePhoneNumber(data.whatsapp || '');
-        
-        const isPhoneMatch = cleanPhone && (
-          pNorm === cleanPhone || 
-          wNorm === cleanPhone ||
-          (cleanPhone.length >= 10 && (pNorm.endsWith(cleanPhone.slice(-10)) || wNorm.endsWith(cleanPhone.slice(-10))))
-        );
-        const isRawPhoneMatch = (data.phone && data.phone.trim() === trimmed) || (data.whatsapp && data.whatsapp.trim() === trimmed);
-        const isMidMatch = data.membershipId && (
-          data.membershipId.toUpperCase().trim() === trimmed.toUpperCase() ||
-          (midStandard && data.membershipId.toUpperCase().trim() === midStandard)
-        );
-
-        if (isPhoneMatch || isRawPhoneMatch || isMidMatch) {
-          return {
-            id: d.id,
-            membershipId: data.membershipId,
-            name: data.name || 'Member',
-            photo: data.photo || null,
-            status: (data.status as MemberStatus) || 'pending',
-            rejectionReason: data.rejectionReason || undefined,
-            batch: data.batch,
-            section: data.section,
-            submittedAt: data.submittedAt || data.createdAt
-          };
-        }
-      }
-    }
-  } catch (err: any) {
-    if (err?.code === 'permission-denied') hadPermissionDenied = true;
-    console.warn('Firestore members direct lookup error:', err);
-  }
-
-  // 2. Second priority: Direct doc lookups in 'member_status'
-  const keysToCheck = new Set<string>();
-  if (cleanPhone) {
-    keysToCheck.add(cleanPhone);
-    keysToCheck.add(`+88${cleanPhone}`);
-    keysToCheck.add(`88${cleanPhone}`);
-  }
-  keysToCheck.add(trimmed);
-  keysToCheck.add(trimmed.toUpperCase());
-  if (midStandard) keysToCheck.add(midStandard);
-  if (isMid) {
-    const digitsOnly = trimmed.replace(/\D/g, '');
-    if (digitsOnly) keysToCheck.add(digitsOnly);
-  }
-
-  for (const k of Array.from(keysToCheck)) {
-    try {
-      const snap = await getDoc(doc(db, 'member_status', k));
-      if (snap.exists()) {
-        const data = snap.data();
-        return {
-          id: data.id || snap.id,
-          membershipId: data.membershipId || (isMid ? midStandard : undefined),
-          name: data.name || 'Member',
-          photo: data.photo || null,
-          status: (data.status as MemberStatus) || 'pending',
-          rejectionReason: data.rejectionReason || undefined,
-          batch: data.batch,
-          section: data.section,
-          submittedAt: data.submittedAt
-        };
-      }
-    } catch (e: any) {
-      if (e?.code === 'permission-denied') hadPermissionDenied = true;
-    }
-  }
-
-  // 3. Third priority: Collection scan of member_status
-  try {
-    const colRef = collection(db, 'member_status');
-    const snap = await getDocs(colRef);
-    if (!snap.empty) {
-      for (const d of snap.docs) {
-        const data = d.data();
-        const docId = d.id;
-
-        // Check phone match
-        if (cleanPhone) {
-          const docNorm = normalizePhoneNumber(docId);
-          const dataPhoneNorm = data.phone ? normalizePhoneNumber(data.phone) : '';
-          if (
-            docNorm === cleanPhone ||
-            dataPhoneNorm === cleanPhone ||
-            (cleanPhone.length >= 10 && (docNorm.endsWith(cleanPhone.slice(-10)) || dataPhoneNorm.endsWith(cleanPhone.slice(-10))))
-          ) {
-            return {
-              id: data.id || d.id,
-              membershipId: data.membershipId,
-              name: data.name || 'Member',
-              photo: data.photo || null,
-              status: (data.status as MemberStatus) || 'pending',
-              rejectionReason: data.rejectionReason || undefined,
-              batch: data.batch,
-              section: data.section,
-              submittedAt: data.submittedAt
-            };
-          }
-        }
-
-        // Check membership ID match
-        if (data.membershipId) {
-          const mIdClean = data.membershipId.toUpperCase().replace(/\s/g, '');
-          if (mIdClean === trimmed.toUpperCase().replace(/\s/g, '') || (midStandard && mIdClean === midStandard)) {
-            return {
-              id: data.id || d.id,
-              membershipId: data.membershipId,
-              name: data.name || 'Member',
-              photo: data.photo || null,
-              status: (data.status as MemberStatus) || 'pending',
-              rejectionReason: data.rejectionReason || undefined,
-              batch: data.batch,
-              section: data.section,
-              submittedAt: data.submittedAt
-            };
-          }
-        }
-      }
-    }
-  } catch (err: any) {
-    if (err?.code === 'permission-denied') hadPermissionDenied = true;
-    console.warn('Firestore member_status scan error:', err);
-  }
-
-  // 4. Fourth priority: Local cache fallback
-  const cached = getCachedMembers();
-  const matchedMember = cached.find(m => {
-    // Check membership ID match
-    if (m.membershipId) {
-      const mIdNorm = m.membershipId.toUpperCase().replace(/\s/g, '');
-      if (mIdNorm === trimmed.toUpperCase().replace(/\s/g, '') || (midStandard && mIdNorm === midStandard)) return true;
-      const idNum = m.membershipId.replace(/[^0-9]/g, '');
-      const qNum = trimmed.replace(/[^0-9]/g, '');
-      if (idNum && qNum && parseInt(idNum, 10) === parseInt(qNum, 10)) {
+    const rawSub = localStorage.getItem('ngdc_sc_submissions_v1');
+    if (rawSub) {
+      const list = JSON.parse(rawSub);
+      const filtered = list.filter((m: any) => {
+        if (cleanPhone && normalizePhoneNumber(m.phone || '') === cleanPhone) return false;
+        if (mid && m.membershipId && m.membershipId.toUpperCase() === mid.toUpperCase()) return false;
         return true;
-      }
+      });
+      localStorage.setItem('ngdc_sc_submissions_v1', JSON.stringify(filtered));
     }
-    // Check phone match
-    const mPhone = normalizePhoneNumber(m.phone || '');
-    const mWp = normalizePhoneNumber(m.whatsapp || '');
-    if (cleanPhone && (
-      mPhone === cleanPhone || 
-      mWp === cleanPhone ||
-      (cleanPhone.length >= 10 && (mPhone.endsWith(cleanPhone.slice(-10)) || mWp.endsWith(cleanPhone.slice(-10))))
-    )) {
-      return true;
-    }
-    return false;
+  } catch {}
+}
+
+/**
+ * Public Search for Member Status using Phone Number (+88 or 01) OR Membership ID (e.g. NGDCSC-008, 008)
+ * Checks live Firestore 'member_status' and 'members' directly with timeout protection.
+ * If deleted or not found, reliably returns null (NOT found).
+ */
+export async function searchMemberStatus(queryStr: string): Promise<PublicMemberStatus | null> {
+  const timeoutPromise = new Promise<null>((resolve) => {
+    setTimeout(() => resolve(null), 3500);
   });
 
-  if (matchedMember) {
-    return {
-      id: matchedMember.id,
-      membershipId: matchedMember.membershipId,
-      name: matchedMember.name,
-      photo: matchedMember.photo || null,
-      status: (matchedMember.status as MemberStatus) || 'pending',
-      rejectionReason: matchedMember.rejectionReason || undefined,
-      batch: matchedMember.batch,
-      section: matchedMember.section,
-      submittedAt: matchedMember.submittedAt || matchedMember.createdAt
-    };
-  }
+  const searchAction = async (): Promise<PublicMemberStatus | null> => {
+    const trimmed = queryStr.trim();
+    if (!trimmed || trimmed.length < 2) return null;
 
-  if (hadPermissionDenied) {
-    throw new Error('PERMISSION_DENIED');
-  }
+    const cleanPhone = normalizePhoneNumber(trimmed);
+    const isMid = trimmed.toUpperCase().startsWith('NGDCSC') || /^\d{1,4}$/.test(trimmed);
+    const midStandard = trimmed.toUpperCase().startsWith('NGDCSC') 
+      ? trimmed.toUpperCase() 
+      : (/^\d+$/.test(trimmed) ? `NGDCSC-${trimmed.padStart(3, '0')}` : trimmed.toUpperCase());
 
-  return null;
+    // 1. Direct document key lookups in 'member_status' (point queries - fastest O(1) response)
+    const candidateKeys = new Set<string>();
+    if (cleanPhone) {
+      candidateKeys.add(cleanPhone);
+      candidateKeys.add(`+88${cleanPhone}`);
+      candidateKeys.add(`88${cleanPhone}`);
+    }
+    candidateKeys.add(trimmed);
+    if (isMid) {
+      candidateKeys.add(trimmed.toUpperCase());
+      if (midStandard) candidateKeys.add(midStandard);
+      const digits = trimmed.replace(/\D/g, '');
+      if (digits) candidateKeys.add(digits);
+    }
+
+    try {
+      const statusPromises = Array.from(candidateKeys).map(k => getDoc(doc(db, 'member_status', k)).catch(() => null));
+      const statusSnaps = await Promise.all(statusPromises);
+      for (const snap of statusSnaps) {
+        if (snap && snap.exists()) {
+          const data = snap.data();
+          if (data && data.status !== 'deleted') {
+            return {
+              id: data.id || snap.id,
+              membershipId: data.membershipId || (isMid ? midStandard : undefined),
+              name: data.name || 'Member',
+              photo: data.photo || null,
+              status: (data.status as MemberStatus) || 'pending',
+              rejectionReason: data.rejectionReason || undefined,
+              batch: data.batch,
+              section: data.section,
+              submittedAt: data.submittedAt
+            };
+          }
+        }
+      }
+    } catch (e: any) {
+      if (e?.code === 'permission-denied') {
+        throw new Error('PERMISSION_DENIED');
+      }
+    }
+
+    // 2. Targeted queries on 'members' collection with limit(1)
+    try {
+      const membersCol = collection(db, 'members');
+      const queriesToRun: any[] = [];
+      if (cleanPhone) {
+        queriesToRun.push(query(membersCol, where('phone', '==', cleanPhone), limit(1)));
+        queriesToRun.push(query(membersCol, where('phone', '==', trimmed), limit(1)));
+        queriesToRun.push(query(membersCol, where('whatsapp', '==', cleanPhone), limit(1)));
+      }
+      if (isMid) {
+        queriesToRun.push(query(membersCol, where('membershipId', '==', trimmed.toUpperCase()), limit(1)));
+        if (midStandard) {
+          queriesToRun.push(query(membersCol, where('membershipId', '==', midStandard), limit(1)));
+        }
+      }
+
+      const querySnaps = await Promise.all(queriesToRun.map(q => getDocs(q).catch(() => null)));
+      for (const qSnap of querySnaps) {
+        if (qSnap && !qSnap.empty) {
+          const docSnap = qSnap.docs[0];
+          const data = docSnap.data() as any;
+          if (data && data.status !== 'deleted') {
+            return {
+              id: docSnap.id,
+              membershipId: data.membershipId,
+              name: data.name || 'Member',
+              photo: data.photo || null,
+              status: (data.status as MemberStatus) || 'pending',
+              rejectionReason: data.rejectionReason || undefined,
+              batch: data.batch,
+              section: data.section,
+              submittedAt: data.submittedAt || data.createdAt
+            };
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err?.code === 'permission-denied') {
+        throw new Error('PERMISSION_DENIED');
+      }
+    }
+
+    // 3. If not found in live Firestore:
+    // This member was permanently deleted by Admin (or never registered).
+    // Purge any stale client local storage so deleted records NEVER reappear!
+    cleanStaleLocalMember(cleanPhone, isMid ? (midStandard || trimmed) : undefined);
+
+    return null;
+  };
+
+  return Promise.race([searchAction(), timeoutPromise]);
 }
 
 // Alias for backwards compatibility
