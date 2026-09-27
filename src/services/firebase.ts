@@ -50,12 +50,26 @@ export const auth = getAuth(firebaseApp);
 export const db = (() => {
   try {
     return initializeFirestore(firebaseApp, {
-      experimentalAutoDetectLongPolling: true
+      experimentalAutoDetectLongPolling: true,
+      ignoreUndefinedProperties: true
     });
   } catch {
     return getFirestore(firebaseApp);
   }
 })();
+
+/**
+ * Utility to strip undefined properties from objects to prevent Firestore rejection
+ */
+export function cleanFirestoreData<T extends Record<string, any>>(obj: T): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      result[key] = value;
+    }
+  }
+  return result;
+}
 
 // Initialize analytics safely if supported
 export let analytics: any = null;
@@ -143,12 +157,14 @@ export function getNextMembershipId(existingMembers: SubmissionRecord[]): string
 export async function generateNextMembershipId(currentList?: SubmissionRecord[]): Promise<string> {
   let maxSerial = 0;
 
-  // 1. Check in-memory list if provided
-  if (currentList && Array.isArray(currentList)) {
+  // 1. If list is already provided in memory, compute instantly with zero network delay
+  if (currentList && Array.isArray(currentList) && currentList.length > 0) {
     for (const m of currentList) {
       const num = extractSerial(m.membershipId);
       if (num > maxSerial) maxSerial = num;
     }
+    const nextSerial = maxSerial + 1;
+    return `NGDCSC-${String(nextSerial).padStart(3, '0')}`;
   }
 
   // 2. Check local storage cache
@@ -158,36 +174,24 @@ export async function generateNextMembershipId(currentList?: SubmissionRecord[])
     if (num > maxSerial) maxSerial = num;
   }
 
-  // 3. Check live Firestore
+  // 3. Fallback to live Firestore if needed
   try {
-    const membersSnap = await getDocs(collection(db, 'members'));
-    membersSnap.forEach(d => {
-      const data = d.data();
-      const num = extractSerial(data.membershipId);
-      if (num > maxSerial) maxSerial = num;
-    });
-
-    try {
-      const counterRef = doc(db, 'system_meta', 'membership_serial');
-      const counterSnap = await getDoc(counterRef);
-      if (counterSnap.exists()) {
-        const val = counterSnap.data()?.lastSerial;
-        if (typeof val === 'number' && val > maxSerial) {
-          maxSerial = val;
-        }
+    const counterRef = doc(db, 'system_meta', 'membership_serial');
+    const counterSnap = await getDoc(counterRef);
+    if (counterSnap.exists()) {
+      const val = counterSnap.data()?.lastSerial;
+      if (typeof val === 'number' && val > maxSerial) {
+        maxSerial = val;
       }
-
-      const nextSerial = maxSerial + 1;
-      await setDoc(counterRef, {
-        lastSerial: nextSerial,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-
-      return `NGDCSC-${String(nextSerial).padStart(3, '0')}`;
-    } catch {
-      const nextSerial = maxSerial + 1;
-      return `NGDCSC-${String(nextSerial).padStart(3, '0')}`;
     }
+
+    const nextSerial = maxSerial + 1;
+    setDoc(counterRef, {
+      lastSerial: nextSerial,
+      updatedAt: serverTimestamp()
+    }, { merge: true }).catch(() => {});
+
+    return `NGDCSC-${String(nextSerial).padStart(3, '0')}`;
   } catch (err) {
     console.warn('Firestore serial lookup warning:', err);
     const nextSerial = maxSerial + 1;
@@ -204,10 +208,9 @@ export async function saveMemberToFirebase(member: SubmissionRecord): Promise<st
   let membershipId = member.membershipId ? member.membershipId.trim().toUpperCase() : '';
 
   // Only assign ID if member is approved (or admin explicitly provided ID)
-  // Pending student registrations receive official Membership ID upon Admin approval
   if (!membershipId && status === 'approved') {
     try {
-      membershipId = await generateNextMembershipId();
+      membershipId = await generateNextMembershipId(cached);
     } catch {
       membershipId = getNextMembershipId(cached);
     }
@@ -226,6 +229,7 @@ export async function saveMemberToFirebase(member: SubmissionRecord): Promise<st
   try {
     const updated = [recordWithId, ...cached.filter(m => m.id !== memberId)];
     localStorage.setItem(LS_MEMBERS_KEY, JSON.stringify(updated));
+    localStorage.setItem('ngdc_sc_submissions_v1', JSON.stringify(updated));
   } catch (err) {
     console.warn('LocalStorage save warning:', err);
   }
@@ -233,19 +237,21 @@ export async function saveMemberToFirebase(member: SubmissionRecord): Promise<st
   // 2. Save full record to Firestore 'members' collection
   try {
     const docRef = doc(db, 'members', memberId);
-    await setDoc(docRef, {
+    const firestoreData = cleanFirestoreData({
       ...recordWithId,
       updatedAt: serverTimestamp()
-    }, { merge: true });
+    });
+    // Create new document cleanly
+    await setDoc(docRef, firestoreData);
   } catch (err) {
     console.warn('Firestore write warning (data retained in local cache):', err);
   }
 
   // 3. Save lightweight public status to 'member_status' by multiple keys for instant lookup
   const cleanPhone = normalizePhoneNumber(recordWithId.phone);
-  const statusPayload: any = {
+  const statusPayload: any = cleanFirestoreData({
     id: memberId,
-    membershipId: recordWithId.membershipId,
+    membershipId: recordWithId.membershipId || null,
     name: recordWithId.name,
     photo: recordWithId.photo || null,
     status: recordWithId.status || 'pending',
@@ -254,7 +260,7 @@ export async function saveMemberToFirebase(member: SubmissionRecord): Promise<st
     section: recordWithId.section,
     submittedAt: recordWithId.submittedAt || recordWithId.createdAt,
     updatedAt: serverTimestamp()
-  };
+  });
 
   const lookupKeys = new Set<string>();
   if (cleanPhone) {
@@ -758,12 +764,16 @@ export const searchMemberStatusByPhone = searchMemberStatus;
 /**
  * Sync all existing members into member_status collection
  */
+let lastSyncTime = 0;
 export async function syncAllMembersToStatusDocs(members: SubmissionRecord[]): Promise<void> {
   if (!members || members.length === 0) return;
+  // Prevent flooding: allow sync at most once every 10 minutes
+  const now = Date.now();
+  if (now - lastSyncTime < 10 * 60 * 1000) return;
+  lastSyncTime = now;
   try {
-    const promises: Promise<any>[] = [];
-    for (const member of members) {
-      const statusPayload = {
+    for (const member of members.slice(0, 50)) {
+      const statusPayload = cleanFirestoreData({
         id: member.id,
         membershipId: member.membershipId || null,
         name: member.name,
@@ -775,19 +785,16 @@ export async function syncAllMembersToStatusDocs(members: SubmissionRecord[]): P
         phone: member.phone,
         submittedAt: member.submittedAt || member.createdAt,
         updatedAt: serverTimestamp()
-      };
+      });
 
       const cleanPhone = normalizePhoneNumber(member.phone);
       if (cleanPhone) {
-        promises.push(setDoc(doc(db, 'member_status', cleanPhone), statusPayload, { merge: true }).catch(() => {}));
-        promises.push(setDoc(doc(db, 'member_status', `+88${cleanPhone}`), statusPayload, { merge: true }).catch(() => {}));
+        setDoc(doc(db, 'member_status', cleanPhone), statusPayload, { merge: true }).catch(() => {});
       }
-
       if (member.membershipId) {
-        promises.push(setDoc(doc(db, 'member_status', member.membershipId.toUpperCase().trim()), statusPayload, { merge: true }).catch(() => {}));
+        setDoc(doc(db, 'member_status', member.membershipId.toUpperCase().trim()), statusPayload, { merge: true }).catch(() => {});
       }
     }
-    await Promise.allSettled(promises);
   } catch (err) {
     console.warn('Batch sync member_status notice:', err);
   }

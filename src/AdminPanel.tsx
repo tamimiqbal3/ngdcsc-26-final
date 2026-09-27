@@ -31,8 +31,10 @@ import {
   TrendingUp,
   Layers,
   ChevronRight,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Scissors
 } from 'lucide-react';
+import ImageAdjustModal from './components/ImageAdjustModal';
 import { 
   SubmissionRecord, 
   ExecutiveMember, 
@@ -102,11 +104,38 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   // Active Tab: Default is 'dashboard' with rich graphs
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
 
-  // Data states
-  const [members, setMembers] = useState<SubmissionRecord[]>([]);
-  const [committee, setCommittee] = useState<ExecutiveMember[]>([]);
-  const [notices, setNotices] = useState<ClubNotice[]>([]);
+  // Data states: initialized instantly from localStorage cache so there is ZERO lag on open/refresh
+  const [members, setMembers] = useState<SubmissionRecord[]>(() => {
+    try {
+      const raw = localStorage.getItem('ngdcsc_firebase_members_cache') || localStorage.getItem('ngdc_sc_submissions_v1');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [committee, setCommittee] = useState<ExecutiveMember[]>(() => {
+    try {
+      const raw = localStorage.getItem('ngdcsc_firebase_committee_cache');
+      return raw ? JSON.parse(raw) : INITIAL_COMMITTEE;
+    } catch {
+      return INITIAL_COMMITTEE;
+    }
+  });
+  const [notices, setNotices] = useState<ClubNotice[]>(() => {
+    try {
+      const raw = localStorage.getItem('ngdcsc_firebase_notices_cache');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
   const [loadingData, setLoadingData] = useState(false);
+
+  // Photo Adjust Modal State
+  const [adjustingPhotoModal, setAdjustingPhotoModal] = useState<{
+    src: string;
+    onApply: (dataUrl: string) => void;
+  } | null>(null);
 
   // Members Tab Filters & Modals
   const [memberSearch, setMemberSearch] = useState('');
@@ -177,30 +206,21 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
   const handleMemberPhotoUpload = (file: File) => {
     if (!file.type.startsWith('image/')) return;
-    if (file.size > 6 * 1024 * 1024) {
-      alert('Photo size cannot exceed 6MB.');
+    if (file.size > 8 * 1024 * 1024) {
+      alert('Photo size cannot exceed 8MB.');
       return;
     }
     const reader = new FileReader();
     reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const MAX_DIM = 600;
-        let w = img.width, h = img.height;
-        if (w > MAX_DIM || h > MAX_DIM) {
-          if (w > h) { h = Math.round((h * MAX_DIM) / w); w = MAX_DIM; }
-          else { w = Math.round((w * MAX_DIM) / h); h = MAX_DIM; }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, w, h);
-          const compressed = canvas.toDataURL('image/jpeg', 0.85);
-          setEditingMember(prev => prev ? { ...prev, photo: compressed } : null);
-        }
-      };
-      img.src = e.target?.result as string;
+      const raw = e.target?.result as string;
+      if (raw) {
+        setAdjustingPhotoModal({
+          src: raw,
+          onApply: (adjusted) => {
+            setEditingMember(prev => prev ? { ...prev, photo: adjusted } : null);
+          }
+        });
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -243,7 +263,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     const unsubMembers = subscribeToMembers((liveMembers) => {
       setMembers(liveMembers);
       checkLoaded();
-      syncAllMembersToStatusDocs(liveMembers).catch(() => {});
     });
 
     // 2. Executive committee real-time stream
@@ -276,7 +295,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       setMembers(membersData);
       setCommittee(committeeData);
       setNotices(noticesData);
-      syncAllMembersToStatusDocs(membersData).catch(() => {});
     } catch (err) {
       console.error('Error loading admin data:', err);
     } finally {
@@ -317,30 +335,23 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     setLoginError(null);
   };
 
-  // Member Actions
+  // Member Actions - Instant Optimistic UI for silky smooth 60fps responsiveness
   const handleQuickApprove = async (member: SubmissionRecord) => {
     if (!member.id) return;
     try {
       let membershipId = member.membershipId;
       if (!membershipId) {
-        try {
-          membershipId = await generateNextMembershipId(members);
-        } catch {
-          membershipId = getNextMembershipId(members);
-        }
+        membershipId = getNextMembershipId(members);
       }
-      await updateMemberInFirebase(member.id, {
-        ...member,
-        status: 'approved',
-        membershipId,
-        rejectionReason: null as any
-      });
+
+      // Optimistic instant local state update
       setMembers(prev => prev.map(m => m.id === member.id ? {
         ...m,
         status: 'approved',
         membershipId,
         rejectionReason: undefined
       } : m));
+
       if (selectedMember && selectedMember.id === member.id) {
         setSelectedMember(prev => prev ? {
           ...prev,
@@ -349,6 +360,14 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
           rejectionReason: undefined
         } : null);
       }
+
+      // Async write in background
+      await updateMemberInFirebase(member.id, {
+        ...member,
+        status: 'approved',
+        membershipId,
+        rejectionReason: null as any
+      });
     } catch (err: any) {
       console.error('Error approving member:', err);
       alert('Error approving member: ' + (err?.message || 'Check connection'));
@@ -373,32 +392,41 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       return;
     }
 
-    // Set back to pending
-    await updateMemberInFirebase(memberId, {
-      ...target,
-      status: newStatus,
-      rejectionReason: null as any
-    });
+    // Set back to pending - Optimistic update first
     setMembers(prev => prev.map(m => m.id === memberId ? { ...m, status: newStatus, rejectionReason: undefined } : m));
     if (selectedMember && selectedMember.id === memberId) {
       setSelectedMember(prev => prev ? { ...prev, status: newStatus, rejectionReason: undefined } : null);
+    }
+
+    try {
+      await updateMemberInFirebase(memberId, {
+        ...target,
+        status: newStatus,
+        rejectionReason: null as any
+      });
+    } catch (err) {
+      console.warn('Status change warning:', err);
     }
   };
 
   const handleConfirmRejection = async (reason: string) => {
     if (!rejectingMember || !rejectingMember.id) return;
     const memberId = rejectingMember.id;
+    const target = rejectingMember;
+    setRejectingMember(null);
+
+    // Optimistic update
+    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, status: 'rejected', rejectionReason: reason } : m));
+    if (selectedMember && selectedMember.id === memberId) {
+      setSelectedMember(prev => prev ? { ...prev, status: 'rejected', rejectionReason: reason } : null);
+    }
+
     try {
       await updateMemberInFirebase(memberId, {
-        ...rejectingMember,
+        ...target,
         status: 'rejected',
         rejectionReason: reason
       });
-      setMembers(prev => prev.map(m => m.id === memberId ? { ...m, status: 'rejected', rejectionReason: reason } : m));
-      if (selectedMember && selectedMember.id === memberId) {
-        setSelectedMember(prev => prev ? { ...prev, status: 'rejected', rejectionReason: reason } : null);
-      }
-      setRejectingMember(null);
     } catch (err: any) {
       console.error('Error rejecting member:', err);
       alert('Error rejecting member: ' + (err?.message || 'Check connection'));
@@ -407,17 +435,29 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
   const handleDeleteMember = async (memberId: string) => {
     if (!window.confirm('Are you sure you want to permanently delete this member registration?')) return;
-    await deleteMemberFromFirebase(memberId);
+    // Optimistic delete
     setMembers(prev => prev.filter(m => m.id !== memberId));
     if (selectedMember?.id === memberId) setSelectedMember(null);
+    try {
+      await deleteMemberFromFirebase(memberId);
+    } catch (err) {
+      console.warn('Delete warning:', err);
+    }
   };
 
   const handleSaveMemberEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingMember || !editingMember.id) return;
-    await updateMemberInFirebase(editingMember.id, editingMember);
-    setMembers(prev => prev.map(m => m.id === editingMember.id ? editingMember : m));
+    const memberId = editingMember.id;
+    const updated = { ...editingMember, id: memberId };
+    // Optimistic save
+    setMembers(prev => prev.map(m => m.id === memberId ? updated : m));
     setEditingMember(null);
+    try {
+      await updateMemberInFirebase(memberId, updated);
+    } catch (err) {
+      console.warn('Update error:', err);
+    }
   };
 
   const handleAddMemberSubmit = async (e: React.FormEvent, newRecord: SubmissionRecord) => {
@@ -1736,14 +1776,32 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                       <span>{editingMember.photo ? 'Change Photo' : 'Upload Photo'}</span>
                     </button>
                     {editingMember.photo && (
-                      <button
-                        type="button"
-                        onClick={() => setEditingMember({ ...editingMember, photo: null })}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        <span>Remove</span>
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (editingMember.photo) {
+                              setAdjustingPhotoModal({
+                                src: editingMember.photo,
+                                onApply: (adjusted) => setEditingMember(prev => prev ? { ...prev, photo: adjusted } : null)
+                              });
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold text-xs transition-colors cursor-pointer"
+                          title="Adjust or crop member photo"
+                        >
+                          <Scissors className="w-3.5 h-3.5 text-emerald-700" />
+                          <span>Adjust Photo</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingMember({ ...editingMember, photo: null })}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Remove</span>
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -1887,6 +1945,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
           suggestedId={getNextMembershipId(members)}
           onClose={() => setShowAddMemberModal(false)}
           onAdd={handleAddMemberSubmit}
+          onOpenAdjustPhoto={(src, cb) => setAdjustingPhotoModal({ src, onApply: cb })}
         />
       )}
 
@@ -1896,6 +1955,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
           initialData={editingExecutive}
           onClose={() => { setShowAddExecutiveModal(false); setEditingExecutive(null); }}
           onSave={handleSaveExecutive}
+          onOpenAdjustPhoto={(src, cb) => setAdjustingPhotoModal({ src, onApply: cb })}
         />
       )}
 
@@ -1916,6 +1976,18 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
           onConfirm={handleConfirmRejection}
         />
       )}
+
+      {/* ===================== MODAL: IMAGE ADJUST / CROP (ADMIN) ===================== */}
+      {adjustingPhotoModal && (
+        <ImageAdjustModal
+          imageSrc={adjustingPhotoModal.src}
+          onApply={(adjusted) => {
+            adjustingPhotoModal.onApply(adjusted);
+            setAdjustingPhotoModal(null);
+          }}
+          onClose={() => setAdjustingPhotoModal(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1926,11 +1998,13 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 function AddMemberManualModal({ 
   suggestedId,
   onClose, 
-  onAdd 
+  onAdd,
+  onOpenAdjustPhoto
 }: { 
   suggestedId?: string;
   onClose: () => void; 
-  onAdd: (e: React.FormEvent, record: SubmissionRecord) => void 
+  onAdd: (e: React.FormEvent, record: SubmissionRecord) => void;
+  onOpenAdjustPhoto?: (src: string, callback: (adjusted: string) => void) => void;
 }) {
   const [membershipId, setMembershipId] = useState(suggestedId || '');
   const [name, setName] = useState('');
@@ -1952,23 +2026,14 @@ function AddMemberManualModal({
     if (!file.type.startsWith('image/')) return;
     const reader = new FileReader();
     reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const MAX_DIM = 600;
-        let w = img.width, h = img.height;
-        if (w > MAX_DIM || h > MAX_DIM) {
-          if (w > h) { h = Math.round((h * MAX_DIM) / w); w = MAX_DIM; }
-          else { w = Math.round((w * MAX_DIM) / h); h = MAX_DIM; }
+      const raw = e.target?.result as string;
+      if (raw) {
+        if (onOpenAdjustPhoto) {
+          onOpenAdjustPhoto(raw, (adjusted) => setPhoto(adjusted));
+        } else {
+          setPhoto(raw);
         }
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, w, h);
-          setPhoto(canvas.toDataURL('image/jpeg', 0.85));
-        }
-      };
-      img.src = e.target?.result as string;
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -2065,6 +2130,16 @@ function AddMemberManualModal({
                   <Camera className="w-3.5 h-3.5" />
                   <span>{photo ? 'Change Photo' : 'Upload Photo'}</span>
                 </button>
+                {photo && onOpenAdjustPhoto && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenAdjustPhoto(photo, (adjusted) => setPhoto(adjusted))}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    <Scissors className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Adjust Photo</span>
+                  </button>
+                )}
                 {photo && (
                   <button
                     type="button"
@@ -2265,11 +2340,13 @@ function AddMemberManualModal({
 function ExecutiveModal({
   initialData,
   onClose,
-  onSave
+  onSave,
+  onOpenAdjustPhoto
 }: {
   initialData: ExecutiveMember | null;
   onClose: () => void;
   onSave: (exec: ExecutiveMember) => void;
+  onOpenAdjustPhoto?: (src: string, callback: (adjusted: string) => void) => void;
 }) {
   const [name, setName] = useState(initialData?.name || '');
   const [role, setRole] = useState(initialData?.role || '');
@@ -2281,7 +2358,14 @@ function ExecutiveModal({
   const handleImageFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      setImage(e.target?.result as string);
+      const raw = e.target?.result as string;
+      if (raw) {
+        if (onOpenAdjustPhoto) {
+          onOpenAdjustPhoto(raw, (adjusted) => setImage(adjusted));
+        } else {
+          setImage(raw);
+        }
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -2321,15 +2405,26 @@ function ExecutiveModal({
                 </div>
               )}
             </div>
-            <div>
+            <div className="flex flex-wrap items-center gap-2">
               <input type="file" ref={fileInputRef} accept="image/*" onChange={(e) => e.target.files?.[0] && handleImageFile(e.target.files[0])} className="hidden" />
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs cursor-pointer"
+                className="px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs cursor-pointer inline-flex items-center gap-1.5"
               >
-                Upload Photo
+                <Camera className="w-3.5 h-3.5" />
+                <span>{image ? 'Change Photo' : 'Upload Photo'}</span>
               </button>
+              {image && onOpenAdjustPhoto && (
+                <button
+                  type="button"
+                  onClick={() => onOpenAdjustPhoto(image, (adjusted) => setImage(adjusted))}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold text-xs cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <Scissors className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>Adjust Photo</span>
+                </button>
+              )}
             </div>
           </div>
 

@@ -97,7 +97,7 @@ function ClubFooter() {
       {/* Sleek, compact social icons */}
       <div className="flex items-center justify-center gap-2.5">
         <a 
-          href="https://chat.whatsapp.com/EKt85N1Te5CLY3Rby76Z0A" 
+          href="https://chat.whatsapp.com/J0ooCmabbIT2dfJdXTLhni" 
           target="_blank" 
           rel="noopener noreferrer" 
           className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-[#25D366]/20 border border-white/15 hover:border-[#25D366]/50 text-slate-300 hover:text-[#25D366] flex items-center justify-center transition-all shadow-xs"
@@ -1009,7 +1009,7 @@ export default function App() {
                 ক্লাবের অফিসিয়াল নোটিশ, ইভেন্ট আপডেট ও ক্লাবের কার্যক্রমের সাথে যুক্ত থাকতে আমাদের অফিসিয়াল হোয়াটসঅ্যাপ গ্রুপে যুক্ত হোন।
               </p>
               <a
-                href="https://chat.whatsapp.com/EKt85N1Te5CLY3Rby76Z0A"
+                href="https://chat.whatsapp.com/J0ooCmabbIT2dfJdXTLhni"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center justify-center gap-2.5 px-5 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#20ba5a] text-slate-950 text-xs font-bold transition-all shadow-md hover:shadow-[0_0_20px_rgba(37,211,102,0.35)] cursor-pointer"
