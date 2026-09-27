@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { fetchCommitteeFromFirebase } from './services/firebase';
+import { fetchCommitteeFromFirebase, subscribeToCommittee } from './services/firebase';
 import { ExecutiveMember } from './types';
 
 export type CommitteeMember = ExecutiveMember;
@@ -100,7 +100,7 @@ interface ExecutiveCommitteePageProps {
 export default function ExecutiveCommitteePage({ onBackToRegistration }: ExecutiveCommitteePageProps) {
   const [members, setMembers] = useState<CommitteeMember[]>(() => {
     try {
-      const saved = localStorage.getItem('ngdcsc_firebase_committee_cache') || localStorage.getItem('ngdc_committee_members_v1');
+      const saved = localStorage.getItem('ngdcsc_firebase_committee_cache');
       if (saved) return JSON.parse(saved);
     } catch {
       // ignore
@@ -108,12 +108,15 @@ export default function ExecutiveCommitteePage({ onBackToRegistration }: Executi
     return INITIAL_COMMITTEE;
   });
 
+  // Real-time listener for live updates from Admin Panel
   useEffect(() => {
-    fetchCommitteeFromFirebase(INITIAL_COMMITTEE).then(data => {
-      if (data && data.length > 0) {
-        setMembers(data);
+    const unsubscribe = subscribeToCommittee((liveList) => {
+      if (liveList && liveList.length > 0) {
+        setMembers(liveList);
       }
-    }).catch(() => {});
+    }, INITIAL_COMMITTEE);
+
+    return () => unsubscribe();
   }, []);
 
   return (

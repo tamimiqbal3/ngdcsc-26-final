@@ -21,7 +21,9 @@ import {
   query, 
   where,
   orderBy,
-  serverTimestamp 
+  serverTimestamp,
+  onSnapshot,
+  Unsubscribe
 } from 'firebase/firestore';
 import { SubmissionRecord, ExecutiveMember, ClubNotice, PublicMemberStatus, MemberStatus } from '../types';
 
@@ -332,6 +334,29 @@ export async function fetchMembersFromFirebase(): Promise<SubmissionRecord[]> {
     }
   }
   return getCachedMembers();
+}
+
+/**
+ * Real-time listener for Registered Members
+ * Fires immediately with live data and auto-updates on any registration, edit, approval, or deletion across all devices.
+ */
+export function subscribeToMembers(
+  callback: (members: SubmissionRecord[]) => void
+): Unsubscribe {
+  const colRef = collection(db, 'members');
+  return onSnapshot(colRef, (snapshot) => {
+    const list: SubmissionRecord[] = [];
+    snapshot.forEach(d => {
+      list.push({ id: d.id, ...d.data() } as SubmissionRecord);
+    });
+    try {
+      localStorage.setItem(LS_MEMBERS_KEY, JSON.stringify(list));
+    } catch {}
+    callback(list);
+  }, (err) => {
+    console.warn('Realtime members listener warning (using cache):', err);
+    callback(getCachedMembers());
+  });
 }
 
 /**
@@ -821,6 +846,41 @@ export async function fetchCommitteeFromFirebase(defaultList: ExecutiveMember[])
 }
 
 /**
+ * Real-time listener for Executive Committee
+ * Updates instantly on all devices whenever an executive member is added, edited, or removed in Admin Panel.
+ */
+export function subscribeToCommittee(
+  callback: (committee: ExecutiveMember[]) => void,
+  defaultList?: ExecutiveMember[]
+): Unsubscribe {
+  const colRef = collection(db, 'executive_committee');
+
+  return onSnapshot(colRef, (snapshot) => {
+    if (!snapshot.empty) {
+      const list: ExecutiveMember[] = [];
+      snapshot.forEach(d => {
+        list.push({ id: d.id, ...d.data() } as ExecutiveMember);
+      });
+      list.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+      try {
+        localStorage.setItem(LS_COMMITTEE_KEY, JSON.stringify(list));
+      } catch {}
+      callback(list);
+    } else {
+      if (defaultList && defaultList.length > 0) {
+        callback(defaultList);
+      }
+    }
+  }, (err) => {
+    console.warn('Realtime committee listener warning:', err);
+    try {
+      const cached = localStorage.getItem(LS_COMMITTEE_KEY);
+      if (cached) callback(JSON.parse(cached));
+    } catch {}
+  });
+}
+
+/**
  * Seed initial committee members into Firestore
  */
 export async function seedDefaultCommittee(list: ExecutiveMember[]): Promise<void> {
@@ -953,6 +1013,42 @@ export async function fetchNoticesFromFirebase(): Promise<ClubNotice[]> {
   }
 
   return INITIAL_DEFAULT_NOTICES;
+}
+
+/**
+ * Real-time listener for Club Notices
+ * Updates instantly on all devices whenever a notice is created, edited, or removed.
+ */
+export function subscribeToNotices(
+  callback: (notices: ClubNotice[]) => void
+): Unsubscribe {
+  const colRef = collection(db, 'notices');
+
+  return onSnapshot(colRef, (snapshot) => {
+    if (!snapshot.empty) {
+      const list: ClubNotice[] = [];
+      snapshot.forEach(d => {
+        list.push({ id: d.id, ...d.data() } as ClubNotice);
+      });
+      list.sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
+      });
+      try {
+        localStorage.setItem(LS_NOTICES_KEY, JSON.stringify(list));
+      } catch {}
+      callback(list);
+    } else {
+      callback(INITIAL_DEFAULT_NOTICES);
+    }
+  }, (err) => {
+    console.warn('Realtime notices listener warning:', err);
+    try {
+      const cached = localStorage.getItem(LS_NOTICES_KEY);
+      if (cached) callback(JSON.parse(cached));
+    } catch {}
+  });
 }
 
 /**

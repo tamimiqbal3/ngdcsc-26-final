@@ -60,7 +60,10 @@ import {
   syncAllMembersToStatusDocs,
   extractSerial,
   getNextMembershipId,
-  generateNextMembershipId
+  generateNextMembershipId,
+  subscribeToMembers,
+  subscribeToCommittee,
+  subscribeToNotices
 } from './services/firebase';
 import { 
   signInWithPopup, 
@@ -225,11 +228,41 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   const isAuthorized = !!currentUser && SUPER_ADMIN_EMAILS.some(e => e.toLowerCase().trim() === (currentUser.email || '').toLowerCase().trim());
   const isAuthenticated = isAuthorized;
 
-  // Load all data when authenticated
+  // Real-time synchronization when authenticated: immediately reflects updates across all devices
   useEffect(() => {
-    if (isAuthenticated) {
-      loadAllData();
-    }
+    if (!isAuthenticated) return;
+
+    setLoadingData(true);
+    let loadedCount = 0;
+    const checkLoaded = () => {
+      loadedCount++;
+      if (loadedCount >= 3) setLoadingData(false);
+    };
+
+    // 1. Members real-time stream
+    const unsubMembers = subscribeToMembers((liveMembers) => {
+      setMembers(liveMembers);
+      checkLoaded();
+      syncAllMembersToStatusDocs(liveMembers).catch(() => {});
+    });
+
+    // 2. Executive committee real-time stream
+    const unsubCommittee = subscribeToCommittee((liveCommittee) => {
+      setCommittee(liveCommittee);
+      checkLoaded();
+    }, INITIAL_COMMITTEE);
+
+    // 3. Notices real-time stream
+    const unsubNotices = subscribeToNotices((liveNotices) => {
+      setNotices(liveNotices);
+      checkLoaded();
+    });
+
+    return () => {
+      unsubMembers();
+      unsubCommittee();
+      unsubNotices();
+    };
   }, [isAuthenticated]);
 
   const loadAllData = async () => {
@@ -243,7 +276,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       setMembers(membersData);
       setCommittee(committeeData);
       setNotices(noticesData);
-      // Sync member status docs in background for public phone search
       syncAllMembersToStatusDocs(membersData).catch(() => {});
     } catch (err) {
       console.error('Error loading admin data:', err);

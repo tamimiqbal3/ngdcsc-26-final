@@ -46,7 +46,7 @@ import MemberStatusSearch from './MemberStatusSearch';
 import AdminPanel from './AdminPanel';
 import NotFoundPage from './NotFoundPage';
 import ImageAdjustModal from './components/ImageAdjustModal';
-import { saveMemberToFirebase, fetchNoticesFromFirebase, getNextMembershipId, generateNextMembershipId } from './services/firebase';
+import { saveMemberToFirebase, fetchNoticesFromFirebase, subscribeToNotices, getNextMembershipId, generateNextMembershipId } from './services/firebase';
 
 const CLUB_SEGMENTS = [
   'Science Olympiad (Math, Physics, Bio, Chem)',
@@ -374,21 +374,12 @@ export default function App() {
   const [liveNotices, setLiveNotices] = useState<ClubNotice[]>([]);
   const [selectedNotice, setSelectedNotice] = useState<ClubNotice | null>(null);
 
-  // Fetch notices from Firebase for the top notice banner
+  // Real-time listener for notices: guarantees latest notices on banner across all devices without refresh
   useEffect(() => {
-    fetchNoticesFromFirebase()
-      .then((data) => {
-        if (data && data.length > 0) {
-          // Sort to guarantee latest notice first
-          const sorted = [...data].sort((a, b) => {
-            if (a.isPinned && !b.isPinned) return -1;
-            if (!a.isPinned && b.isPinned) return 1;
-            return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
-          });
-          setLiveNotices(sorted);
-        }
-      })
-      .catch((err) => console.warn('Could not fetch notices for banner:', err));
+    const unsubscribe = subscribeToNotices((data) => {
+      setLiveNotices(data);
+    });
+    return () => unsubscribe();
   }, []);
 
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>(() => {

@@ -18,7 +18,7 @@ import {
   Layers
 } from 'lucide-react';
 import { ClubNotice } from './types';
-import { fetchNoticesFromFirebase } from './services/firebase';
+import { fetchNoticesFromFirebase, subscribeToNotices } from './services/firebase';
 
 interface NoticesPageProps {
   onBack: () => void;
@@ -26,25 +26,26 @@ interface NoticesPageProps {
 }
 
 export default function NoticesPage({ onBack, onOpenAdmin }: NoticesPageProps) {
-  const [notices, setNotices] = useState<ClubNotice[]>([]);
+  const [notices, setNotices] = useState<ClubNotice[]>(() => {
+    try {
+      const cached = localStorage.getItem('ngdcsc_firebase_notices_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [loading, setLoading] = useState(true);
   const [activeNoticeModal, setActiveNoticeModal] = useState<ClubNotice | null>(null);
 
+  // Real-time listener for notices
   useEffect(() => {
-    loadNotices();
-  }, []);
-
-  const loadNotices = async () => {
-    setLoading(true);
-    try {
-      const data = await fetchNoticesFromFirebase();
-      setNotices(data);
-    } catch (err) {
-      console.error('Error fetching notices:', err);
-    } finally {
+    const unsubscribe = subscribeToNotices((liveNotices) => {
+      setNotices(liveNotices);
       setLoading(false);
-    }
-  };
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const sortedNotices = [...notices].sort((a, b) => {
     if (a.isPinned && !b.isPinned) return -1;
