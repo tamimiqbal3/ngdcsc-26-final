@@ -70,3 +70,13 @@ export interface AdminUser {
   role: 'super_admin' | 'moderator';
 }
 
+export type RegistrationStatusMode = 'open' | 'closed' | 'coming_soon';
+
+export interface MembershipRegistrationSetting {
+  status: RegistrationStatusMode;
+  headline?: string;
+  message?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+

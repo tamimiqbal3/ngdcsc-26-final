@@ -32,7 +32,12 @@ import {
   Layers,
   ChevronRight,
   Image as ImageIcon,
-  Scissors
+  Scissors,
+  ToggleLeft,
+  ToggleRight,
+  Settings,
+  Lock,
+  Sparkles
 } from 'lucide-react';
 import ImageAdjustModal from './components/ImageAdjustModal';
 import { 
@@ -41,7 +46,9 @@ import {
   ClubNotice, 
   MemberStatus, 
   SectionType, 
-  BatchType 
+  BatchType,
+  MembershipRegistrationSetting,
+  RegistrationStatusMode
 } from './types';
 import AdminDashboardView from './AdminDashboardView';
 import { 
@@ -65,7 +72,11 @@ import {
   generateNextMembershipId,
   subscribeToMembers,
   subscribeToCommittee,
-  subscribeToNotices
+  subscribeToNotices,
+  getRegistrationSetting,
+  subscribeRegistrationSetting,
+  updateRegistrationSetting,
+  DEFAULT_REGISTRATION_SETTING
 } from './services/firebase';
 import { 
   signInWithPopup, 
@@ -204,6 +215,71 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     setTimeout(() => setCopiedToast(null), 2500);
   };
 
+  // Registration Settings State
+  const [regSetting, setRegSetting] = useState<MembershipRegistrationSetting>(DEFAULT_REGISTRATION_SETTING);
+  const [showSettingModal, setShowSettingModal] = useState(false);
+  const [savingRegSetting, setSavingRegSetting] = useState(false);
+  const [draftStatus, setDraftStatus] = useState<RegistrationStatusMode>('open');
+  const [draftHeadline, setDraftHeadline] = useState('');
+  const [draftMessage, setDraftMessage] = useState('');
+
+  const handleQuickChangeStatus = async (newStatus: RegistrationStatusMode) => {
+    setSavingRegSetting(true);
+    const updated: MembershipRegistrationSetting = {
+      status: newStatus,
+      headline: newStatus === 'coming_soon' 
+        ? 'Membership Registration Opening Soon' 
+        : newStatus === 'closed' 
+        ? 'Membership Registration Closed' 
+        : 'Online Membership Registration',
+      message: newStatus === 'coming_soon'
+        ? 'The official membership registration for Nawabganj Govt. College Science Club will open soon for HSC 27 and HSC 28 sessions. Please follow our official notices and WhatsApp group for official announcements.'
+        : newStatus === 'closed'
+        ? 'The membership registration window for the current session is currently closed. Thank you for your interest in Nawabganj Govt. College Science Club. Please check back for future announcements.'
+        : 'Welcome to Nawabganj Govt. College Science Club. Please complete the form below to join our community.'
+    };
+
+    setRegSetting(updated);
+    setDraftStatus(newStatus);
+    setDraftHeadline(updated.headline || '');
+    setDraftMessage(updated.message || '');
+    setCopiedToast(`Registration status set to: ${newStatus === 'open' ? 'Open (Active)' : newStatus === 'closed' ? 'Closed Now' : 'Coming Soon'}`);
+    setTimeout(() => setCopiedToast(null), 2500);
+
+    try {
+      await updateRegistrationSetting(updated);
+    } catch (err) {
+      console.error('Failed to update registration setting:', err);
+      alert('Failed to update registration setting in Firebase.');
+    } finally {
+      setSavingRegSetting(false);
+    }
+  };
+
+  const handleSaveCustomSetting = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingRegSetting(true);
+    const updated: MembershipRegistrationSetting = {
+      status: draftStatus,
+      headline: draftHeadline.trim() || undefined,
+      message: draftMessage.trim() || undefined
+    };
+
+    setRegSetting(updated);
+    setCopiedToast('Registration portal settings updated!');
+    setTimeout(() => setCopiedToast(null), 2500);
+    setShowSettingModal(false);
+
+    try {
+      await updateRegistrationSetting(updated);
+    } catch (err) {
+      console.error('Failed to update registration setting:', err);
+      alert('Failed to update registration setting in Firebase.');
+    } finally {
+      setSavingRegSetting(false);
+    }
+  };
+
   const handleMemberPhotoUpload = (file: File) => {
     if (!file.type.startsWith('image/')) return;
     if (file.size > 8 * 1024 * 1024) {
@@ -277,10 +353,16 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       checkLoaded();
     });
 
+    // 4. Registration setting real-time stream
+    const unsubSetting = subscribeRegistrationSetting((setting) => {
+      setRegSetting(setting);
+    });
+
     return () => {
       unsubMembers();
       unsubCommittee();
       unsubNotices();
+      unsubSetting();
     };
   }, [isAuthenticated]);
 
@@ -712,6 +794,34 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {/* Quick Registration Portal Status Toggle & Indicator */}
+          <button
+            type="button"
+            onClick={() => {
+              setDraftStatus(regSetting.status);
+              setDraftHeadline(regSetting.headline || '');
+              setDraftMessage(regSetting.message || '');
+              setShowSettingModal(true);
+            }}
+            className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-xs ${
+              regSetting.status === 'open'
+                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                : regSetting.status === 'closed'
+                ? 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-300'
+                : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300'
+            }`}
+            title="Membership Registration Portal Status & Controls"
+          >
+            <span className={`w-2 h-2 rounded-full shrink-0 ${
+              regSetting.status === 'open' ? 'bg-emerald-500 animate-pulse' : regSetting.status === 'closed' ? 'bg-rose-500' : 'bg-amber-500 animate-pulse'
+            }`} />
+            <span className="hidden sm:inline text-slate-500 font-medium">Form:</span>
+            <span className="font-black">
+              {regSetting.status === 'open' ? 'Open' : regSetting.status === 'closed' ? 'Closed' : 'Coming Soon'}
+            </span>
+            <Settings className="w-3.5 h-3.5 ml-0.5 opacity-60" />
+          </button>
+
           <button
             type="button"
             onClick={onExit}
@@ -847,6 +957,132 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
         {activeTab === 'members' && (
           <div className="space-y-5 animate-in fade-in duration-200">
             
+            {/* Membership Registration Portal Control Card */}
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600">
+                      <Settings className="w-4 h-4" />
+                    </div>
+                    <h2 className="text-xs sm:text-sm font-black text-slate-900">
+                      Membership Registration Portal Control
+                    </h2>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                      regSetting.status === 'open' 
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
+                        : regSetting.status === 'closed'
+                        ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                        : 'bg-amber-100 text-amber-800 border border-amber-300'
+                    }`}>
+                      Live Status: {regSetting.status === 'open' ? 'Open (Active)' : regSetting.status === 'closed' ? 'Closed Now' : 'Coming Soon'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-slate-500 mt-1">
+                    Select whether the public registration form is open or disabled. If disabled, select either <strong>Closed Now</strong> or <strong>Coming Soon</strong>.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraftStatus(regSetting.status);
+                    setDraftHeadline(regSetting.headline || '');
+                    setDraftMessage(regSetting.message || '');
+                    setShowSettingModal(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold border border-slate-200 transition-colors cursor-pointer shrink-0"
+                >
+                  <Settings className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Customize Notice Text</span>
+                </button>
+              </div>
+
+              {/* 3 Interactive Quick Options */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                {/* 1. Open */}
+                <button
+                  type="button"
+                  disabled={savingRegSetting}
+                  onClick={() => handleQuickChangeStatus('open')}
+                  className={`p-3.5 rounded-xl text-left border-2 transition-all cursor-pointer relative flex flex-col justify-between ${
+                    regSetting.status === 'open'
+                      ? 'bg-emerald-50/80 border-emerald-500 shadow-xs ring-2 ring-emerald-500/20'
+                      : 'bg-slate-50 hover:bg-slate-100 border-slate-200 hover:border-slate-300 opacity-80 hover:opacity-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="flex items-center gap-2 font-black text-xs text-slate-900">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                      <span>1. Registration Open</span>
+                    </span>
+                    {regSetting.status === 'open' && (
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-black uppercase">
+                        Active on Site
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-snug">
+                    Form is active. Students can submit applications with student ID, photo, and details.
+                  </p>
+                </button>
+
+                {/* 2. Closed Now */}
+                <button
+                  type="button"
+                  disabled={savingRegSetting}
+                  onClick={() => handleQuickChangeStatus('closed')}
+                  className={`p-3.5 rounded-xl text-left border-2 transition-all cursor-pointer relative flex flex-col justify-between ${
+                    regSetting.status === 'closed'
+                      ? 'bg-rose-50/80 border-rose-500 shadow-xs ring-2 ring-rose-500/20'
+                      : 'bg-slate-50 hover:bg-slate-100 border-slate-200 hover:border-slate-300 opacity-80 hover:opacity-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="flex items-center gap-2 font-black text-xs text-slate-900">
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                      <span>2. Closed Now</span>
+                    </span>
+                    {regSetting.status === 'closed' && (
+                      <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-black uppercase">
+                        Active on Site
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-snug">
+                    Form is replaced with formal &quot;Membership Registration Closed&quot; notice and status search.
+                  </p>
+                </button>
+
+                {/* 3. Coming Soon */}
+                <button
+                  type="button"
+                  disabled={savingRegSetting}
+                  onClick={() => handleQuickChangeStatus('coming_soon')}
+                  className={`p-3.5 rounded-xl text-left border-2 transition-all cursor-pointer relative flex flex-col justify-between ${
+                    regSetting.status === 'coming_soon'
+                      ? 'bg-amber-50/80 border-amber-500 shadow-xs ring-2 ring-amber-500/20'
+                      : 'bg-slate-50 hover:bg-slate-100 border-slate-200 hover:border-slate-300 opacity-80 hover:opacity-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="flex items-center gap-2 font-black text-xs text-slate-900">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                      <span>3. Coming Soon</span>
+                    </span>
+                    {regSetting.status === 'coming_soon' && (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-600 text-white text-[9px] font-black uppercase">
+                        Active on Site
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-snug">
+                    Form is replaced with formal &quot;Registration Opening Soon&quot; announcement for upcoming batch.
+                  </p>
+                </button>
+              </div>
+            </div>
+
             {/* Filter & Action Bar */}
             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
               <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
@@ -1976,6 +2212,202 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
           onClose={() => setRejectingMember(null)}
           onConfirm={handleConfirmRejection}
         />
+      )}
+
+      {/* ===================== MODAL: REGISTRATION PORTAL STATUS & NOTICE SETTINGS ===================== */}
+      {showSettingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="relative max-w-lg w-full bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden text-slate-900 font-sans max-h-[92vh] flex flex-col">
+            
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600">
+                  <Settings className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Registration Portal Settings</h3>
+                  <p className="text-[11px] text-slate-500">Configure public registration form availability and formal notice</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSettingModal(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveCustomSetting} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
+              
+              {/* Status Radio / Option Selector */}
+              <div>
+                <label className="font-bold text-slate-800 block mb-2">
+                  Portal Registration Status <span className="text-emerald-600">*</span>
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraftStatus('open');
+                      if (!draftHeadline || draftHeadline.includes('Closed') || draftHeadline.includes('Soon')) {
+                        setDraftHeadline('Online Membership Registration');
+                      }
+                    }}
+                    className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                      draftStatus === 'open'
+                        ? 'border-emerald-500 bg-emerald-50/70 ring-2 ring-emerald-500/20 text-emerald-950 font-bold'
+                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      <span className="font-black text-xs">Open (Active)</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 leading-tight block">Form enabled on site</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraftStatus('closed');
+                      setDraftHeadline('Membership Registration is Currently Closed');
+                      setDraftMessage('The membership registration window for the current session is currently closed. Thank you for your interest in Nawabganj Govt. College Science Club. All submitted applications are being processed. Please check back for future announcements.');
+                    }}
+                    className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                      draftStatus === 'closed'
+                        ? 'border-rose-500 bg-rose-50/70 ring-2 ring-rose-500/20 text-rose-950 font-bold'
+                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                      <span className="font-black text-xs">Closed Now</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 leading-tight block">Formal closed notice</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraftStatus('coming_soon');
+                      setDraftHeadline('Membership Registration Opening Soon');
+                      setDraftMessage('Online membership registration for Nawabganj Govt. College Science Club will open shortly for the upcoming academic session. HSC 27 and HSC 28 students are advised to keep their college information and passport photo ready. Stay tuned for official date announcements.');
+                    }}
+                    className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                      draftStatus === 'coming_soon'
+                        ? 'border-amber-500 bg-amber-50/70 ring-2 ring-amber-500/20 text-amber-950 font-bold'
+                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                      <span className="font-black text-xs">Coming Soon</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 leading-tight block">Opening soon notice</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Notice Headline and Description (Only when restricted or to customize) */}
+              {draftStatus !== 'open' && (
+                <div className="space-y-3 pt-2 border-t border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-800">
+                      Formal Notice Details
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (draftStatus === 'closed') {
+                          setDraftHeadline('Membership Registration is Currently Closed');
+                          setDraftMessage('The membership registration window for the current session is currently closed. Thank you for your interest in Nawabganj Govt. College Science Club. All submitted applications are being processed. Please check back for future announcements.');
+                        } else if (draftStatus === 'coming_soon') {
+                          setDraftHeadline('Membership Registration Opening Soon');
+                          setDraftMessage('Online membership registration for Nawabganj Govt. College Science Club will open shortly for the upcoming academic session. HSC 27 and HSC 28 students are advised to keep their college information and passport photo ready. Stay tuned for official date announcements.');
+                        }
+                      }}
+                      className="text-[11px] text-emerald-600 hover:text-emerald-700 font-bold cursor-pointer"
+                    >
+                      Reset to Default Text
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-600 font-bold block mb-1">Formal Headline</label>
+                    <input
+                      type="text"
+                      value={draftHeadline}
+                      onChange={(e) => setDraftHeadline(e.target.value)}
+                      placeholder="e.g. Membership Registration is Currently Closed"
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-600 font-bold block mb-1">Formal Message / Announcement</label>
+                    <textarea
+                      rows={3}
+                      value={draftMessage}
+                      onChange={(e) => setDraftMessage(e.target.value)}
+                      placeholder="Formal announcement message displayed to students..."
+                      className="w-full p-3 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white text-xs leading-relaxed"
+                    />
+                  </div>
+
+                  {/* Live Preview Box */}
+                  <div className="p-3.5 rounded-2xl bg-slate-900 text-slate-200 border border-slate-800 space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] text-emerald-400 font-bold uppercase tracking-wider">
+                      <span>Public Site Preview</span>
+                      <span>{draftStatus === 'closed' ? 'Closed Notice' : 'Coming Soon'}</span>
+                    </div>
+                    <p className="text-xs font-black text-white">{draftHeadline || 'Notice Headline'}</p>
+                    <p className="text-[11px] text-slate-400 leading-snug">{draftMessage || 'Notice message body'}</p>
+                  </div>
+                </div>
+              )}
+
+              {draftStatus === 'open' && (
+                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-xs">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Public Registration Form is Live</span>
+                  </div>
+                  <p className="text-[11px] text-emerald-700 leading-relaxed">
+                    Students can access the registration form on the main website, submit their academic details, passport photo, and view their pending application status.
+                  </p>
+                </div>
+              )}
+
+              {/* Modal Actions */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSettingModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingRegSetting}
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs transition-all cursor-pointer flex items-center gap-2"
+                >
+                  {savingRegSetting ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Settings</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* ===================== MODAL: IMAGE ADJUST / CROP (ADMIN) ===================== */}

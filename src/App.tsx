@@ -36,9 +36,10 @@ import {
   Copy,
   CreditCard,
   Clock,
-  Scissors
+  Scissors,
+  Lock
 } from 'lucide-react';
-import { MembershipFormData, SubmissionRecord, SectionType, BatchType, ClubNotice } from './types';
+import { MembershipFormData, SubmissionRecord, SectionType, BatchType, ClubNotice, MembershipRegistrationSetting, RegistrationStatusMode } from './types';
 import ScienceBackground from './ScienceBackground';
 import ExecutiveCommitteePage from './ExecutiveCommitteePage';
 import NoticesPage from './NoticesPage';
@@ -46,7 +47,15 @@ import MemberStatusSearch from './MemberStatusSearch';
 import AdminPanel from './AdminPanel';
 import NotFoundPage from './NotFoundPage';
 import ImageAdjustModal from './components/ImageAdjustModal';
-import { saveMemberToFirebase, fetchNoticesFromFirebase, subscribeToNotices, getNextMembershipId, generateNextMembershipId } from './services/firebase';
+import { 
+  saveMemberToFirebase, 
+  fetchNoticesFromFirebase, 
+  subscribeToNotices, 
+  getNextMembershipId, 
+  generateNextMembershipId,
+  subscribeRegistrationSetting,
+  DEFAULT_REGISTRATION_SETTING
+} from './services/firebase';
 
 const CLUB_SEGMENTS = [
   'Science Olympiad (Math, Physics, Bio, Chem)',
@@ -166,12 +175,14 @@ function HomePage({
   onGoToForm,
   onGoToNotices,
   onGoToCommittee,
-  onGoToStatus
+  onGoToStatus,
+  registrationSetting
 }: { 
   onGoToForm: () => void;
   onGoToNotices: () => void;
   onGoToCommittee: () => void;
   onGoToStatus: () => void;
+  registrationSetting?: MembershipRegistrationSetting;
 }) {
   return (
     <div className="w-full max-w-2xl relative z-10 px-4 sm:px-6 pt-4 pb-2 formal-page-enter flex-1 flex flex-col items-center justify-between">
@@ -235,22 +246,58 @@ function HomePage({
         </div>
 
         {/* Standalone Dedicated Membership Registration Card */}
-        <div className="w-full p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-emerald-950/50 via-slate-950/90 to-teal-950/50 border border-emerald-500/40 shadow-[0_0_30px_rgba(0,229,153,0.18)] flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className={`w-full p-4 sm:p-5 rounded-3xl border shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4 transition-all ${
+          registrationSetting?.status === 'closed'
+            ? 'bg-gradient-to-r from-rose-950/40 via-slate-950/90 to-slate-950/80 border-rose-500/30'
+            : registrationSetting?.status === 'coming_soon'
+            ? 'bg-gradient-to-r from-amber-950/40 via-slate-950/90 to-teal-950/40 border-amber-500/30'
+            : 'bg-gradient-to-r from-emerald-950/50 via-slate-950/90 to-teal-950/50 border-emerald-500/40 shadow-[0_0_30px_rgba(0,229,153,0.18)]'
+        }`}>
           <div className="text-center sm:text-left space-y-1">
-            <h3 className="text-base sm:text-lg font-black text-white flex items-center justify-center sm:justify-start gap-2">
-              <Sparkles className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-base sm:text-lg font-black text-white flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+              {registrationSetting?.status === 'closed' ? (
+                <Lock className="w-4 h-4 text-rose-400" />
+              ) : (
+                <Sparkles className="w-4 h-4 text-emerald-400" />
+              )}
               <span>Membership Registration</span>
+              {registrationSetting?.status === 'closed' && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 uppercase">
+                  Closed
+                </span>
+              )}
+              {registrationSetting?.status === 'coming_soon' && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase">
+                  Opening Soon
+                </span>
+              )}
             </h3>
             <p className="text-xs text-slate-300 font-medium">
-              Join the official NGDC Science Club community for HSC Batches
+              {registrationSetting?.status === 'closed'
+                ? 'Registration is currently closed for the current session'
+                : registrationSetting?.status === 'coming_soon'
+                ? 'Official membership registration opening soon for HSC batches'
+                : 'Join the official NGDC Science Club community for HSC Batches'}
             </p>
           </div>
           <button
             type="button"
             onClick={onGoToForm}
-            className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-xs sm:text-sm shadow-[0_0_22px_rgba(0,229,153,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-0.5 shrink-0"
+            className={`w-full sm:w-auto px-6 py-3 rounded-2xl font-black text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-0.5 shrink-0 ${
+              registrationSetting?.status === 'closed'
+                ? 'bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/30'
+                : registrationSetting?.status === 'coming_soon'
+                ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
+                : 'bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-[0_0_22px_rgba(0,229,153,0.35)]'
+            }`}
           >
-            <span>Registration Form</span>
+            <span>
+              {registrationSetting?.status === 'closed'
+                ? 'View Notice'
+                : registrationSetting?.status === 'coming_soon'
+                ? 'Opening Soon'
+                : 'Registration Form'}
+            </span>
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
@@ -378,6 +425,17 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = subscribeToNotices((data) => {
       setLiveNotices(data);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Registration portal open/closed setting
+  const [registrationSetting, setRegistrationSetting] = useState<MembershipRegistrationSetting>(DEFAULT_REGISTRATION_SETTING);
+
+  // Real-time listener for registration setting
+  useEffect(() => {
+    const unsubscribe = subscribeRegistrationSetting((data) => {
+      setRegistrationSetting(data);
     });
     return () => unsubscribe();
   }, []);

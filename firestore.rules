@@ -34,6 +34,12 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
+    // 5. System & Club Settings (e.g. membership registration open/closed status)
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
     // Fallback: Default deny for any other collections
     match /{document=**} {
       allow read, write: if isSuperAdmin();

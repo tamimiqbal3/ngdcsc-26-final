@@ -26,7 +26,7 @@ import {
   limit,
   Unsubscribe
 } from 'firebase/firestore';
-import { SubmissionRecord, ExecutiveMember, ClubNotice, PublicMemberStatus, MemberStatus } from '../types';
+import { SubmissionRecord, ExecutiveMember, ClubNotice, PublicMemberStatus, MemberStatus, MembershipRegistrationSetting, RegistrationStatusMode } from '../types';
 
 import { getAnalytics, isSupported } from 'firebase/analytics';
 
@@ -1048,3 +1048,90 @@ export async function deleteNoticeFromFirebase(id: string): Promise<void> {
     console.warn('Firestore notice delete error:', err);
   }
 }
+
+const LS_REGISTRATION_SETTING_KEY = 'ngdcsc_registration_setting_v1';
+
+export const DEFAULT_REGISTRATION_SETTING: MembershipRegistrationSetting = {
+  status: 'open',
+  headline: 'Online Membership Registration',
+  message: 'Welcome to Nawabganj Govt. College Science Club. Please complete the form below to join our community.'
+};
+
+/**
+ * Get current registration setting
+ */
+export async function getRegistrationSetting(): Promise<MembershipRegistrationSetting> {
+  try {
+    const raw = localStorage.getItem(LS_REGISTRATION_SETTING_KEY);
+    const cached = raw ? JSON.parse(raw) : null;
+    if (cached) return cached;
+  } catch {}
+
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'membership_registration'));
+    if (snap.exists()) {
+      const data = snap.data() as MembershipRegistrationSetting;
+      localStorage.setItem(LS_REGISTRATION_SETTING_KEY, JSON.stringify(data));
+      return data;
+    }
+  } catch (err) {
+    console.warn('Error fetching registration setting:', err);
+  }
+
+  return DEFAULT_REGISTRATION_SETTING;
+}
+
+/**
+ * Subscribe to registration setting in real-time
+ */
+export function subscribeRegistrationSetting(callback: (setting: MembershipRegistrationSetting) => void): Unsubscribe {
+  try {
+    const raw = localStorage.getItem(LS_REGISTRATION_SETTING_KEY);
+    if (raw) {
+      callback(JSON.parse(raw));
+    } else {
+      callback(DEFAULT_REGISTRATION_SETTING);
+    }
+  } catch {
+    callback(DEFAULT_REGISTRATION_SETTING);
+  }
+
+  const docRef = doc(db, 'settings', 'membership_registration');
+  return onSnapshot(
+    docRef,
+    (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as MembershipRegistrationSetting;
+        localStorage.setItem(LS_REGISTRATION_SETTING_KEY, JSON.stringify(data));
+        callback(data);
+      } else {
+        callback(DEFAULT_REGISTRATION_SETTING);
+      }
+    },
+    (err) => {
+      console.warn('Registration setting snapshot warning:', err);
+    }
+  );
+}
+
+/**
+ * Update registration setting in Firestore (Admin only)
+ */
+export async function updateRegistrationSetting(setting: MembershipRegistrationSetting): Promise<void> {
+  try {
+    localStorage.setItem(LS_REGISTRATION_SETTING_KEY, JSON.stringify(setting));
+  } catch {}
+
+  const docRef = doc(db, 'settings', 'membership_registration');
+  await setDoc(docRef, {
+    status: setting.status,
+    headline: setting.headline || (setting.status === 'coming_soon' ? 'Membership Registration Opening Soon' : setting.status === 'closed' ? 'Membership Registration Closed' : 'Online Membership Registration'),
+    message: setting.message || (setting.status === 'coming_soon' 
+      ? 'The official membership registration for Nawabganj Govt. College Science Club will open soon for HSC 27 and HSC 28 sessions. Please follow our official notices and WhatsApp group for official announcements.' 
+      : setting.status === 'closed'
+      ? 'The membership registration window for the current session is currently closed. Thank you for your interest in Nawabganj Govt. College Science Club. Please check back for future announcements.'
+      : 'Welcome to Nawabganj Govt. College Science Club. Please complete the form below to join our community.'),
+    updatedAt: new Date().toISOString()
+  }, { merge: true });
+}
+
