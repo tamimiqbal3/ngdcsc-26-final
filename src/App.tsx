@@ -888,6 +888,7 @@ export default function App() {
           onGoToNotices={() => navigateTo('notices')} 
           onGoToCommittee={() => navigateTo('committee')} 
           onGoToStatus={() => navigateTo('status')}
+          registrationSetting={registrationSetting}
         />
       ) : (
         /* Form Container with formal entrance animation */
@@ -1095,6 +1096,107 @@ export default function App() {
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Submit Another Response</span>
+              </button>
+            </div>
+          </div>
+        ) : registrationSetting.status !== 'open' ? (
+          /* FORMAL REGISTRATION NOTICE (FORM REPLACED BY FORMAL CLOSED / COMING SOON NOTICE) */
+          <div className="bg-slate-950/65 backdrop-blur-xl rounded-3xl border border-white/20 shadow-2xl p-6 sm:p-9 text-center animate-in fade-in zoom-in-95 duration-200 space-y-6">
+            {/* Status Icon */}
+            <div className="flex justify-center">
+              <div className={`w-16 h-16 rounded-3xl flex items-center justify-center shadow-lg border ${
+                registrationSetting.status === 'closed'
+                  ? 'bg-rose-500/15 border-rose-500/40 text-rose-400 shadow-[0_0_25px_rgba(244,63,94,0.25)]'
+                  : 'bg-amber-500/15 border-amber-500/40 text-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
+              }`}>
+                {registrationSetting.status === 'closed' ? (
+                  <Lock className="w-8 h-8 text-rose-400" />
+                ) : (
+                  <Clock className="w-8 h-8 text-amber-400 animate-pulse" />
+                )}
+              </div>
+            </div>
+
+            {/* Formal Status Badge */}
+            <div className="flex justify-center">
+              <span className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider border shadow-xs ${
+                registrationSetting.status === 'closed'
+                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                  : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${
+                  registrationSetting.status === 'closed' ? 'bg-rose-500' : 'bg-amber-500 animate-ping'
+                }`} />
+                <span>
+                  {registrationSetting.status === 'closed' ? 'রেজিস্ট্রেশন বন্ধ / Registration Closed' : 'শীঘ্রই শুরু হবে / Opening Soon'}
+                </span>
+              </span>
+            </div>
+
+            {/* Headline and Formal Text */}
+            <div className="space-y-3 max-w-lg mx-auto">
+              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                {registrationSetting.headline || (
+                  registrationSetting.status === 'closed'
+                    ? 'মেম্বারশিপ রেজিস্ট্রেশন সাময়িকভাবে বন্ধ রয়েছে'
+                    : 'মেম্বারশিপ রেজিস্ট্রেশন শীঘ্রই শুরু হবে'
+                )}
+              </h2>
+              
+              <div className="text-xs sm:text-sm text-slate-300 leading-relaxed font-normal whitespace-pre-line bg-slate-900/70 p-4 sm:p-5 rounded-2xl border border-white/10 text-left sm:text-center space-y-2">
+                <p>
+                  {registrationSetting.message || (
+                    registrationSetting.status === 'closed'
+                      ? 'নবাবগঞ্জ সরকারি কলেজ সায়েন্স ক্লাবের বর্তমান সেশনের মেম্বারশিপ রেজিস্ট্রেশন কার্যক্রম সাময়িকভাবে বন্ধ রয়েছে। পরবর্তী সেশন বা রেজিস্ট্রেশন সংক্রান্ত তথ্যের জন্য ক্লাবের অফিশিয়াল নোটিশ ও ফেসবুক পেইজে নজর রাখুন।'
+                      : 'নবাবগঞ্জ সরকারি কলেজ সায়েন্স ক্লাবের মেম্বারশিপ রেজিস্ট্রেশন (HSC 27 & HSC 28) খুব শীঘ্রই শুরু হতে যাচ্ছে। একাদশ ও দ্বাদশ শ্রেণির বিজ্ঞান বিভাগের শিক্ষার্থীদের প্রয়োজনীয় তথ্য ও পাসপোর্ট সাইজ ছবি প্রস্তুত রাখার জন্য অনুরোধ করা হচ্ছে।'
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* Official WhatsApp Community Join */}
+            <div className="p-4 rounded-2xl bg-[#25D366]/5 border border-[#25D366]/20 text-center max-w-lg mx-auto">
+              <p className="text-xs text-slate-300 font-medium mb-3">
+                ক্লাবের অফিশিয়াল নোটিশ, বিজ্ঞান উৎসব ও পরবর্তী সেশন সংক্রান্ত তথ্যের জন্য অফিশিয়াল হোয়াটসঅ্যাপ কমিউনিটিতে যুক্ত থাকুন:
+              </p>
+              <a
+                href="https://chat.whatsapp.com/J0ooCmabbIT2dfJdXTLhni"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#20ba5a] text-slate-950 text-xs font-bold transition-all shadow-md cursor-pointer"
+              >
+                <MessageCircle className="w-4 h-4 fill-current" />
+                <span>Join Official WhatsApp Community</span>
+              </a>
+            </div>
+
+            {/* Actions for Students */}
+            <div className="pt-2 border-t border-white/10 flex flex-col sm:flex-row items-center justify-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => navigateTo('status')}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black shadow-md transition-all cursor-pointer"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>Check Application Status</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigateTo('notices')}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/15 transition-all cursor-pointer"
+              >
+                <Bell className="w-3.5 h-3.5 text-emerald-400" />
+                <span>View Club Notices</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigateTo('home')}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Home</span>
               </button>
             </div>
           </div>
