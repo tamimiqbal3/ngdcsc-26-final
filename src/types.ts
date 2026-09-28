@@ -14,6 +14,8 @@ export interface MembershipFormData {
   dob: string;
   batch: BatchType;
   interestedSegments: string[];
+  skills?: string[];
+  experienceAchievements?: string;
   agreedToRules: boolean;
 }
 
@@ -76,7 +78,20 @@ export interface MembershipRegistrationSetting {
   status: RegistrationStatusMode;
   headline?: string;
   message?: string;
+  skills?: string[];
   updatedAt?: string;
   updatedBy?: string;
 }
+
+export const DEFAULT_SKILL_OPTIONS: string[] = [
+  'Video Editing',
+  'Photo Editing / Graphic Design',
+  'Social Media Management',
+  'Communication & Public Speaking',
+  'Event Management & Organizing',
+  'Content Writing & Scripting',
+  'Web & Technology',
+  'Photography',
+  'Robotics & Electronics'
+];
 

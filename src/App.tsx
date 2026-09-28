@@ -39,7 +39,16 @@ import {
   Scissors,
   Lock
 } from 'lucide-react';
-import { MembershipFormData, SubmissionRecord, SectionType, BatchType, ClubNotice, MembershipRegistrationSetting, RegistrationStatusMode } from './types';
+import { 
+  MembershipFormData, 
+  SubmissionRecord, 
+  SectionType, 
+  BatchType, 
+  ClubNotice, 
+  MembershipRegistrationSetting, 
+  RegistrationStatusMode,
+  DEFAULT_SKILL_OPTIONS
+} from './types';
 import ScienceBackground from './ScienceBackground';
 import ExecutiveCommitteePage from './ExecutiveCommitteePage';
 import NoticesPage from './NoticesPage';
@@ -78,6 +87,8 @@ const INITIAL_FORM: MembershipFormData = {
   dob: '',
   batch: 'HSC 27',
   interestedSegments: [],
+  skills: [],
+  experienceAchievements: '',
   agreedToRules: false
 };
 
@@ -262,21 +273,21 @@ function HomePage({
               )}
               <span>Membership Registration</span>
               {registrationSetting?.status === 'closed' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 uppercase">
-                  Closed
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/40 uppercase shadow-[0_0_10px_rgba(239,68,68,0.2)]">
+                  Closed Now
                 </span>
               )}
               {registrationSetting?.status === 'coming_soon' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase">
-                  Opening Soon
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase shadow-[0_0_10px_rgba(245,158,11,0.2)]">
+                  Coming Soon
                 </span>
               )}
             </h3>
             <p className="text-xs text-slate-300 font-medium">
               {registrationSetting?.status === 'closed'
-                ? 'Registration is currently closed for the current session'
+                ? 'NGDC Science Club registration is currently closed for this session'
                 : registrationSetting?.status === 'coming_soon'
-                ? 'Official membership registration opening soon for HSC batches'
+                ? 'NGDC Science Club official membership registration opening soon for HSC batches'
                 : 'Join the official NGDC Science Club community for HSC Batches'}
             </p>
           </div>
@@ -285,17 +296,17 @@ function HomePage({
             onClick={onGoToForm}
             className={`w-full sm:w-auto px-6 py-3 rounded-2xl font-black text-xs sm:text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer transform hover:-translate-y-0.5 shrink-0 ${
               registrationSetting?.status === 'closed'
-                ? 'bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/30'
+                ? 'bg-red-600 hover:bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.35)]'
                 : registrationSetting?.status === 'coming_soon'
-                ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.3)]'
+                ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.35)]'
                 : 'bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-[0_0_22px_rgba(0,229,153,0.35)]'
             }`}
           >
             <span>
               {registrationSetting?.status === 'closed'
-                ? 'View Notice'
+                ? 'Registration Closed'
                 : registrationSetting?.status === 'coming_soon'
-                ? 'Opening Soon'
+                ? 'Coming Soon'
                 : 'Registration Form'}
             </span>
             <ChevronRight className="w-4 h-4" />
@@ -517,6 +528,19 @@ export default function App() {
     });
   };
 
+  const toggleSkill = (skill: string) => {
+    setFormData(prev => {
+      const currentSkills = prev.skills || [];
+      const exists = currentSkills.includes(skill);
+      return {
+        ...prev,
+        skills: exists
+          ? currentSkills.filter(s => s !== skill)
+          : [...currentSkills, skill]
+      };
+    });
+  };
+
   // Image Upload Handling with client-side compression & Adjuster
   const handleFile = (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -598,6 +622,18 @@ export default function App() {
     }
     if (formData.interestedSegments.length === 0) {
       setErrorMsg('Please select at least one interested club segment.');
+      return;
+    }
+    if (!formData.skills || formData.skills.length === 0) {
+      setErrorMsg('Please select at least one skill or technical talent.');
+      const skillsEl = document.getElementById('skills-checkbox-group');
+      if (skillsEl) skillsEl.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+    if (!formData.experienceAchievements?.trim()) {
+      setErrorMsg('Please fill in your experience or achievements (or write "None" if you have no prior experience).');
+      const expEl = document.getElementById('experience-achievements');
+      if (expEl) expEl.focus();
       return;
     }
     if (!formData.agreedToRules) {
@@ -1059,6 +1095,30 @@ export default function App() {
                     </div>
                   </div>
                 )}
+                {submittedData.skills && submittedData.skills.length > 0 && (
+                  <div className="col-span-2 pt-2 border-t border-white/15">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider mb-1">
+                      Skills &amp; Co-Curricular Talents
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {submittedData.skills.map(sk => (
+                        <span key={sk} className="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-[11px] font-semibold text-emerald-300">
+                          {sk}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {submittedData.experienceAchievements && (
+                  <div className="col-span-2 pt-2 border-t border-white/15">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider mb-1">
+                      Experience &amp; Achievements
+                    </span>
+                    <p className="text-xs text-slate-200 bg-slate-800/60 p-2.5 rounded-xl border border-white/10 font-medium whitespace-pre-line leading-relaxed">
+                      {submittedData.experienceAchievements}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1100,17 +1160,39 @@ export default function App() {
             </div>
           </div>
         ) : registrationSetting.status !== 'open' ? (
-          /* FORMAL REGISTRATION NOTICE (FORM REPLACED BY FORMAL CLOSED / COMING SOON NOTICE) */
-          <div className="bg-slate-950/65 backdrop-blur-xl rounded-3xl border border-white/20 shadow-2xl p-6 sm:p-9 text-center animate-in fade-in zoom-in-95 duration-200 space-y-6">
+          /* FORMAL REGISTRATION NOTICE (FORM REPLACED BY FORMAL CLOSED / COMING SOON NOTICE - ALL ENGLISH) */
+          <div className={`backdrop-blur-xl rounded-3xl border shadow-2xl p-6 sm:p-9 text-center animate-in fade-in zoom-in-95 duration-200 space-y-6 ${
+            registrationSetting.status === 'closed'
+              ? 'bg-slate-950/85 border-red-500/40 shadow-[0_0_40px_rgba(239,68,68,0.22)]'
+              : 'bg-slate-950/85 border-amber-500/40 shadow-[0_0_40px_rgba(245,158,11,0.22)]'
+          }`}>
+            {/* Club Identity Header with Official Logo */}
+            <div className="flex flex-col items-center justify-center gap-2">
+              <img 
+                src="https://plain-apac-prod-public.komododecks.com/202609/21/iFpbvbXJaON4rnVidFRy/image.png" 
+                alt="NGDC Science Club Logo" 
+                className="h-16 sm:h-20 w-auto object-contain drop-shadow-[0_0_20px_rgba(255,255,255,0.18)]"
+                referrerPolicy="no-referrer"
+              />
+              <div className="text-center">
+                <h3 className="text-base sm:text-lg font-black text-white tracking-wider uppercase">
+                  NGDC Science Club
+                </h3>
+                <p className="text-xs font-semibold text-slate-300">
+                  New Government Degree College, Rajshahi
+                </p>
+              </div>
+            </div>
+
             {/* Status Icon */}
             <div className="flex justify-center">
               <div className={`w-16 h-16 rounded-3xl flex items-center justify-center shadow-lg border ${
                 registrationSetting.status === 'closed'
-                  ? 'bg-rose-500/15 border-rose-500/40 text-rose-400 shadow-[0_0_25px_rgba(244,63,94,0.25)]'
-                  : 'bg-amber-500/15 border-amber-500/40 text-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.25)]'
+                  ? 'bg-red-500/15 border-red-500/40 text-red-400 shadow-[0_0_25px_rgba(239,68,68,0.3)]'
+                  : 'bg-amber-500/15 border-amber-500/40 text-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.3)]'
               }`}>
                 {registrationSetting.status === 'closed' ? (
-                  <Lock className="w-8 h-8 text-rose-400" />
+                  <Lock className="w-8 h-8 text-red-400" />
                 ) : (
                   <Clock className="w-8 h-8 text-amber-400 animate-pulse" />
                 )}
@@ -1119,16 +1201,16 @@ export default function App() {
 
             {/* Formal Status Badge */}
             <div className="flex justify-center">
-              <span className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider border shadow-xs ${
+              <span className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider border shadow-xs ${
                 registrationSetting.status === 'closed'
-                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                  : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  ? 'bg-red-500/20 text-red-300 border-red-500/40 shadow-[0_0_15px_rgba(239,68,68,0.2)]'
+                  : 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
               }`}>
-                <span className={`w-2 h-2 rounded-full ${
-                  registrationSetting.status === 'closed' ? 'bg-rose-500' : 'bg-amber-500 animate-ping'
+                <span className={`w-2.5 h-2.5 rounded-full ${
+                  registrationSetting.status === 'closed' ? 'bg-red-500' : 'bg-amber-500 animate-ping'
                 }`} />
                 <span>
-                  {registrationSetting.status === 'closed' ? 'রেজিস্ট্রেশন বন্ধ / Registration Closed' : 'শীঘ্রই শুরু হবে / Opening Soon'}
+                  {registrationSetting.status === 'closed' ? 'Registration Closed' : 'Coming Soon'}
                 </span>
               </span>
             </div>
@@ -1138,35 +1220,53 @@ export default function App() {
               <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
                 {registrationSetting.headline || (
                   registrationSetting.status === 'closed'
-                    ? 'মেম্বারশিপ রেজিস্ট্রেশন সাময়িকভাবে বন্ধ রয়েছে'
-                    : 'মেম্বারশিপ রেজিস্ট্রেশন শীঘ্রই শুরু হবে'
+                    ? 'NGDC Science Club Membership Registration is Currently Closed'
+                    : 'NGDC Science Club Membership Registration Coming Soon'
                 )}
               </h2>
               
-              <div className="text-xs sm:text-sm text-slate-300 leading-relaxed font-normal whitespace-pre-line bg-slate-900/70 p-4 sm:p-5 rounded-2xl border border-white/10 text-left sm:text-center space-y-2">
+              <div className={`text-xs sm:text-sm text-slate-200 leading-relaxed font-normal whitespace-pre-line p-4 sm:p-5 rounded-2xl border text-left sm:text-center space-y-2 ${
+                registrationSetting.status === 'closed'
+                  ? 'bg-red-950/25 border-red-500/25'
+                  : 'bg-amber-950/25 border-amber-500/25'
+              }`}>
                 <p>
                   {registrationSetting.message || (
                     registrationSetting.status === 'closed'
-                      ? 'নবাবগঞ্জ সরকারি কলেজ সায়েন্স ক্লাবের বর্তমান সেশনের মেম্বারশিপ রেজিস্ট্রেশন কার্যক্রম সাময়িকভাবে বন্ধ রয়েছে। পরবর্তী সেশন বা রেজিস্ট্রেশন সংক্রান্ত তথ্যের জন্য ক্লাবের অফিশিয়াল নোটিশ ও ফেসবুক পেইজে নজর রাখুন।'
-                      : 'নবাবগঞ্জ সরকারি কলেজ সায়েন্স ক্লাবের মেম্বারশিপ রেজিস্ট্রেশন (HSC 27 & HSC 28) খুব শীঘ্রই শুরু হতে যাচ্ছে। একাদশ ও দ্বাদশ শ্রেণির বিজ্ঞান বিভাগের শিক্ষার্থীদের প্রয়োজনীয় তথ্য ও পাসপোর্ট সাইজ ছবি প্রস্তুত রাখার জন্য অনুরোধ করা হচ্ছে।'
+                      ? 'The membership registration window for NGDC Science Club (New Government Degree College, Rajshahi) is currently closed for this session. Thank you for your interest. Please check our official notices for future announcements.'
+                      : 'The official membership registration for NGDC Science Club (New Government Degree College, Rajshahi) will open shortly for HSC 27 and HSC 28 sessions. Eleventh and twelfth grade science students are requested to keep their college information and passport photograph ready.'
                   )}
                 </p>
               </div>
             </div>
 
-            {/* Official WhatsApp Community Join */}
-            <div className="p-4 rounded-2xl bg-[#25D366]/5 border border-[#25D366]/20 text-center max-w-lg mx-auto">
-              <p className="text-xs text-slate-300 font-medium mb-3">
-                ক্লাবের অফিশিয়াল নোটিশ, বিজ্ঞান উৎসব ও পরবর্তী সেশন সংক্রান্ত তথ্যের জন্য অফিশিয়াল হোয়াটসঅ্যাপ কমিউনিটিতে যুক্ত থাকুন:
+            {/* Official Email Contact Card (WhatsApp Community removed per request) */}
+            <div className={`p-4 sm:p-5 rounded-2xl border text-center max-w-lg mx-auto transition-all ${
+              registrationSetting.status === 'closed'
+                ? 'bg-red-950/30 border-red-500/30'
+                : 'bg-amber-950/30 border-amber-500/30'
+            }`}>
+              <div className="flex items-center justify-center gap-2 mb-1.5">
+                <Mail className={`w-4 h-4 ${registrationSetting.status === 'closed' ? 'text-red-400' : 'text-amber-400'}`} />
+                <span className={`text-xs font-black uppercase tracking-wider ${
+                  registrationSetting.status === 'closed' ? 'text-red-300' : 'text-amber-300'
+                }`}>
+                  Need Assistance or Have Questions?
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 font-medium mb-3.5 leading-relaxed">
+                If you need any information, assistance, or have questions regarding NGDC Science Club membership, please contact us directly via our official email:
               </p>
               <a
-                href="https://chat.whatsapp.com/J0ooCmabbIT2dfJdXTLhni"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#20ba5a] text-slate-950 text-xs font-bold transition-all shadow-md cursor-pointer"
+                href="mailto:ngdcsc.org@gmail.com"
+                className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer ${
+                  registrationSetting.status === 'closed'
+                    ? 'bg-red-600 hover:bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.35)]'
+                    : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.35)]'
+                }`}
               >
-                <MessageCircle className="w-4 h-4 fill-current" />
-                <span>Join Official WhatsApp Community</span>
+                <Mail className="w-4 h-4 shrink-0" />
+                <span>Contact via Email: ngdcsc.org@gmail.com</span>
               </a>
             </div>
 
@@ -1175,7 +1275,11 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => navigateTo('status')}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black shadow-md transition-all cursor-pointer"
+                className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black shadow-md transition-all cursor-pointer ${
+                  registrationSetting.status === 'closed'
+                    ? 'bg-red-600 hover:bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.3)]'
+                    : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.3)]'
+                }`}
               >
                 <Search className="w-3.5 h-3.5" />
                 <span>Check Application Status</span>
@@ -1572,7 +1676,63 @@ export default function App() {
               </div>
             </div>
 
-            {/* 11. RULES & REGULATIONS */}
+            {/* 11. SKILLS & CO-CURRICULAR TALENTS (CHECKBOXES - MANDATORY) */}
+            <div>
+              <div className="mb-2">
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  Skills &amp; Technical Talents <span className="text-emerald-400 font-bold">*</span>
+                </label>
+                <p className="text-[11px] text-slate-400 mt-0.5 font-medium">
+                  Select your creative, technical, media, or organizational skills (Select at least one):
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5" id="skills-checkbox-group">
+                {((registrationSetting.skills && registrationSetting.skills.length > 0) ? registrationSetting.skills : DEFAULT_SKILL_OPTIONS).map((skill) => {
+                  const isChecked = (formData.skills || []).includes(skill);
+                  return (
+                    <label
+                      key={skill}
+                      onClick={() => toggleSkill(skill)}
+                      className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer select-none transition-all ${
+                        isChecked 
+                          ? 'bg-emerald-500/20 border-emerald-400 ring-1 ring-emerald-400/40 text-emerald-200 shadow-[0_0_10px_rgba(0,229,153,0.15)] font-semibold' 
+                          : 'bg-slate-900/50 border-white/15 text-slate-300 hover:bg-slate-800 hover:border-emerald-500/40'
+                      }`}
+                    >
+                      <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                        isChecked ? 'bg-[#00E599] border-[#00E599] text-slate-950' : 'bg-slate-900 border-slate-600'
+                      }`}>
+                        {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                      </div>
+                      <span className="text-xs font-bold leading-snug">
+                        {skill}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 12. EXPERIENCE OR ACHIEVEMENTS (MANDATORY - NO EG) */}
+            <div>
+              <div className="mb-1.5">
+                <label htmlFor="experience-achievements" className="block text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  Experience or Achievements <span className="text-emerald-400 font-bold">*</span>
+                </label>
+              </div>
+              <textarea
+                id="experience-achievements"
+                rows={3}
+                required
+                placeholder="Write your experience, achievements, competitions, or write 'None' if you have no prior experience"
+                value={formData.experienceAchievements || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, experienceAchievements: e.target.value }))}
+                className="w-full px-4 py-2.5 rounded-xl border border-white/15 bg-slate-900/60 hover:bg-slate-900/80 focus:bg-slate-900/95 text-white placeholder:text-slate-500 text-xs sm:text-sm focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 outline-none transition-all font-medium leading-relaxed resize-y"
+              />
+            </div>
+
+            {/* 13. RULES & REGULATIONS */}
             <div className="rounded-2xl p-4 sm:p-5 bg-slate-950/60 border border-emerald-500/30 backdrop-blur-xl space-y-3.5 shadow-[0_0_30px_rgba(0,229,153,0.06)]" id="rules-regulations-card">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xs shrink-0 border border-emerald-500/30 shadow-[0_0_15px_rgba(0,229,153,0.15)]">

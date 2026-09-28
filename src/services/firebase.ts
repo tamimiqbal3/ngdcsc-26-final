@@ -26,7 +26,16 @@ import {
   limit,
   Unsubscribe
 } from 'firebase/firestore';
-import { SubmissionRecord, ExecutiveMember, ClubNotice, PublicMemberStatus, MemberStatus, MembershipRegistrationSetting, RegistrationStatusMode } from '../types';
+import { 
+  SubmissionRecord, 
+  ExecutiveMember, 
+  ClubNotice, 
+  PublicMemberStatus, 
+  MemberStatus, 
+  MembershipRegistrationSetting, 
+  RegistrationStatusMode,
+  DEFAULT_SKILL_OPTIONS
+} from '../types';
 
 import { getAnalytics, isSupported } from 'firebase/analytics';
 
@@ -1054,7 +1063,8 @@ const LS_REGISTRATION_SETTING_KEY = 'ngdcsc_registration_setting_v1';
 export const DEFAULT_REGISTRATION_SETTING: MembershipRegistrationSetting = {
   status: 'open',
   headline: 'Online Membership Registration',
-  message: 'Welcome to Nawabganj Govt. College Science Club. Please complete the form below to join our community.'
+  message: 'Welcome to NGDC Science Club (New Government Degree College, Rajshahi). Please complete the form below to join our community.',
+  skills: DEFAULT_SKILL_OPTIONS
 };
 
 /**
@@ -1071,6 +1081,9 @@ export async function getRegistrationSetting(): Promise<MembershipRegistrationSe
     const snap = await getDoc(doc(db, 'settings', 'membership_registration'));
     if (snap.exists()) {
       const data = snap.data() as MembershipRegistrationSetting;
+      if (!data.skills || data.skills.length === 0) {
+        data.skills = DEFAULT_SKILL_OPTIONS;
+      }
       localStorage.setItem(LS_REGISTRATION_SETTING_KEY, JSON.stringify(data));
       return data;
     }
@@ -1088,7 +1101,11 @@ export function subscribeRegistrationSetting(callback: (setting: MembershipRegis
   try {
     const raw = localStorage.getItem(LS_REGISTRATION_SETTING_KEY);
     if (raw) {
-      callback(JSON.parse(raw));
+      const parsed = JSON.parse(raw);
+      if (!parsed.skills || parsed.skills.length === 0) {
+        parsed.skills = DEFAULT_SKILL_OPTIONS;
+      }
+      callback(parsed);
     } else {
       callback(DEFAULT_REGISTRATION_SETTING);
     }
@@ -1102,6 +1119,9 @@ export function subscribeRegistrationSetting(callback: (setting: MembershipRegis
     (snap) => {
       if (snap.exists()) {
         const data = snap.data() as MembershipRegistrationSetting;
+        if (!data.skills || data.skills.length === 0) {
+          data.skills = DEFAULT_SKILL_OPTIONS;
+        }
         localStorage.setItem(LS_REGISTRATION_SETTING_KEY, JSON.stringify(data));
         callback(data);
       } else {
@@ -1118,19 +1138,25 @@ export function subscribeRegistrationSetting(callback: (setting: MembershipRegis
  * Update registration setting in Firestore (Admin only)
  */
 export async function updateRegistrationSetting(setting: MembershipRegistrationSetting): Promise<void> {
+  const completeSetting: MembershipRegistrationSetting = {
+    ...setting,
+    skills: setting.skills && setting.skills.length > 0 ? setting.skills : DEFAULT_SKILL_OPTIONS
+  };
+
   try {
-    localStorage.setItem(LS_REGISTRATION_SETTING_KEY, JSON.stringify(setting));
+    localStorage.setItem(LS_REGISTRATION_SETTING_KEY, JSON.stringify(completeSetting));
   } catch {}
 
   const docRef = doc(db, 'settings', 'membership_registration');
   await setDoc(docRef, {
-    status: setting.status,
-    headline: setting.headline || (setting.status === 'coming_soon' ? 'Membership Registration Opening Soon' : setting.status === 'closed' ? 'Membership Registration Closed' : 'Online Membership Registration'),
-    message: setting.message || (setting.status === 'coming_soon' 
-      ? 'The official membership registration for Nawabganj Govt. College Science Club will open soon for HSC 27 and HSC 28 sessions. Please follow our official notices and WhatsApp group for official announcements.' 
-      : setting.status === 'closed'
-      ? 'The membership registration window for the current session is currently closed. Thank you for your interest in Nawabganj Govt. College Science Club. Please check back for future announcements.'
-      : 'Welcome to Nawabganj Govt. College Science Club. Please complete the form below to join our community.'),
+    status: completeSetting.status,
+    headline: completeSetting.headline || (completeSetting.status === 'coming_soon' ? 'NGDC Science Club Membership Registration Coming Soon' : completeSetting.status === 'closed' ? 'NGDC Science Club Membership Registration is Currently Closed' : 'NGDC Science Club Online Membership Registration'),
+    message: completeSetting.message || (completeSetting.status === 'coming_soon' 
+      ? 'The official membership registration for NGDC Science Club (New Government Degree College, Rajshahi) will open soon for HSC 27 and HSC 28 sessions. Eleventh and twelfth grade science students are requested to prepare their college information and photograph. For any inquiries, please contact us via email at ngdcsc.org@gmail.com.' 
+      : completeSetting.status === 'closed'
+      ? 'The membership registration window for NGDC Science Club (New Government Degree College, Rajshahi) is currently closed for this session. Thank you for your interest. For any queries or assistance, please contact us via email at ngdcsc.org@gmail.com.'
+      : 'Welcome to NGDC Science Club (New Government Degree College, Rajshahi). Please complete the form below to join our community.'),
+    skills: completeSetting.skills,
     updatedAt: new Date().toISOString()
   }, { merge: true });
 }
