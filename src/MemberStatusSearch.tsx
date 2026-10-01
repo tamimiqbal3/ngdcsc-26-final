@@ -274,7 +274,7 @@ export default function MemberStatusSearch({
                         </p>
                         <div className="pt-2">
                           <a
-                            href="https://chat.whatsapp.com/J0ooCmabbIT2dfJdXTLhni"
+                            href="https://chat.whatsapp.com/EKt85N1Te5CLY3Rby76Z0A"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#25D366] hover:bg-[#20ba5a] text-slate-950 text-xs font-bold transition-all shadow-md cursor-pointer"
@@ -299,7 +299,7 @@ export default function MemberStatusSearch({
                         </p>
                         <div className="pt-2">
                           <a
-                            href="https://chat.whatsapp.com/J0ooCmabbIT2dfJdXTLhni"
+                            href="https://chat.whatsapp.com/EKt85N1Te5CLY3Rby76Z0A"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#25D366] hover:bg-[#20ba5a] text-slate-950 text-xs font-bold transition-all shadow-md cursor-pointer"
