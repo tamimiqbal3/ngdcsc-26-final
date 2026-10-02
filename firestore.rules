@@ -6,7 +6,8 @@ service cloud.firestore {
     function isSuperAdmin() {
       return request.auth != null && 
         (request.auth.token.email.lower() == 'ngdcsc.org@gmail.com' || 
-         request.auth.token.email.lower() == 'info.tamimiq@gmail.com');
+         request.auth.token.email.lower() == 'info.tamimiq@gmail.com' ||
+         request.auth.token.email.lower() == 'tahmidahmmed007@gmail.com');
     }
 
     // 1. Club Notices: Anyone can read; only authorized club admin can create/edit/delete

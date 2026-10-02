@@ -11,6 +11,7 @@ import {
 import { 
   getFirestore, 
   initializeFirestore,
+  setLogLevel,
   collection, 
   doc, 
   setDoc, 
@@ -54,13 +55,20 @@ export const firebaseConfig = {
 export const firebaseApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(firebaseApp);
 
+// Suppress internal Firestore connection/retry notices from triggering false-positive error triggers
+try {
+  setLogLevel('error');
+} catch {
+  // ignore
+}
+
 // Initialize Firestore with resilient connection handling:
-// experimentalAutoDetectLongPolling allows Firestore to automatically fallback to HTTP long polling
-// when WebSockets or WebChannel streams are interrupted or blocked by proxies/firewalls.
+// experimentalForceLongPolling connects immediately using standard HTTP POST long-polling
+// without attempting WebChannel streaming (which fails in sandboxed iframes and triggers [code=unavailable]).
 export const db = (() => {
   try {
     return initializeFirestore(firebaseApp, {
-      experimentalAutoDetectLongPolling: true,
+      experimentalForceLongPolling: true,
       ignoreUndefinedProperties: true
     });
   } catch {
@@ -96,7 +104,8 @@ export const googleProvider = new GoogleAuthProvider();
 // Pre-authorized primary admin emails
 export const SUPER_ADMIN_EMAILS = [
   'ngdcsc.org@gmail.com',
-  'info.tamimiq@gmail.com'
+  'info.tamimiq@gmail.com',
+  'tahmidahmmed007@gmail.com'
 ];
 
 // Offline & Local Storage fallback keys
