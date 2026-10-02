@@ -154,6 +154,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   const [filterBatch, setFilterBatch] = useState<string>('All');
   const [filterSection, setFilterSection] = useState<string>('All');
   const [filterStatus, setFilterStatus] = useState<string>('All');
+  const [filterSkill, setFilterSkill] = useState<string>('All');
   const [selectedMember, setSelectedMember] = useState<SubmissionRecord | null>(null);
   const [editingMember, setEditingMember] = useState<SubmissionRecord | null>(null);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
@@ -240,6 +241,20 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       ? regSetting.skills
       : DEFAULT_SKILL_OPTIONS;
   }, [regSetting.skills]);
+
+  // Combined list of distinct skills available across club settings and registered members
+  const availableSkillsForFilter = useMemo(() => {
+    const set = new Set<string>();
+    activeSkills.forEach(s => {
+      if (s && s.trim()) set.add(s.trim());
+    });
+    members.forEach(m => {
+      (m.skills || []).forEach(s => {
+        if (s && s.trim()) set.add(s.trim());
+      });
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [activeSkills, members]);
 
   const handleQuickChangeStatus = async (newStatus: RegistrationStatusMode) => {
     setSavingRegSetting(true);
@@ -757,8 +772,9 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
         const matchBatch = filterBatch === 'All' || m.batch === filterBatch;
         const matchSection = filterSection === 'All' || m.section === filterSection;
         const matchStatus = filterStatus === 'All' || m.status === filterStatus;
+        const matchSkill = filterSkill === 'All' || (m.skills || []).some(s => s.toLowerCase().trim() === filterSkill.toLowerCase().trim());
 
-        return matchSearch && matchBatch && matchSection && matchStatus;
+        return matchSearch && matchBatch && matchSection && matchStatus && matchSkill;
       })
       .sort((a, b) => {
         const aNum = extractSerial(a.membershipId);
@@ -777,7 +793,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
         const bDate = b.createdAt || b.submittedAt || '';
         return aDate.localeCompare(bDate);
       });
-  }, [members, memberSearch, filterBatch, filterSection, filterStatus]);
+  }, [members, memberSearch, filterBatch, filterSection, filterStatus, filterSkill]);
 
   // Loading Screen
   if (authLoading) {
@@ -1125,6 +1141,37 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                     <option value="approved">Approved</option>
                     <option value="rejected">Rejected</option>
                   </select>
+
+                  {/* Skill Filter */}
+                  <select
+                    value={filterSkill}
+                    onChange={(e) => setFilterSkill(e.target.value)}
+                    className="px-3 py-2 text-xs font-bold rounded-xl bg-slate-50 border border-slate-200 text-slate-700 focus:outline-none focus:bg-white max-w-[170px] truncate"
+                    title="Filter by Talent / Skill"
+                  >
+                    <option value="All">All Skills</option>
+                    {availableSkillsForFilter.map((skill) => (
+                      <option key={skill} value={skill}>{skill}</option>
+                    ))}
+                  </select>
+
+                  {/* Clear Filters if active */}
+                  {(filterBatch !== 'All' || filterSection !== 'All' || filterStatus !== 'All' || filterSkill !== 'All' || memberSearch) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilterBatch('All');
+                        setFilterSection('All');
+                        setFilterStatus('All');
+                        setFilterSkill('All');
+                        setMemberSearch('');
+                      }}
+                      className="px-2.5 py-2 text-[11px] font-bold rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition-colors cursor-pointer"
+                      title="Reset all filters"
+                    >
+                      Clear
+                    </button>
+                  )}
 
                   {/* Export CSV */}
                   <button
