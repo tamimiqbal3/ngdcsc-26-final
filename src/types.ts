@@ -1,6 +1,23 @@
 export type SectionType = 'A' | 'B' | 'C' | 'D';
 export type BatchType = 'HSC 27' | 'HSC 28';
 export type MemberStatus = 'pending' | 'approved' | 'rejected';
+export type EmailType = 'confirmation' | 'decline' | 'custom';
+
+export interface EmailLogRecord {
+  id: string;
+  memberId?: string;
+  membershipId?: string;
+  recipientName: string;
+  recipientEmail: string;
+  recipientPhone?: string;
+  senderEmail: string;
+  emailType: EmailType;
+  subject: string;
+  body: string;
+  sentAt: string;
+  sentBy: string;
+  status: 'sent' | 'pending';
+}
 
 export interface MembershipFormData {
   photo: string | null;
@@ -26,6 +43,12 @@ export interface SubmissionRecord extends MembershipFormData {
   status?: MemberStatus;
   rejectionReason?: string;
   createdAt?: string;
+  lastEmailSent?: {
+    type: EmailType;
+    sentAt: string;
+    subject: string;
+    sentBy?: string;
+  };
 }
 
 export interface PublicMemberStatus {

@@ -41,6 +41,11 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
+    // 6. Email Dispatch & Activity Logs: Only authorized club admin can read/write
+    match /email_logs/{logId} {
+      allow read, write: if isSuperAdmin();
+    }
+
     // Fallback: Default deny for any other collections
     match /{document=**} {
       allow read, write: if isSuperAdmin();

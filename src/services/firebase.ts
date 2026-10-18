@@ -35,7 +35,9 @@ import {
   MemberStatus, 
   MembershipRegistrationSetting, 
   RegistrationStatusMode,
-  DEFAULT_SKILL_OPTIONS
+  DEFAULT_SKILL_OPTIONS,
+  EmailLogRecord,
+  EmailType
 } from '../types';
 
 import { getAnalytics, isSupported } from 'firebase/analytics';
@@ -1169,4 +1171,137 @@ export async function updateRegistrationSetting(setting: MembershipRegistrationS
     updatedAt: new Date().toISOString()
   }, { merge: true });
 }
+
+// ==================== EMAIL LOGS & DISPATCH SERVICES ====================
+
+const LS_EMAIL_LOGS_KEY = 'ngdcsc_firebase_email_logs_cache';
+
+/**
+ * Fetch recent email dispatch logs from Firestore
+ */
+export async function fetchEmailLogsFromFirebase(): Promise<EmailLogRecord[]> {
+  try {
+    const q = query(collection(db, 'email_logs'), orderBy('sentAt', 'desc'), limit(150));
+    const snap = await getDocs(q);
+    const logs: EmailLogRecord[] = [];
+    snap.forEach((docSnap) => {
+      logs.push({ ...(docSnap.data() as EmailLogRecord), id: docSnap.id });
+    });
+    try {
+      localStorage.setItem(LS_EMAIL_LOGS_KEY, JSON.stringify(logs));
+    } catch {}
+    return logs;
+  } catch (err) {
+    console.warn('Error fetching email logs from Firestore:', err);
+    try {
+      const cached = localStorage.getItem(LS_EMAIL_LOGS_KEY);
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return [];
+  }
+}
+
+/**
+ * Real-time subscription to email dispatch logs
+ */
+export function subscribeToEmailLogs(callback: (logs: EmailLogRecord[]) => void): Unsubscribe {
+  try {
+    const cached = localStorage.getItem(LS_EMAIL_LOGS_KEY);
+    if (cached) {
+      callback(JSON.parse(cached));
+    }
+  } catch {}
+
+  const q = query(collection(db, 'email_logs'), orderBy('sentAt', 'desc'), limit(150));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list: EmailLogRecord[] = [];
+      snap.forEach((d) => {
+        list.push({ ...(d.data() as EmailLogRecord), id: d.id });
+      });
+      try {
+        localStorage.setItem(LS_EMAIL_LOGS_KEY, JSON.stringify(list));
+      } catch {}
+      callback(list);
+    },
+    (err) => {
+      console.warn('Realtime email logs listener warning:', err);
+      try {
+        const cached = localStorage.getItem(LS_EMAIL_LOGS_KEY);
+        if (cached) callback(JSON.parse(cached));
+      } catch {}
+    }
+  );
+}
+
+/**
+ * Save an email dispatch record to Firestore and update the member's lastEmailSent
+ */
+export async function saveEmailLogToFirebase(log: EmailLogRecord): Promise<void> {
+  const logId = log.id || `email_log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const record: EmailLogRecord = {
+    ...log,
+    id: logId,
+    sentAt: log.sentAt || new Date().toISOString()
+  };
+
+  // 1. Update local cache immediately
+  try {
+    const cached: EmailLogRecord[] = JSON.parse(localStorage.getItem(LS_EMAIL_LOGS_KEY) || '[]');
+    const updated = [record, ...cached.filter((l) => l.id !== logId)];
+    localStorage.setItem(LS_EMAIL_LOGS_KEY, JSON.stringify(updated.slice(0, 200)));
+  } catch {}
+
+  // 2. Update member's lastEmailSent if memberId is present
+  if (record.memberId) {
+    try {
+      const memberDocRef = doc(db, 'members', record.memberId);
+      await setDoc(
+        memberDocRef,
+        {
+          lastEmailSent: {
+            type: record.emailType,
+            sentAt: record.sentAt,
+            subject: record.subject,
+            sentBy: record.sentBy
+          }
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn('Warning updating member lastEmailSent in Firestore:', err);
+    }
+  }
+
+  // 3. Save to email_logs in Firestore
+  try {
+    const docRef = doc(db, 'email_logs', logId);
+    await setDoc(docRef, {
+      ...record,
+      createdAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('Warning writing to email_logs in Firestore:', err);
+  }
+}
+
+/**
+ * Delete an email log record
+ */
+export async function deleteEmailLogFromFirebase(logId: string): Promise<void> {
+  try {
+    const cached: EmailLogRecord[] = JSON.parse(localStorage.getItem(LS_EMAIL_LOGS_KEY) || '[]');
+    const updated = cached.filter((l) => l.id !== logId);
+    localStorage.setItem(LS_EMAIL_LOGS_KEY, JSON.stringify(updated));
+  } catch {}
+
+  try {
+    const docRef = doc(db, 'email_logs', logId);
+    await deleteDoc(docRef);
+  } catch (err) {
+    console.warn('Error deleting email log:', err);
+  }
+}
+
 

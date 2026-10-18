@@ -40,6 +40,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import ImageAdjustModal from './components/ImageAdjustModal';
+import EmailLogsPanel from './components/EmailLogsPanel';
 import { 
   SubmissionRecord, 
   ExecutiveMember, 
@@ -49,7 +50,8 @@ import {
   BatchType,
   MembershipRegistrationSetting, 
   RegistrationStatusMode,
-  DEFAULT_SKILL_OPTIONS
+  DEFAULT_SKILL_OPTIONS,
+  EmailLogRecord
 } from './types';
 import AdminDashboardView from './AdminDashboardView';
 import { 
@@ -77,7 +79,9 @@ import {
   getRegistrationSetting,
   subscribeRegistrationSetting,
   updateRegistrationSetting,
-  DEFAULT_REGISTRATION_SETTING
+  DEFAULT_REGISTRATION_SETTING,
+  fetchEmailLogsFromFirebase,
+  subscribeToEmailLogs
 } from './services/firebase';
 import { 
   signInWithPopup, 
@@ -102,7 +106,7 @@ interface AdminPanelProps {
   onExit: () => void;
 }
 
-type TabType = 'dashboard' | 'members' | 'committee' | 'notices' | 'settings';
+type TabType = 'dashboard' | 'members' | 'email_logs' | 'committee' | 'notices' | 'settings';
 
 export default function AdminPanel({ onExit }: AdminPanelProps) {
   // Auth state
@@ -136,6 +140,14 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   const [notices, setNotices] = useState<ClubNotice[]>(() => {
     try {
       const raw = localStorage.getItem('ngdcsc_firebase_notices_cache');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [emailLogs, setEmailLogs] = useState<EmailLogRecord[]>(() => {
+    try {
+      const raw = localStorage.getItem('ngdcsc_firebase_email_logs_cache');
       return raw ? JSON.parse(raw) : [];
     } catch {
       return [];
@@ -440,7 +452,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     let loadedCount = 0;
     const checkLoaded = () => {
       loadedCount++;
-      if (loadedCount >= 3) setLoadingData(false);
+      if (loadedCount >= 4) setLoadingData(false);
     };
 
     // 1. Members real-time stream
@@ -466,25 +478,34 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       setRegSetting(setting);
     });
 
+    // 5. Email dispatch logs real-time stream
+    const unsubEmailLogs = subscribeToEmailLogs((liveLogs) => {
+      setEmailLogs(liveLogs);
+      checkLoaded();
+    });
+
     return () => {
       unsubMembers();
       unsubCommittee();
       unsubNotices();
       unsubSetting();
+      unsubEmailLogs();
     };
   }, [isAuthenticated]);
 
   const loadAllData = async () => {
     setLoadingData(true);
     try {
-      const [membersData, committeeData, noticesData] = await Promise.all([
+      const [membersData, committeeData, noticesData, emailLogsData] = await Promise.all([
         fetchMembersFromFirebase(),
         fetchCommitteeFromFirebase(INITIAL_COMMITTEE),
-        fetchNoticesFromFirebase()
+        fetchNoticesFromFirebase(),
+        fetchEmailLogsFromFirebase()
       ]);
       setMembers(membersData);
       setCommittee(committeeData);
       setNotices(noticesData);
+      setEmailLogs(emailLogsData);
     } catch (err) {
       console.error('Error loading admin data:', err);
     } finally {
@@ -996,6 +1017,25 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
             </span>
           </button>
 
+          {/* 3. Email Logs Tab (ইমেইল লগস) */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('email_logs')}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
+              activeTab === 'email_logs'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <Mail className="w-4 h-4 shrink-0" />
+            <span>ইমেইল লগস</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeTab === 'email_logs' ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-100 text-slate-700'
+            }`}>
+              {emailLogs.length}
+            </span>
+          </button>
+
           {/* 3. Executive Committee Tab */}
           <button
             type="button"
@@ -1181,6 +1221,21 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                   >
                     <Download className="w-3.5 h-3.5 text-slate-500" />
                     <span>Export</span>
+                  </button>
+
+                  {/* Email Logs Portal Shortcut */}
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('email_logs')}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold border border-blue-200 transition-colors cursor-pointer"
+                    title="Open Email Logs & Dispatcher"
+                  >
+                    <Mail className="w-3.5 h-3.5 text-blue-600" />
+                    <span className="hidden sm:inline">ইমেইল লগস</span>
+                    <span className="sm:hidden">Emails</span>
+                    <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-blue-200 text-blue-900 font-mono">
+                      {emailLogs.length}
+                    </span>
                   </button>
 
                   {/* Add Member Manually */}
@@ -1623,6 +1678,19 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
               </div>
             </div>
           </div>
+        )}
+
+        {/* ===================== TAB: EMAIL LOGS & NOTIFICATIONS ===================== */}
+        {activeTab === 'email_logs' && (
+          <EmailLogsPanel
+            members={members}
+            emailLogs={emailLogs}
+            currentUserEmail={currentUser?.email || 'ngdcsc.org@gmail.com'}
+            onRefreshData={loadAllData}
+            onUpdateMemberStatus={async (memberId, newStatus) => {
+              await handleStatusChange(memberId, newStatus);
+            }}
+          />
         )}
 
         {/* ===================== TAB 2: EXECUTIVE COMMITTEE ===================== */}
