@@ -18,39 +18,39 @@ export default function NotFoundPage({
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
 
   return (
-    <div className="relative min-h-screen text-slate-100 flex flex-col items-center justify-center p-4 sm:p-6 overflow-hidden">
-      {/* Dark Animated Science Grid Background */}
+    <div className="relative min-h-screen text-slate-800 flex flex-col items-center justify-center p-4 sm:p-6 overflow-hidden">
+      {/* Light Animated Science Grid Background */}
       <ScienceBackground />
 
-      <div className="relative z-10 max-w-lg w-full bg-slate-950/80 backdrop-blur-2xl border border-rose-500/30 rounded-3xl p-6 sm:p-8 text-center shadow-[0_0_50px_rgba(244,63,94,0.15)] formal-page-enter">
+      <div className="relative z-10 max-w-lg w-full bg-white/85 backdrop-blur-2xl border border-rose-200/90 rounded-3xl p-6 sm:p-8 text-center shadow-[0_8px_30px_rgb(0,0,0,0.06)] formal-page-enter">
         {/* Official Club Logo */}
         <div className="flex justify-center mb-4">
           <img
             src="https://plain-apac-prod-public.komododecks.com/202609/21/iFpbvbXJaON4rnVidFRy/image.png"
             alt="NGDC Science Club Logo"
-            className="h-20 w-auto object-contain drop-shadow-[0_0_20px_rgba(0,229,153,0.3)] hover:scale-105 transition-transform"
+            className="h-20 w-auto object-contain drop-shadow-md hover:scale-105 transition-transform"
             referrerPolicy="no-referrer"
           />
         </div>
 
         {/* 404 / Forbidden Badge */}
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-black uppercase tracking-wider mb-4 animate-pulse">
-          <ShieldAlert className="w-4 h-4 text-rose-400" />
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-50 border border-rose-200 text-rose-800 text-xs font-black uppercase tracking-wider mb-4 shadow-xs">
+          <ShieldAlert className="w-4 h-4 text-rose-600" />
           <span>404 • Forbidden / Page Not Found</span>
         </div>
 
-        <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight mb-2">
+        <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight mb-2">
           Access Restricted
         </h1>
-        <p className="text-sm font-bold text-rose-400 font-mono mb-4">
-          Route: <span className="bg-slate-900 px-2 py-0.5 rounded border border-rose-500/30">{currentPath || 'Unknown Path'}</span>
+        <p className="text-sm font-bold text-rose-600 font-mono mb-4">
+          Route: <span className="bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 text-rose-800">{currentPath || 'Unknown Path'}</span>
         </p>
 
-        <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/10 text-left space-y-2 mb-6">
-          <p className="text-xs text-slate-300 leading-relaxed font-medium">
-            ⚠️ <strong className="text-white">The requested page was not found or is a protected route.</strong> Please use the buttons below to return to the official club website, registration form, or notices.
+        <div className="p-4 rounded-2xl bg-slate-50/90 border border-slate-200 text-left space-y-2 mb-6">
+          <p className="text-xs text-slate-700 leading-relaxed font-medium">
+            ⚠️ <strong className="text-slate-900">The requested page was not found or is a protected route.</strong> Please use the buttons below to return to the official club website, registration form, or notices.
           </p>
-          <p className="text-[11px] text-slate-400 leading-normal">
+          <p className="text-[11px] text-slate-500 leading-normal">
             The URL you requested does not exist or you do not have permission to view it.
           </p>
         </div>
@@ -60,7 +60,7 @@ export default function NotFoundPage({
           <button
             type="button"
             onClick={onGoHome}
-            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-xs uppercase tracking-wider transition-all shadow-[0_0_20px_rgba(0,229,153,0.3)] flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
           >
             <Home className="w-4 h-4" />
             <span>Return to Home / Registration</span>
@@ -70,18 +70,18 @@ export default function NotFoundPage({
             <button
               type="button"
               onClick={onGoNotices}
-              className="py-2.5 px-3 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-200 hover:text-white border border-white/10 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              className="py-2.5 px-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-950 border border-slate-200 shadow-xs text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              <Bell className="w-3.5 h-3.5 text-emerald-400" />
+              <Bell className="w-3.5 h-3.5 text-emerald-600" />
               <span>Notice Board</span>
             </button>
 
             <button
               type="button"
               onClick={onGoCommittee}
-              className="py-2.5 px-3 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-200 hover:text-white border border-white/10 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              className="py-2.5 px-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-950 border border-slate-200 shadow-xs text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              <Users className="w-3.5 h-3.5 text-blue-400" />
+              <Users className="w-3.5 h-3.5 text-blue-600" />
               <span>Committee</span>
             </button>
           </div>
@@ -89,9 +89,9 @@ export default function NotFoundPage({
           <button
             type="button"
             onClick={onGoAdmin}
-            className="w-full py-2.5 px-4 rounded-xl bg-slate-900/50 hover:bg-slate-800/70 text-slate-400 hover:text-slate-200 border border-white/5 text-[11px] font-bold transition-all flex items-center justify-center gap-2 cursor-pointer mt-1"
+            className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-2 cursor-pointer mt-1"
           >
-            <Lock className="w-3.5 h-3.5 text-slate-400" />
+            <Lock className="w-3.5 h-3.5 text-slate-500" />
             <span>Official Admin Portal</span>
           </button>
         </div>

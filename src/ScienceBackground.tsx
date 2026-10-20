@@ -72,8 +72,8 @@ export default function ScienceBackground() {
     function draw() {
       if (!ctx) return;
 
-      // Dark canvas refresh with slight trail fade for fluid motion
-      ctx.fillStyle = 'rgba(5, 7, 10, 0.25)';
+      // Light canvas refresh with soft trail fade for smooth, clean Apple aesthetic
+      ctx.fillStyle = 'rgba(248, 250, 252, 0.35)';
       ctx.fillRect(0, 0, W, H);
 
       const time = performance.now() * 0.0015;
@@ -113,18 +113,18 @@ export default function ScienceBackground() {
           const dist = Math.hypot(dx, dy);
 
           if (dist < connectionDist) {
-            const alpha = (1 - dist / connectionDist) * 0.16;
+            const alpha = (1 - dist / connectionDist) * 0.18;
             ctx.beginPath();
             ctx.moveTo(a.x, a.y);
             ctx.lineTo(b.x, b.y);
 
-            // Emerald-tinted subtle connection
+            // Emerald-tinted subtle connection in light theme
             if (a.isHighlight || b.isHighlight) {
-              ctx.strokeStyle = `rgba(0, 229, 153, ${alpha * 1.3})`;
+              ctx.strokeStyle = `rgba(16, 185, 129, ${alpha * 1.4})`;
               ctx.lineWidth = 0.8;
             } else {
-              ctx.strokeStyle = `rgba(180, 210, 235, ${alpha})`;
-              ctx.lineWidth = 0.55;
+              ctx.strokeStyle = `rgba(148, 163, 184, ${alpha * 1.1})`;
+              ctx.lineWidth = 0.6;
             }
             ctx.stroke();
           }
@@ -141,7 +141,7 @@ export default function ScienceBackground() {
             ctx.beginPath();
             ctx.moveTo(a.x, a.y);
             ctx.lineTo(mouse.x, mouse.y);
-            ctx.strokeStyle = `rgba(0, 229, 153, ${malpha})`;
+            ctx.strokeStyle = `rgba(16, 185, 129, ${malpha})`;
             ctx.lineWidth = 0.9;
             ctx.stroke();
           }
@@ -156,14 +156,14 @@ export default function ScienceBackground() {
 
         if (a.isHighlight) {
           // Emerald highlight with soft glow
-          ctx.fillStyle = `rgba(0, 229, 153, ${a.baseAlpha + pulse * 0.15})`;
-          ctx.shadowColor = 'rgba(0, 229, 153, 0.4)';
+          ctx.fillStyle = `rgba(16, 185, 129, ${Math.min(1, a.baseAlpha + pulse * 0.15)})`;
+          ctx.shadowColor = 'rgba(16, 185, 129, 0.35)';
           ctx.shadowBlur = 6;
           ctx.fill();
           ctx.shadowBlur = 0;
         } else {
-          // Cool white/silver point
-          ctx.fillStyle = `rgba(215, 230, 245, ${a.baseAlpha + pulse * 0.1})`;
+          // Slate/silver point in light theme
+          ctx.fillStyle = `rgba(148, 163, 184, ${Math.min(1, a.baseAlpha + pulse * 0.1)})`;
           ctx.fill();
         }
       }
@@ -205,7 +205,7 @@ export default function ScienceBackground() {
           width: 100%;
           height: 100%;
           z-index: -1;
-          background: #05070a;
+          background: radial-gradient(ellipse at 50% 0%, #f1f5f9 0%, #f8fafc 100%);
           pointer-events: none;
         }
       `}</style>

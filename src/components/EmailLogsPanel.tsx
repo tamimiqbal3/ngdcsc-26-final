@@ -23,7 +23,8 @@ import {
   Layout,
   MessageSquare,
   ShieldCheck,
-  CheckCheck
+  CheckCheck,
+  HeartHandshake
 } from 'lucide-react';
 import { SubmissionRecord, EmailLogRecord, EmailType } from '../types';
 import { saveEmailLogToFirebase, deleteEmailLogFromFirebase, updateMemberInFirebase } from '../services/firebase';
@@ -82,7 +83,9 @@ export function buildRichEmailHtml({
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
                 <tr>
                   <td align="center">
-                    <img src="${CLUB_LOGO_URL}" alt="NGDC Science Club Logo" width="75" height="75" style="display: block; margin: 0 auto 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.15); padding: 6px; border: 1px solid rgba(255, 255, 255, 0.25);">
+                    <a href="${MAIN_SITE_URL}" target="_blank" rel="noopener noreferrer" style="text-decoration: none; display: inline-block;">
+                      <img src="${CLUB_LOGO_URL}" alt="NGDC Science Club Logo" width="75" height="75" style="display: block; margin: 0 auto 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.15); padding: 6px; border: 1px solid rgba(255, 255, 255, 0.25);">
+                    </a>
                     <h1 style="margin: 0 0 4px; font-size: 20px; font-weight: 800; color: #ffffff; letter-spacing: 0.5px; text-transform: uppercase;">New Government Degree College Science Club</h1>
                     <p style="margin: 0; font-size: 13px; color: #a7f3d0; font-weight: 500;">New Government Degree College, Rajshahi • Estd. 2017</p>
                   </td>
@@ -159,17 +162,17 @@ export function buildRichEmailHtml({
               </div>
               ` : ''}
 
-              <!-- Action Call to Buttons -->
+              <!-- Action Call to Buttons (Fully Clickable) -->
               <div style="text-align: center; margin: 28px 0;">
                 <p style="font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.5px;">
-                  Complete Your Onboarding (Next Steps)
+                  Complete Your Onboarding (Click Below)
                 </p>
 
                 <!-- Button 1: WhatsApp Community -->
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin-bottom: 12px; width: 100%; max-width: 380px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin-bottom: 12px; width: 100%; max-width: 420px;">
                   <tr>
                     <td align="center" style="border-radius: 12px; background-color: #25D366;">
-                      <a href="${WHATSAPP_GROUP_URL}" target="_blank" style="display: block; padding: 14px 20px; font-size: 14px; font-weight: 700; color: #ffffff; text-decoration: none; border-radius: 12px; text-align: center;">
+                      <a href="${WHATSAPP_GROUP_URL}" target="_blank" rel="noopener noreferrer" style="display: block; padding: 14px 22px; font-size: 14px; font-weight: 700; color: #ffffff; text-decoration: none; border-radius: 12px; text-align: center;">
                         💬 Join Official WhatsApp Community
                       </a>
                     </td>
@@ -177,10 +180,10 @@ export function buildRichEmailHtml({
                 </table>
 
                 <!-- Button 2: Digital ID & Status Check -->
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="width: 100%; max-width: 380px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="width: 100%; max-width: 420px;">
                   <tr>
                     <td align="center" style="border-radius: 12px; background-color: #059669;">
-                      <a href="${VERIFY_STATUS_URL}" target="_blank" style="display: block; padding: 13px 20px; font-size: 14px; font-weight: 700; color: #ffffff; text-decoration: none; border-radius: 12px; text-align: center;">
+                      <a href="${VERIFY_STATUS_URL}" target="_blank" rel="noopener noreferrer" style="display: block; padding: 14px 22px; font-size: 14px; font-weight: 700; color: #ffffff; text-decoration: none; border-radius: 12px; text-align: center;">
                         🛡️ Check Digital ID &amp; Verification Status
                       </a>
                     </td>
@@ -196,7 +199,7 @@ export function buildRichEmailHtml({
                 <ul style="margin: 0; padding-left: 18px;">
                   <li>Join the official WhatsApp community immediately to receive meeting schedules and competition alerts.</li>
                   <li>Keep your Membership ID (<strong>${membershipId}</strong>) handy for event entries, workshops, and science projects.</li>
-                  <li>Visit our official website <a href="${MAIN_SITE_URL}" style="color: #059669; font-weight: 600;">ngdcsc.vercel.app</a> regularly for published notices.</li>
+                  <li>Visit our official website <a href="${MAIN_SITE_URL}" target="_blank" rel="noopener noreferrer" style="color: #059669; font-weight: 700; text-decoration: underline;">ngdcsc.vercel.app</a> regularly for published notices.</li>
                 </ul>
               </div>
 
@@ -208,15 +211,24 @@ export function buildRichEmailHtml({
             </td>
           </tr>
 
-          <!-- Footer -->
+          <!-- Automation Footer -->
           <tr>
-            <td style="background-color: #f8fafc; padding: 20px 24px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8;">
-              <p style="margin: 0 0 4px;">This official communication is dispatched from <strong>${OFFICIAL_SENDER}</strong>.</p>
-              <p style="margin: 0 0 4px;">
-                <a href="${MAIN_SITE_URL}" style="color: #059669; text-decoration: none; font-weight: 600;">Website: ngdcsc.vercel.app</a> • 
-                <a href="${VERIFY_STATUS_URL}" style="color: #059669; text-decoration: none; font-weight: 600;">Status Check: ngdcsc.vercel.app/status</a>
+            <td style="background-color: #0b1120; padding: 24px 20px; text-align: center; border-top: 1px solid #1e293b; color: #94a3b8; font-size: 11px; line-height: 1.6;">
+              <div style="display: inline-block; background-color: rgba(16, 185, 129, 0.15); color: #34d399; font-weight: 800; font-size: 10px; padding: 4px 14px; border-radius: 9999px; border: 1px solid rgba(52, 211, 153, 0.35); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px;">
+                ⚡ Automated Mail Service • Dispatched by ngdc.sc.mail
+              </div>
+              <p style="margin: 0 0 8px; color: #cbd5e1; font-size: 11px; font-weight: 500;">
+                This is an official automated notification dispatched by <strong>ngdc.sc.mail</strong> on behalf of <strong>NGDC Science Club</strong> (<a href="mailto:${OFFICIAL_SENDER}" target="_blank" style="color: #34d399; text-decoration: underline;">${OFFICIAL_SENDER}</a>).
               </p>
-              <p style="margin: 0;">&copy; ${new Date().getFullYear()} NGDC Science Club. All rights reserved.</p>
+              <p style="margin: 0 0 10px; color: #94a3b8; font-size: 11px;">
+                All official links (click to open directly):<br>
+                <a href="${MAIN_SITE_URL}" target="_blank" rel="noopener noreferrer" style="color: #38bdf8; text-decoration: underline; font-weight: 600; margin: 0 6px;">🌐 Main Website: ngdcsc.vercel.app</a> • 
+                <a href="${VERIFY_STATUS_URL}" target="_blank" rel="noopener noreferrer" style="color: #38bdf8; text-decoration: underline; font-weight: 600; margin: 0 6px;">🛡️ Status Portal: ngdcsc.vercel.app/status</a> • 
+                <a href="${WHATSAPP_GROUP_URL}" target="_blank" rel="noopener noreferrer" style="color: #25D366; text-decoration: underline; font-weight: 600; margin: 0 6px;">💬 WhatsApp Community</a>
+              </p>
+              <p style="margin: 0; color: #64748b; font-size: 10px;">
+                &copy; ${new Date().getFullYear()} New Government Degree College Science Club (NGDCSC), Rajshahi. All rights reserved.
+              </p>
             </td>
           </tr>
 
@@ -227,7 +239,7 @@ export function buildRichEmailHtml({
 </body>
 </html>`;
   } else {
-    // Decline Template
+    // Beautiful, Dignified, Respectful Decline / Review Template
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -235,19 +247,27 @@ export function buildRichEmailHtml({
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Application Update - NGDC Science Club</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; line-height: 1.6;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f1f5f9; padding: 24px 12px;">
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; line-height: 1.6;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f8fafc; padding: 24px 12px;">
     <tr>
       <td align="center">
         <!-- Main Card Container -->
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 600px; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 600px; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01); border: 1px solid #e2e8f0;">
           
-          <!-- Header Banner -->
+          <!-- Header Banner (Elegant Royal Navy & Emerald) -->
           <tr>
-            <td style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); padding: 28px 24px; text-align: center; border-bottom: 4px solid #64748b;">
-              <img src="${CLUB_LOGO_URL}" alt="NGDC Science Club Logo" width="65" height="65" style="display: block; margin: 0 auto 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.1); padding: 5px;">
-              <h1 style="margin: 0 0 4px; font-size: 18px; font-weight: 800; color: #ffffff; letter-spacing: 0.5px; text-transform: uppercase;">New Government Degree College Science Club</h1>
-              <p style="margin: 0; font-size: 12px; color: #cbd5e1;">New Government Degree College, Rajshahi</p>
+            <td style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #064e3b 100%); padding: 32px 24px; text-align: center; border-bottom: 4px solid #059669;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td align="center">
+                    <a href="${MAIN_SITE_URL}" target="_blank" rel="noopener noreferrer" style="text-decoration: none; display: inline-block;">
+                      <img src="${CLUB_LOGO_URL}" alt="NGDC Science Club Logo" width="75" height="75" style="display: block; margin: 0 auto 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.15); padding: 6px; border: 1px solid rgba(255, 255, 255, 0.25);">
+                    </a>
+                    <h1 style="margin: 0 0 4px; font-size: 20px; font-weight: 800; color: #ffffff; letter-spacing: 0.5px; text-transform: uppercase;">New Government Degree College Science Club</h1>
+                    <p style="margin: 0; font-size: 13px; color: #a7f3d0; font-weight: 500;">New Government Degree College, Rajshahi • Inspiring Future Scientists</p>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
 
@@ -256,54 +276,116 @@ export function buildRichEmailHtml({
             <td style="padding: 32px 24px;">
               <!-- Notice Badge -->
               <div style="text-align: center; margin-bottom: 24px;">
-                <span style="display: inline-block; background-color: #f1f5f9; color: #475569; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; padding: 6px 16px; border-radius: 9999px; border: 1px solid #e2e8f0;">
-                  Membership Application Review
+                <span style="display: inline-block; background-color: #f1f5f9; color: #334155; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; padding: 6px 18px; border-radius: 9999px; border: 1px solid #cbd5e1;">
+                  Membership Application Review • Session 2026-2027
                 </span>
-                <h2 style="margin: 12px 0 6px; font-size: 20px; font-weight: 800; color: #0f172a;">Application Status Update</h2>
+                <h2 style="margin: 12px 0 6px; font-size: 22px; font-weight: 800; color: #0f172a;">Regarding Your Membership Application</h2>
+                <p style="margin: 0; font-size: 14px; color: #64748b;">New Government Degree College, Rajshahi</p>
               </div>
 
               <p style="font-size: 15px; color: #334155; margin: 0 0 16px;">
                 Dear <strong>${memName}</strong>,
               </p>
-              <p style="font-size: 14px; color: #334155; margin: 0 0 16px; line-height: 1.6;">
-                Thank you for your interest in joining <strong>New Government Degree College Science Club (NGDCSC)</strong> and taking the time to submit your membership registration.
+              <p style="font-size: 14px; color: #334155; margin: 0 0 16px; line-height: 1.65;">
+                Thank you for your enthusiastic interest in joining <strong>New Government Degree College Science Club (NGDCSC)</strong> and taking the time to participate in our membership registration process.
               </p>
-              <p style="font-size: 14px; color: #334155; margin: 0 0 20px; line-height: 1.6;">
-                After careful consideration and review of the received applications by our Executive Committee, we regret to inform you that we are unable to accept your membership application for this current academic session.
+              <p style="font-size: 14px; color: #334155; margin: 0 0 20px; line-height: 1.65;">
+                We were truly impressed by the high caliber, dedication, and diverse scientific interests shared by science students across the HSC 27 and HSC 28 batches this session. Due to an overwhelming number of applicants and strictly limited seat quotas per segment for this recruitment window, we regret to inform you that we are unable to approve your general membership application at this time.
               </p>
 
-              ${member.rejectionReason ? `
-              <div style="background-color: #fff1f2; border-left: 4px solid #f43f5e; padding: 14px; border-radius: 8px; margin-bottom: 24px; font-size: 13px; color: #9f1239;">
-                <strong>Review Feedback / Reason:</strong><br>${member.rejectionReason}
+              <!-- Optional Feedback Box -->
+              ${member.rejectionReason || customNote ? `
+              <div style="background-color: #fef2f2; border: 1px solid #fecdd3; border-left: 4px solid #e11d48; padding: 16px; border-radius: 12px; margin-bottom: 24px; font-size: 13px; color: #9f1239; line-height: 1.6;">
+                <strong>📋 Committee Review Feedback / Note:</strong><br>
+                ${member.rejectionReason || customNote}
               </div>
               ` : ''}
 
-              <!-- Application Summary -->
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 24px;">
+              <!-- Application Summary Card -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; margin-bottom: 24px;">
                 <tr>
-                  <td style="padding: 14px 16px; font-size: 12px; color: #64748b;">
-                    <strong>Student Name:</strong> ${memName}<br>
-                    <strong>Roll / ID:</strong> ${roll} • <strong>Batch:</strong> ${batch} • <strong>Section:</strong> ${section}
+                  <td style="background-color: #334155; padding: 10px 16px; color: #ffffff; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
+                    Application Record Summary
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 16px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="6" border="0" style="font-size: 13px;">
+                      <tr>
+                        <td width="40%" style="color: #64748b; font-weight: 600;">Applicant Name:</td>
+                        <td width="60%" style="color: #0f172a; font-weight: 700;">${memName}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #64748b; font-weight: 600;">College Roll / ID:</td>
+                        <td style="color: #0f172a; font-weight: 600; font-family: monospace;">${roll}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #64748b; font-weight: 600;">Academic Batch:</td>
+                        <td style="color: #0f172a; font-weight: 600;">${batch}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #64748b; font-weight: 600;">Class Section:</td>
+                        <td style="color: #0f172a; font-weight: 600;">${section}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #64748b; font-weight: 600;">Status:</td>
+                        <td>
+                          <span style="display: inline-block; background-color: #ffe4e6; color: #be123c; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; text-transform: uppercase;">
+                            Not Approved (Session Full)
+                          </span>
+                        </td>
+                      </tr>
+                    </table>
                   </td>
                 </tr>
               </table>
 
-              <!-- Queries Box -->
-              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 24px; text-align: center;">
-                <p style="margin: 0 0 10px; font-size: 13px; font-weight: 700; color: #1e293b;">
-                  Have Questions or Require Verification?
+              <!-- Interactive Clickable Action Buttons -->
+              <div style="text-align: center; margin: 26px 0;">
+                <p style="font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">
+                  Online Services &amp; Inquiries (Click to Open)
                 </p>
-                <p style="margin: 0 0 14px; font-size: 12px; color: #64748b; line-height: 1.5;">
-                  If you believe there was a clerical mistake in your roll or batch verification, please reply directly to this email with your college identity verification.
-                </p>
-                <a href="mailto:${OFFICIAL_SENDER}" style="display: inline-block; background-color: #0f172a; color: #ffffff; text-decoration: none; font-size: 12px; font-weight: 700; padding: 10px 18px; border-radius: 8px;">
-                  Contact Executive Committee (${OFFICIAL_SENDER})
-                </a>
+
+                <!-- Button 1: Status Portal -->
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin-bottom: 12px; width: 100%; max-width: 420px;">
+                  <tr>
+                    <td align="center" style="border-radius: 12px; background-color: #0f172a;">
+                      <a href="${VERIFY_STATUS_URL}" target="_blank" rel="noopener noreferrer" style="display: block; padding: 14px 22px; font-size: 14px; font-weight: 700; color: #ffffff; text-decoration: none; border-radius: 12px; text-align: center;">
+                        🛡️ Check Application Status (${VERIFY_STATUS_URL})
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+
+                <!-- Button 2: Contact Committee -->
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="width: 100%; max-width: 420px;">
+                  <tr>
+                    <td align="center" style="border-radius: 12px; background-color: #047857;">
+                      <a href="mailto:${OFFICIAL_SENDER}?subject=${encodeURIComponent('Inquiry: Membership Application (' + memName + ' - Roll: ' + roll + ')')}" target="_blank" style="display: block; padding: 13px 22px; font-size: 13px; font-weight: 700; color: #ffffff; text-decoration: none; border-radius: 12px; text-align: center;">
+                        ✉️ Have Questions? Reply to Executive Committee
+                      </a>
+                    </td>
+                  </tr>
+                </table>
               </div>
 
-              <p style="font-size: 13px; color: #334155; margin: 0 0 20px; line-height: 1.6;">
-                We genuinely appreciate your enthusiasm for science and extracurricular learning. We encourage you to participate in our open science workshops, seminars, and exhibitions throughout the college year.
-              </p>
+              <!-- Encouragement & Next Steps -->
+              <div style="background-color: #f1f5f9; padding: 18px; border-radius: 14px; margin-bottom: 24px; font-size: 12.5px; color: #475569; line-height: 1.65;">
+                <p style="margin: 0 0 8px; font-weight: 700; color: #1e293b; text-transform: uppercase; font-size: 11.5px;">
+                  Keep Exploring Science with Us:
+                </p>
+                <ul style="margin: 0; padding-left: 18px;">
+                  <li style="margin-bottom: 6px;">
+                    This decision does not define your passion or talent in scientific discovery.
+                  </li>
+                  <li style="margin-bottom: 6px;">
+                    All open science seminars, Olympiad workshops, astronomy observation sessions, and intra-college science fairs organized by NGDCSC remain <strong>completely open for all college students</strong> to attend.
+                  </li>
+                  <li>
+                    You are warmly encouraged to stay engaged and re-apply during our upcoming registration intake!
+                  </li>
+                </ul>
+              </div>
 
               <!-- Sign-off -->
               <p style="font-size: 13px; color: #475569; margin: 0 0 4px;">Sincerely,</p>
@@ -313,11 +395,24 @@ export function buildRichEmailHtml({
             </td>
           </tr>
 
-          <!-- Footer -->
+          <!-- Automation Footer -->
           <tr>
-            <td style="background-color: #f8fafc; padding: 20px 24px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8;">
-              <p style="margin: 0 0 4px;">Dispatched from <strong>${OFFICIAL_SENDER}</strong> • <a href="${MAIN_SITE_URL}" style="color: #475569; text-decoration: none; font-weight: 600;">ngdcsc.vercel.app</a></p>
-              <p style="margin: 0;">&copy; ${new Date().getFullYear()} NGDC Science Club. All rights reserved.</p>
+            <td style="background-color: #0b1120; padding: 24px 20px; text-align: center; border-top: 1px solid #1e293b; color: #94a3b8; font-size: 11px; line-height: 1.6;">
+              <div style="display: inline-block; background-color: rgba(16, 185, 129, 0.15); color: #34d399; font-weight: 800; font-size: 10px; padding: 4px 14px; border-radius: 9999px; border: 1px solid rgba(52, 211, 153, 0.35); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px;">
+                ⚡ Automated Mail Service • Dispatched by ngdc.sc.mail
+              </div>
+              <p style="margin: 0 0 8px; color: #cbd5e1; font-size: 11px; font-weight: 500;">
+                This is an official automated notification dispatched by <strong>ngdc.sc.mail</strong> on behalf of <strong>NGDC Science Club</strong> (<a href="mailto:${OFFICIAL_SENDER}" target="_blank" style="color: #34d399; text-decoration: underline;">${OFFICIAL_SENDER}</a>).
+              </p>
+              <p style="margin: 0 0 10px; color: #94a3b8; font-size: 11px;">
+                All official links (click to open directly):<br>
+                <a href="${MAIN_SITE_URL}" target="_blank" rel="noopener noreferrer" style="color: #38bdf8; text-decoration: underline; font-weight: 600; margin: 0 6px;">🌐 Main Website: ngdcsc.vercel.app</a> • 
+                <a href="${VERIFY_STATUS_URL}" target="_blank" rel="noopener noreferrer" style="color: #38bdf8; text-decoration: underline; font-weight: 600; margin: 0 6px;">🛡️ Status Portal: ngdcsc.vercel.app/status</a> • 
+                <a href="${WHATSAPP_GROUP_URL}" target="_blank" rel="noopener noreferrer" style="color: #25D366; text-decoration: underline; font-weight: 600; margin: 0 6px;">💬 WhatsApp Community</a>
+              </p>
+              <p style="margin: 0; color: #64748b; font-size: 10px;">
+                &copy; ${new Date().getFullYear()} New Government Degree College Science Club (NGDCSC), Rajshahi. All rights reserved.
+              </p>
             </td>
           </tr>
 
@@ -367,9 +462,9 @@ OFFICIAL MEMBER CREDENTIALS
 
 ${customNote ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nSPECIAL NOTE:\n${customNote}\n` : ''}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-NEXT STEPS & OFFICIAL LINKS
+CLICKABLE OFFICIAL COMMUNITY & STATUS LINKS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Join our Official WhatsApp Community:
+1. Join Official WhatsApp Community:
 👉 ${WHATSAPP_GROUP_URL}
 
 2. Check Your Digital ID & Membership Status:
@@ -384,28 +479,60 @@ Warm regards,
 Executive Committee
 NGDC Science Club (NGDCSC)
 New Government Degree College, Rajshahi
-Official Email: ${OFFICIAL_SENDER}`;
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚡ AUTOMATED SYSTEM NOTIFICATION
+Dispatched automatically by: ngdc.sc.mail
+Official Contact: ${OFFICIAL_SENDER}
+Website: ${MAIN_SITE_URL}
+Status Verification: ${VERIFY_STATUS_URL}
+Official WhatsApp: ${WHATSAPP_GROUP_URL}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   } else {
-    return `UPDATE: NGDC SCIENCE CLUB MEMBERSHIP APPLICATION
+    return `MEMBERSHIP APPLICATION STATUS — NGDC SCIENCE CLUB
 
 Dear ${memName},
 
-Thank you for your interest and for submitting your membership application to New Government Degree College Science Club (NGDCSC).
+Thank you for your enthusiastic interest in joining New Government Degree College Science Club (NGDCSC) and for submitting your membership registration.
 
-After careful review by the Executive Committee, we regret to inform you that we are unable to accept your application for this session.
+We received an overwhelming number of applications from HSC 27 and HSC 28 batches this year. Due to the high number of applicants and strictly limited segment seat quotas for this recruitment cycle, the Executive Committee regrets to inform you that we are unable to approve your membership application at this time.
 
-${member.rejectionReason ? `Reason / Review Note:\n${member.rejectionReason}\n\n` : ''}If you believe there was a mistake in your submitted credentials (such as Roll or Batch), please reply directly to this email (${OFFICIAL_SENDER}) with your student verification details.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+APPLICATION SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Applicant Name: ${memName}
+• College Roll / ID: ${roll}
+• Academic Batch: ${batch}
+• Class Section: ${section}
+• Status: Not Approved (Session Full)
 
-Check application status anytime:
+${member.rejectionReason || customNote ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nREVIEW FEEDBACK / NOTE:\n${member.rejectionReason || customNote}\n` : ''}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ONLINE VERIFICATION & CONTACT LINKS (CLICKABLE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Check Application Status Online:
 👉 ${VERIFY_STATUS_URL}
 
-We wish you the very best in your academic studies at New Government Degree College.
+2. Contact Executive Committee:
+👉 mailto:${OFFICIAL_SENDER}
+
+3. Club Official Website:
+👉 ${MAIN_SITE_URL}
+
+Please remember that all open science seminars, Olympiad workshops, astronomy sessions, and public exhibitions organized by NGDC Science Club remain open to all students of New Government Degree College. We warmly encourage you to participate in our events and re-apply during our next membership intake.
 
 Sincerely,
 Executive Committee
 NGDC Science Club (NGDCSC)
 New Government Degree College, Rajshahi
-Official Email: ${OFFICIAL_SENDER}`;
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚡ AUTOMATED SYSTEM NOTIFICATION
+Dispatched automatically by: ngdc.sc.mail
+Official Contact: ${OFFICIAL_SENDER}
+Website: ${MAIN_SITE_URL}
+Status Verification: ${VERIFY_STATUS_URL}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   }
 }
 
@@ -539,7 +666,7 @@ export default function EmailLogsPanel({
     };
 
     try {
-      // 1. Copy Rich Formatted template automatically so when Gmail opens, admin can just Ctrl+V if they want full visual layout!
+      // 1. Copy Rich Formatted template automatically so when Gmail opens, admin can just Ctrl+V
       await copyRichFormattedHtml();
 
       // 2. Save log to Firestore
@@ -566,7 +693,7 @@ export default function EmailLogsPanel({
       if (method === 'gmail') {
         const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipientEmail)}&su=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(plainTextBody)}`;
         window.open(gmailUrl, '_blank', 'noopener,noreferrer');
-        showToast('🚀 Opened Gmail! Rich template is copied to clipboard.');
+        showToast('🚀 Opened Gmail! Rich template is copied to clipboard (Ctrl+V to paste).');
       } else if (method === 'mailto') {
         const mailtoUrl = `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(plainTextBody)}`;
         window.location.href = mailtoUrl;
@@ -714,10 +841,13 @@ export default function EmailLogsPanel({
             <div className="flex items-center gap-2 flex-wrap">
               <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5">
                 <Mail className="w-3.5 h-3.5" />
-                <span>Email Logs &amp; Rich Notification Dispatcher</span>
+                <span>Email Logs &amp; Automation Dispatcher</span>
               </span>
-              <span className="px-2 py-0.5 rounded-lg bg-white/10 text-slate-300 text-[10px] font-bold">
-                From: {OFFICIAL_SENDER}
+              <span className="px-2 py-0.5 rounded-lg bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold font-mono">
+                Dispatched by: ngdc.sc.mail
+              </span>
+              <span className="px-2 py-0.5 rounded-lg bg-white/10 text-slate-300 text-[10px] font-bold font-mono">
+                Official: {OFFICIAL_SENDER}
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
@@ -725,7 +855,7 @@ export default function EmailLogsPanel({
               <Sparkles className="w-5 h-5 text-emerald-400" />
             </h2>
             <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
-              সদস্যের ছবির পাশ থেকে এক ক্লিকে <strong>{OFFICIAL_SENDER}</strong> থেকে আকর্ষণীয় গ্রাফিকাল টেমপ্লেটে কনফার্মেশন ও ডিক্লাইন ইমেইল পাঠান (হোয়াটসঅ্যাপ গ্রুপ লিংক ও <span className="text-emerald-400 font-mono">ngdcsc.vercel.app/status</span> লিংকসহ)।
+              সদস্যের ছবির পাশ থেকে এক ক্লিকে <strong>{OFFICIAL_SENDER}</strong> থেকে আকর্ষণীয় গ্রাফিকাল টেমপ্লেটে কনফার্মেশন ও ডিক্লাইন ইমেইল পাঠান (সবগুলো লিংক ক্লিকযোগ্য এবং ফুটারে <span className="text-emerald-400 font-mono font-bold">ngdc.sc.mail</span> অটোমেশন সিলসহ)।
             </p>
           </div>
 
@@ -752,21 +882,45 @@ export default function EmailLogsPanel({
           </div>
         </div>
 
-        {/* Quick Links Indicator */}
+        {/* Clickable Quick Links Bar */}
         <div className="mt-4 pt-3 border-t border-white/10 flex flex-wrap items-center gap-2 sm:gap-4 text-[11px] text-slate-300 font-medium">
           <span className="flex items-center gap-1 text-emerald-300 font-bold">
             <MessageSquare className="w-3.5 h-3.5 text-[#25D366]" />
-            <span>Official WhatsApp Link:</span>
-            <a href={WHATSAPP_GROUP_URL} target="_blank" rel="noreferrer" className="text-white underline font-mono text-[10px]">
+            <span>WhatsApp Community:</span>
+            <a 
+              href={WHATSAPP_GROUP_URL} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-white hover:text-[#25D366] underline font-mono text-[10px] cursor-pointer"
+              title="Click to open WhatsApp Group"
+            >
               chat.whatsapp.com/J0ooCmabbIT2dfJdXTLhni
             </a>
           </span>
           <span className="text-slate-500 hidden sm:inline">•</span>
           <span className="flex items-center gap-1 text-emerald-300 font-bold">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Status Check Link:</span>
-            <a href={VERIFY_STATUS_URL} target="_blank" rel="noreferrer" className="text-white underline font-mono text-[10px]">
+            <span>Status Verification Portal:</span>
+            <a 
+              href={VERIFY_STATUS_URL} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-white hover:text-emerald-400 underline font-mono text-[10px] cursor-pointer"
+              title="Click to open Status Portal"
+            >
               ngdcsc.vercel.app/status
+            </a>
+          </span>
+          <span className="text-slate-500 hidden sm:inline">•</span>
+          <span className="flex items-center gap-1 text-emerald-300 font-bold">
+            <span>Website:</span>
+            <a 
+              href={MAIN_SITE_URL} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-white hover:text-emerald-400 underline font-mono text-[10px] cursor-pointer"
+            >
+              ngdcsc.vercel.app
             </a>
           </span>
         </div>
@@ -1074,11 +1228,11 @@ export default function EmailLogsPanel({
                         type="button"
                         disabled={!hasValidEmail}
                         onClick={() => openComposeModal(member, 'decline')}
-                        className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         title="Send Official Membership Decline Email"
                       >
-                        <XCircle className="w-3.5 h-3.5 shrink-0" />
-                        <span className="truncate">ডিক্লাইন</span>
+                        <HeartHandshake className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                        <span className="truncate">ডিক্লাইন ইমেইল</span>
                       </button>
                     </div>
                   </div>
@@ -1186,7 +1340,7 @@ export default function EmailLogsPanel({
               <div className="flex items-center gap-3">
                 <div
                   className={`w-10 h-10 rounded-2xl flex items-center justify-center text-white ${
-                    emailType === 'confirmation' ? 'bg-emerald-600' : 'bg-rose-600'
+                    emailType === 'confirmation' ? 'bg-emerald-600' : 'bg-slate-800'
                   }`}
                 >
                   <Mail className="w-5 h-5" />
@@ -1195,7 +1349,7 @@ export default function EmailLogsPanel({
                   <h3 className="text-sm sm:text-base font-black text-slate-900">
                     {emailType === 'confirmation'
                       ? 'মেম্বারশিপ কনফার্মেশন ইমেইল পাঠান'
-                      : 'মেম্বারশিপ ডিক্লাইন ইমেইল পাঠান'}
+                      : 'মেম্বারশিপ আপডেট ও রিভিউ ইমেইল পাঠান'}
                   </h3>
                   <p className="text-xs text-slate-500">
                     From: <strong>{OFFICIAL_SENDER}</strong> • To: <strong>{composingMember.email}</strong>
@@ -1253,7 +1407,7 @@ export default function EmailLogsPanel({
                       type="button"
                       onClick={() => handleTypeChange('decline')}
                       className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                        emailType === 'decline' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-700'
+                        emailType === 'decline' ? 'bg-slate-800 text-white shadow-xs' : 'text-slate-700'
                       }`}
                     >
                       Decline
@@ -1278,12 +1432,12 @@ export default function EmailLogsPanel({
               {/* Special Note / Custom message */}
               <div className="space-y-1">
                 <label className="text-[11px] font-black uppercase tracking-wider text-slate-600 flex items-center justify-between">
-                  <span>Additional Executive Note / Custom Message (Optional):</span>
-                  <span className="text-slate-400 font-normal">Included in template</span>
+                  <span>Additional Executive Note / Custom Feedback (Optional):</span>
+                  <span className="text-slate-400 font-normal">Appears in template</span>
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Please bring 2 passport photos to the next meeting on Monday."
+                  placeholder={emailType === 'confirmation' ? "e.g. Please bring 2 passport photos to orientation." : "e.g. Seat quota full for section or incomplete roll information."}
                   value={emailCustomNote}
                   onChange={(e) => setEmailCustomNote(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs focus:bg-white focus:border-emerald-600 focus:outline-none"
@@ -1343,8 +1497,14 @@ export default function EmailLogsPanel({
                   <div className="p-3 bg-slate-200/50 max-h-96 overflow-y-auto">
                     <div className="max-w-xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                       {/* Visual Header */}
-                      <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-emerald-950 p-5 text-center text-white border-b-4 border-emerald-500">
-                        <img src={CLUB_LOGO_URL} alt="Logo" className="w-14 h-14 mx-auto mb-2 rounded-xl bg-white/10 p-1.5" />
+                      <div className={`p-5 text-center text-white border-b-4 ${
+                        emailType === 'confirmation'
+                          ? 'bg-gradient-to-r from-emerald-900 via-emerald-800 to-emerald-950 border-emerald-500'
+                          : 'bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950 border-emerald-600'
+                      }`}>
+                        <a href={MAIN_SITE_URL} target="_blank" rel="noopener noreferrer" className="inline-block cursor-pointer">
+                          <img src={CLUB_LOGO_URL} alt="Logo" className="w-14 h-14 mx-auto mb-2 rounded-xl bg-white/10 p-1.5 shadow-sm" />
+                        </a>
                         <h4 className="font-extrabold text-sm uppercase tracking-wide">New Government Degree College Science Club</h4>
                         <p className="text-[11px] text-emerald-200 font-medium">New Government Degree College, Rajshahi</p>
                       </div>
@@ -1353,12 +1513,12 @@ export default function EmailLogsPanel({
                       <div className="p-5 space-y-4">
                         <div className="text-center space-y-1">
                           <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                            emailType === 'confirmation' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                            emailType === 'confirmation' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-800 border border-slate-200'
                           }`}>
-                            {emailType === 'confirmation' ? '✓ Official Membership Confirmation' : 'Application Review Update'}
+                            {emailType === 'confirmation' ? '✓ Official Membership Confirmation' : 'Membership Application Review'}
                           </span>
                           <h3 className="text-base font-extrabold text-slate-900">
-                            {emailType === 'confirmation' ? `Welcome to NGDC Science Club!` : `Membership Review Notice`}
+                            {emailType === 'confirmation' ? `Welcome to NGDC Science Club!` : `Regarding Your Membership Application`}
                           </h3>
                         </div>
 
@@ -1368,83 +1528,116 @@ export default function EmailLogsPanel({
                         <p className="text-slate-700 text-xs leading-relaxed">
                           {emailType === 'confirmation'
                             ? `Congratulations! We are delighted to inform you that your application for membership in New Government Degree College Science Club (NGDCSC) has been officially approved.`
-                            : `Thank you for your application to New Government Degree College Science Club. After review by the Executive Committee, we regret to inform you that your application could not be accepted for the current session.`}
+                            : `Thank you for your enthusiastic interest in joining New Government Degree College Science Club (NGDCSC) and taking the time to participate in our membership registration process. Due to an exceptionally large applicant pool and limited segment allocations for this cycle, we regret to inform you that we are unable to accept your membership application at this time.`}
                         </p>
 
-                        {/* Credentials Box */}
-                        {emailType === 'confirmation' && (
-                          <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
-                            <div className="bg-emerald-700 text-white font-bold text-[10px] px-3 py-1.5 uppercase">
-                              Official Member Credentials
-                            </div>
-                            <div className="p-3 space-y-1.5 text-[11px]">
+                        {/* Credentials / Summary Box */}
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
+                          <div className={`text-white font-bold text-[10px] px-3 py-1.5 uppercase ${
+                            emailType === 'confirmation' ? 'bg-emerald-700' : 'bg-slate-800'
+                          }`}>
+                            {emailType === 'confirmation' ? 'Official Member Credentials' : 'Application Summary'}
+                          </div>
+                          <div className="p-3 space-y-1.5 text-[11px]">
+                            {emailType === 'confirmation' && (
                               <div className="flex justify-between border-b border-slate-200/60 pb-1">
                                 <span className="text-slate-500">Membership ID:</span>
                                 <span className="font-mono font-bold text-white bg-emerald-700 px-2 py-0.5 rounded text-[10px]">
                                   {composingMember.membershipId || 'NGDCSC-001'}
                                 </span>
                               </div>
-                              <div className="flex justify-between border-b border-slate-200/60 pb-1">
-                                <span className="text-slate-500">Student Roll / ID:</span>
-                                <span className="font-mono font-bold text-slate-800">{composingMember.studentId}</span>
-                              </div>
-                              <div className="flex justify-between border-b border-slate-200/60 pb-1">
-                                <span className="text-slate-500">Academic Batch:</span>
-                                <span className="font-bold text-slate-800">{composingMember.batch}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-slate-500">Class Section:</span>
-                                <span className="font-bold text-slate-800">Section {composingMember.section || 'A'}</span>
-                              </div>
+                            )}
+                            <div className="flex justify-between border-b border-slate-200/60 pb-1">
+                              <span className="text-slate-500">Student Name:</span>
+                              <span className="font-bold text-slate-800">{composingMember.name}</span>
+                            </div>
+                            <div className="flex justify-between border-b border-slate-200/60 pb-1">
+                              <span className="text-slate-500">College Roll / ID:</span>
+                              <span className="font-mono font-bold text-slate-800">{composingMember.studentId}</span>
+                            </div>
+                            <div className="flex justify-between border-b border-slate-200/60 pb-1">
+                              <span className="text-slate-500">Academic Batch:</span>
+                              <span className="font-bold text-slate-800">{composingMember.batch}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-500">Class Section:</span>
+                              <span className="font-bold text-slate-800">Section {composingMember.section || 'A'}</span>
                             </div>
                           </div>
-                        )}
+                        </div>
 
-                        {emailCustomNote && (
-                          <div className="p-3 rounded-xl bg-emerald-50 border-l-4 border-emerald-600 text-[11px] text-emerald-900">
-                            <strong>Executive Note:</strong> {emailCustomNote}
+                        {(emailCustomNote || (emailType === 'decline' && composingMember.rejectionReason)) && (
+                          <div className="p-3 rounded-xl bg-slate-50 border-l-4 border-slate-600 text-[11px] text-slate-800">
+                            <strong>Review Feedback / Note:</strong> {emailCustomNote || composingMember.rejectionReason}
                           </div>
                         )}
 
-                        {/* Styled Buttons */}
+                        {/* Styled Buttons (Clickable URLs) */}
                         <div className="pt-2 space-y-2 text-center">
                           {emailType === 'confirmation' && (
                             <>
                               <a
                                 href={WHATSAPP_GROUP_URL}
                                 target="_blank"
-                                rel="noreferrer"
-                                className="block w-full py-2.5 rounded-xl bg-[#25D366] text-white font-bold text-xs text-center shadow-xs"
+                                rel="noopener noreferrer"
+                                className="block w-full py-2.5 rounded-xl bg-[#25D366] text-white font-bold text-xs text-center shadow-xs hover:bg-[#20ba5a] transition-colors cursor-pointer"
                               >
                                 💬 Join Official WhatsApp Community
                               </a>
                               <a
                                 href={VERIFY_STATUS_URL}
                                 target="_blank"
-                                rel="noreferrer"
-                                className="block w-full py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs text-center shadow-xs"
+                                rel="noopener noreferrer"
+                                className="block w-full py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs text-center shadow-xs hover:bg-emerald-700 transition-colors cursor-pointer"
                               >
                                 🛡️ Check Digital Status &amp; ID Card ({VERIFY_STATUS_URL})
                               </a>
                             </>
                           )}
                           {emailType === 'decline' && (
-                            <a
-                              href={VERIFY_STATUS_URL}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="block w-full py-2.5 rounded-xl bg-slate-800 text-white font-bold text-xs text-center shadow-xs"
-                            >
-                              🛡️ Check Application Status ({VERIFY_STATUS_URL})
-                            </a>
+                            <>
+                              <a
+                                href={VERIFY_STATUS_URL}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block w-full py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs text-center shadow-xs hover:bg-slate-800 transition-colors cursor-pointer"
+                              >
+                                🛡️ Check Application Status ({VERIFY_STATUS_URL})
+                              </a>
+                              <a
+                                href={`mailto:${OFFICIAL_SENDER}?subject=${encodeURIComponent('Inquiry: Membership Application (' + composingMember.name + ')')}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block w-full py-2 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold text-xs text-center hover:bg-emerald-100 transition-colors cursor-pointer"
+                              >
+                                ✉️ Contact Executive Committee ({OFFICIAL_SENDER})
+                              </a>
+                            </>
                           )}
                         </div>
 
-                        {/* Visual Footer */}
-                        <div className="pt-3 border-t border-slate-100 text-[11px] text-slate-500 space-y-0.5">
-                          <p className="font-bold text-slate-700">Executive Committee</p>
-                          <p>New Government Degree College Science Club (NGDCSC), Rajshahi</p>
-                          <p className="text-[10px] text-slate-400">Email: {OFFICIAL_SENDER} • Website: ngdcsc.vercel.app</p>
+                        {/* Encouragement for Decline */}
+                        {emailType === 'decline' && (
+                          <div className="p-3 bg-slate-50 rounded-xl text-[11px] text-slate-600 leading-relaxed border border-slate-200">
+                            <p className="font-bold text-slate-800 mb-1">Keep Exploring Science with Us:</p>
+                            <p>All open science seminars, exhibitions, Olympiad workshops, and astronomy sessions remain open for you to attend. We warmly invite you to participate and re-apply in our next membership intake!</p>
+                          </div>
+                        )}
+
+                        {/* Visual Footer with Automated ngdc.sc.mail Badge */}
+                        <div className="pt-3 border-t border-slate-200 text-center space-y-2">
+                          <span className="inline-block px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                            ⚡ Automated Mail Service • Dispatched by ngdc.sc.mail
+                          </span>
+                          <div className="text-[11px] text-slate-500 space-y-0.5">
+                            <p className="font-bold text-slate-700">Executive Committee</p>
+                            <p>New Government Degree College Science Club (NGDCSC), Rajshahi</p>
+                            <div className="flex justify-center items-center gap-2 flex-wrap text-[10px] text-slate-400 pt-1">
+                              <a href={MAIN_SITE_URL} target="_blank" rel="noopener noreferrer" className="text-emerald-600 underline">ngdcsc.vercel.app</a>
+                              <span>•</span>
+                              <a href={VERIFY_STATUS_URL} target="_blank" rel="noopener noreferrer" className="text-emerald-600 underline">ngdcsc.vercel.app/status</a>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1486,7 +1679,7 @@ export default function EmailLogsPanel({
                 />
                 <span className="text-slate-700 text-xs font-semibold">
                   ইমেইল প্রেরণের সাথে সাথে মেম্বারের স্ট্যাটাস স্বয়ংক্রিয়ভাবে{' '}
-                  <strong className={emailType === 'confirmation' ? 'text-emerald-700' : 'text-rose-700'}>
+                  <strong className={emailType === 'confirmation' ? 'text-emerald-700' : 'text-slate-800'}>
                     {emailType === 'confirmation' ? 'Approved' : 'Rejected'}
                   </strong>{' '}
                   হিসেবে ডাটাবেজে আপডেট করুন
@@ -1535,7 +1728,7 @@ export default function EmailLogsPanel({
                   className={`px-4 py-2.5 rounded-xl text-white text-xs font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
                     emailType === 'confirmation'
                       ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
-                      : 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
+                      : 'bg-slate-900 hover:bg-slate-800 shadow-slate-900/20'
                   }`}
                   title="Opens Gmail composer with pre-filled recipient and subject; graphic template is copied to clipboard"
                 >
@@ -1582,6 +1775,7 @@ export default function EmailLogsPanel({
                 {viewingLog.membershipId && <p><strong>Membership ID:</strong> {viewingLog.membershipId}</p>}
                 <p><strong>Type:</strong> <span className="uppercase font-bold">{viewingLog.emailType}</span></p>
                 <p><strong>Sent By:</strong> {viewingLog.sentBy}</p>
+                <p className="text-[10px] text-emerald-700 font-bold">⚡ Dispatched by ngdc.sc.mail automation system</p>
               </div>
 
               <div>
