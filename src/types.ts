@@ -61,6 +61,14 @@ export interface PublicMemberStatus {
   batch?: BatchType | string;
   section?: SectionType | string;
   submittedAt?: string;
+  phone?: string;
+  whatsapp?: string;
+  email?: string;
+  studentId?: string;
+  dob?: string;
+  interestedSegments?: string[];
+  skills?: string[];
+  experienceAchievements?: string;
 }
 
 export interface ExecutiveMember {

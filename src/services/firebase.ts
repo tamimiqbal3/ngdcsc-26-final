@@ -628,16 +628,42 @@ export async function searchMemberStatus(queryStr: string): Promise<PublicMember
         if (snap && snap.exists()) {
           const data = snap.data();
           if (data && data.status !== 'deleted') {
+            // Attempt to enrich with full members record if available
+            let enriched: any = { ...data };
+            const memberDocId = data.id || (snap.id.startsWith('ngdc_') ? snap.id : null);
+            if (memberDocId) {
+              try {
+                const fullSnap = await getDoc(doc(db, 'members', memberDocId));
+                if (fullSnap.exists()) {
+                  enriched = { ...fullSnap.data(), ...data };
+                }
+              } catch {}
+            }
+            if (!enriched.phone || !enriched.email || !enriched.studentId) {
+              const cached = getCachedMembers();
+              const match = cached.find(m => m.id === memberDocId || (data.membershipId && m.membershipId === data.membershipId));
+              if (match) {
+                enriched = { ...match, ...enriched };
+              }
+            }
             return {
-              id: data.id || snap.id,
-              membershipId: data.membershipId || (isMid ? midStandard : undefined),
-              name: data.name || 'Member',
-              photo: data.photo || null,
-              status: (data.status as MemberStatus) || 'pending',
-              rejectionReason: data.rejectionReason || undefined,
-              batch: data.batch,
-              section: data.section,
-              submittedAt: data.submittedAt
+              id: enriched.id || snap.id,
+              membershipId: enriched.membershipId || (isMid ? midStandard : undefined),
+              name: enriched.name || 'Member',
+              photo: enriched.photo || null,
+              status: (enriched.status as MemberStatus) || 'pending',
+              rejectionReason: enriched.rejectionReason || undefined,
+              batch: enriched.batch,
+              section: enriched.section,
+              submittedAt: enriched.submittedAt || enriched.createdAt,
+              phone: enriched.phone,
+              whatsapp: enriched.whatsapp,
+              email: enriched.email,
+              studentId: enriched.studentId,
+              dob: enriched.dob,
+              interestedSegments: enriched.interestedSegments,
+              skills: enriched.skills,
+              experienceAchievements: enriched.experienceAchievements
             };
           }
         }
@@ -679,7 +705,15 @@ export async function searchMemberStatus(queryStr: string): Promise<PublicMember
               rejectionReason: data.rejectionReason || undefined,
               batch: data.batch,
               section: data.section,
-              submittedAt: data.submittedAt || data.createdAt
+              submittedAt: data.submittedAt || data.createdAt,
+              phone: data.phone,
+              whatsapp: data.whatsapp,
+              email: data.email,
+              studentId: data.studentId,
+              dob: data.dob,
+              interestedSegments: data.interestedSegments,
+              skills: data.skills,
+              experienceAchievements: data.experienceAchievements
             };
           }
         }

@@ -13,19 +13,25 @@ import {
   FileText,
   Copy,
   Check,
-  CreditCard
+  CreditCard,
+  Download,
+  ExternalLink,
+  Sparkles
 } from 'lucide-react';
 import { PublicMemberStatus } from './types';
 import { searchMemberStatus } from './services/firebase';
+import ConfirmationSlipModal from './components/ConfirmationSlipModal';
 
 interface MemberStatusSearchProps {
   onBackToHome: () => void;
   onGoToRegistration: () => void;
+  onOpenSlipPage?: (member?: PublicMemberStatus) => void;
 }
 
 export default function MemberStatusSearch({
   onBackToHome,
-  onGoToRegistration
+  onGoToRegistration,
+  onOpenSlipPage
 }: MemberStatusSearchProps) {
   const [searchInput, setSearchInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -33,6 +39,7 @@ export default function MemberStatusSearch({
   const [memberResult, setMemberResult] = useState<PublicMemberStatus | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState(false);
+  const [showSlipModal, setShowSlipModal] = useState(false);
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -68,12 +75,41 @@ export default function MemberStatusSearch({
     setMemberResult(null);
     setErrorMsg(null);
     setCopiedId(false);
+    setShowSlipModal(false);
   };
 
   const handleCopyId = (id: string) => {
     navigator.clipboard.writeText(id);
     setCopiedId(true);
     setTimeout(() => setCopiedId(false), 2000);
+  };
+
+  const handleOpenConfirmationSlip = () => {
+    if (!memberResult) return;
+    try {
+      sessionStorage.setItem('ngdcsc_current_slip_member', JSON.stringify(memberResult));
+    } catch {}
+
+    const queryKey = memberResult.membershipId || memberResult.phone || '';
+    const targetUrl = window.location.origin + window.location.pathname + '#slip?id=' + encodeURIComponent(queryKey);
+
+    // Directly open in new page / tab
+    try {
+      const newTab = window.open(targetUrl, '_blank');
+      if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+        if (onOpenSlipPage) {
+          onOpenSlipPage(memberResult);
+        } else {
+          window.location.hash = '#slip?id=' + encodeURIComponent(queryKey);
+        }
+      }
+    } catch {
+      if (onOpenSlipPage) {
+        onOpenSlipPage(memberResult);
+      } else {
+        window.location.hash = '#slip?id=' + encodeURIComponent(queryKey);
+      }
+    }
   };
 
   return (
@@ -272,7 +308,24 @@ export default function MemberStatusSearch({
                         <p className="text-xs text-slate-600 font-medium">
                           Congratulations! Your club membership application has been approved.
                         </p>
-                        <div className="pt-2">
+
+                        {/* Download Official Confirmation Slip Button */}
+                        <div className="pt-2 pb-1 flex flex-col items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={handleOpenConfirmationSlip}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs sm:text-sm shadow-md hover:shadow-lg transition-all active:scale-[0.98] cursor-pointer group"
+                          >
+                            <FileText className="w-4 h-4 text-emerald-200 group-hover:scale-110 transition-transform" />
+                            <span>Download Confirmation Slip (A4 PDF)</span>
+                            <ExternalLink className="w-3.5 h-3.5 text-emerald-200" />
+                          </button>
+                          <span className="text-[10.5px] text-slate-500 font-medium">
+                            Opens in new page with instant PDF download
+                          </span>
+                        </div>
+
+                        <div className="pt-1.5">
                           <a
                             href="https://chat.whatsapp.com/J0ooCmabbIT2dfJdXTLhni"
                             target="_blank"
@@ -383,6 +436,14 @@ export default function MemberStatusSearch({
           </div>
         )}
       </div>
+
+      {/* Confirmation Slip Modal for Approved Members */}
+      {showSlipModal && memberResult && (
+        <ConfirmationSlipModal
+          member={memberResult}
+          onClose={() => setShowSlipModal(false)}
+        />
+      )}
     </div>
   );
 }

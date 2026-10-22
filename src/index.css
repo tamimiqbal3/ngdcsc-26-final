@@ -46,22 +46,37 @@
   animation: formalPageIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+@page {
+  size: A4 portrait;
+  margin: 6mm;
+}
+
 @media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
   body * {
     visibility: hidden;
   }
+  #confirmation-slip-print,
+  #confirmation-slip-print *,
   #printable-membership-slip,
   #printable-membership-slip * {
     visibility: visible;
   }
+  #confirmation-slip-print,
   #printable-membership-slip {
     position: absolute;
     left: 0;
     top: 0;
-    width: 100%;
-    margin: 0;
-    padding: 20px;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 12px !important;
     background: white !important;
+    box-shadow: none !important;
+    border: none !important;
   }
   .no-print {
     display: none !important;

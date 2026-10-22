@@ -53,6 +53,7 @@ import ScienceBackground from './ScienceBackground';
 import ExecutiveCommitteePage from './ExecutiveCommitteePage';
 import NoticesPage from './NoticesPage';
 import MemberStatusSearch from './MemberStatusSearch';
+import ConfirmationSlipPage from './ConfirmationSlipPage';
 import AdminPanel from './AdminPanel';
 import NotFoundPage from './NotFoundPage';
 import ImageAdjustModal from './components/ImageAdjustModal';
@@ -92,7 +93,7 @@ const INITIAL_FORM: MembershipFormData = {
   agreedToRules: false
 };
 
-type ViewType = 'home' | 'form' | 'committee' | 'notices' | 'status' | 'admin' | '404';
+type ViewType = 'home' | 'form' | 'committee' | 'notices' | 'status' | 'slip' | 'admin' | '404';
 
 // Helper to determine view from current URL path & hash
 const resolveCurrentView = (): ViewType => {
@@ -104,6 +105,7 @@ const resolveCurrentView = (): ViewType => {
   if (hash === 'notices' || rawPath === '/notices' || rawPath.endsWith('/notices')) return 'notices';
   if (hash === 'committee' || rawPath === '/committee' || rawPath.endsWith('/committee')) return 'committee';
   if (hash === 'status' || hash === 'check-status' || rawPath === '/status' || rawPath.endsWith('/status')) return 'status';
+  if (hash.startsWith('slip') || rawPath === '/slip' || rawPath.endsWith('/slip')) return 'slip';
   if (hash === 'form' || hash === 'register' || rawPath === '/form' || rawPath === '/register' || rawPath.endsWith('/form') || rawPath.endsWith('/register')) return 'form';
   if (rawPath === '' || rawPath === '/' || rawPath === '/index.html' || hash === '' || hash === 'home') return 'home';
 
@@ -111,7 +113,7 @@ const resolveCurrentView = (): ViewType => {
   return '404';
 };
 
-function ClubFooter({ onGoToAdmin }: { onGoToAdmin?: () => void }) {
+function ClubFooter() {
   return (
     <footer className="mt-auto pt-12 pb-6 text-center w-full flex flex-col items-center gap-3 relative z-10 px-4">
       {/* Sleek Apple Frosted Social Pills */}
@@ -159,19 +161,6 @@ function ClubFooter({ onGoToAdmin }: { onGoToAdmin?: () => void }) {
 
       <div className="flex items-center justify-center gap-1.5 flex-wrap text-[11px] text-slate-500 font-medium">
         <span>© 2026 NGDC Science Club • New Government Degree College, Rajshahi.</span>
-        {onGoToAdmin && (
-          <>
-            <span className="text-slate-300">•</span>
-            <button
-              type="button"
-              onClick={onGoToAdmin}
-              className="text-[10px] text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-              title="Official Admin Portal Access"
-            >
-              Admin Portal
-            </button>
-          </>
-        )}
       </div>
 
       {/* Developer Credit Pill */}
@@ -807,6 +796,11 @@ export default function App() {
     return <AdminPanel onExit={() => navigateTo('form')} />;
   }
 
+  // If in Slip View, show full Confirmation Slip Page
+  if (currentView === 'slip') {
+    return <ConfirmationSlipPage onBack={() => navigateTo('status')} />;
+  }
+
   return (
     <div className="relative min-h-screen text-slate-800 flex flex-col items-center justify-between selection:bg-emerald-500/20 selection:text-emerald-950 font-sans">
       {/* Subtle Luminous Science Canvas Animation Background */}
@@ -1081,6 +1075,7 @@ export default function App() {
         <MemberStatusSearch
           onBackToHome={() => navigateTo('home')}
           onGoToRegistration={() => navigateTo('form')}
+          onOpenSlipPage={() => navigateTo('slip')}
         />
       ) : currentView === 'home' ? (
         <HomePage 
@@ -2099,7 +2094,7 @@ export default function App() {
       </main>
 
       {/* Global Club Footer on EVERY single page */}
-      <ClubFooter onGoToAdmin={() => navigateTo('admin')} />
+      <ClubFooter />
     </div>
   );
 }
