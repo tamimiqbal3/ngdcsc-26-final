@@ -22,6 +22,7 @@ import { searchMemberStatus } from './services/firebase';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import DotLoader from './components/DotLoader';
+import MemberQrCode from './components/MemberQrCode';
 
 interface MemberStatusSearchProps {
   onBackToHome: () => void;
@@ -319,6 +320,16 @@ export default function MemberStatusSearch({
                       </div>
                     )}
                   </div>
+
+                  {memberResult.status === 'approved' && (
+                    <div className="shrink-0">
+                      <MemberQrCode
+                        membershipId={memberResult.membershipId || 'NGDCSC-APPROVED'}
+                        size={68}
+                        compact
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Member Status Badge & Direct PDF Download Action */}
@@ -546,7 +557,7 @@ export default function MemberStatusSearch({
                       )}
                     </div>
 
-                    <div className="flex-1 space-y-2.5 pt-1">
+                    <div className="flex-1 space-y-2.5 pt-1 min-w-0">
                       <div>
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                           Member Name
@@ -578,6 +589,13 @@ export default function MemberStatusSearch({
                           </span>
                         )}
                       </div>
+                    </div>
+
+                    <div className="shrink-0 flex items-center justify-center">
+                      <MemberQrCode
+                        membershipId={memberResult.membershipId || 'NGDCSC-APPROVED'}
+                        size={96}
+                      />
                     </div>
                   </div>
 
