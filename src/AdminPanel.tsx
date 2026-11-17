@@ -679,11 +679,20 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     }
   };
 
-  const handleAddMemberSubmit = async (e: React.FormEvent, newRecord: SubmissionRecord) => {
+  const handleAddMemberSubmit = async (
+    e: React.FormEvent,
+    newRecord: SubmissionRecord,
+    autoPassword?: string
+  ) => {
     e.preventDefault();
     let recordToSave = { ...newRecord };
+    let provisionedUid: string | null = null;
     if (recordToSave.email && recordToSave.email.trim()) {
-      const provisionedUid = await ensureMemberAuthAccount(recordToSave.email, recordToSave.name);
+      provisionedUid = await ensureMemberAuthAccount(
+        recordToSave.email,
+        recordToSave.name,
+        autoPassword
+      );
       if (provisionedUid && !recordToSave.uid) {
         recordToSave.uid = provisionedUid;
       }
@@ -693,6 +702,14 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     const saved = cached.find((m: SubmissionRecord) => m.id === id) || { ...recordToSave, id };
     setMembers(prev => [saved, ...prev.filter(m => m.id !== id)]);
     setShowAddMemberModal(false);
+    if (recordToSave.email && recordToSave.email.trim() && autoPassword) {
+      setCopiedToast(
+        provisionedUid
+          ? `Member added! Login password: ${autoPassword}`
+          : `Member added! Existing account kept (use Forgot Password if needed).`
+      );
+      setTimeout(() => setCopiedToast(null), 6000);
+    }
   };
 
   const exportMembersCSV = () => {
@@ -2851,7 +2868,7 @@ function AddMemberManualModal({
 }: { 
   suggestedId?: string;
   onClose: () => void; 
-  onAdd: (e: React.FormEvent, record: SubmissionRecord) => void;
+  onAdd: (e: React.FormEvent, record: SubmissionRecord, autoPassword?: string) => Promise<void> | void;
   onOpenAdjustPhoto?: (src: string, callback: (adjusted: string) => void) => void;
   availableSkills?: string[];
 }) {
@@ -2871,7 +2888,28 @@ function AddMemberManualModal({
   const [customSegmentInput, setCustomSegmentInput] = useState('');
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [experienceAchievements, setExperienceAchievements] = useState('');
+  const [suffixDigits, setSuffixDigits] = useState<string>(() =>
+    String(Math.floor(100 + Math.random() * 900))
+  );
+  const [copiedPassword, setCopiedPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const cleanRoll = studentId.trim().replace(/\s+/g, '');
+  const autoPassword = cleanRoll
+    ? (cleanRoll.length + 3 >= 6 ? `${cleanRoll}${suffixDigits}` : `${cleanRoll.padStart(3, '0')}${suffixDigits}`)
+    : `NGDC${suffixDigits}`;
+
+  const regenerateSuffix = () => {
+    setSuffixDigits(String(Math.floor(100 + Math.random() * 900)));
+    setCopiedPassword(false);
+  };
+
+  const handleCopyAutoPassword = () => {
+    navigator.clipboard.writeText(autoPassword);
+    setCopiedPassword(true);
+    setTimeout(() => setCopiedPassword(false), 2000);
+  };
 
   const handlePhoto = (file: File) => {
     if (!file.type.startsWith('image/')) return;
@@ -2904,27 +2942,37 @@ function AddMemberManualModal({
     );
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onAdd(e, {
-      membershipId: (membershipId.trim() || suggestedId || '').toUpperCase(),
-      name: name.trim() || 'Club Member',
-      studentId: studentId.trim() || 'N/A',
-      phone: phone.trim() || 'N/A',
-      whatsapp: whatsapp.trim() || phone.trim() || 'N/A',
-      email: email.trim(),
-      batch,
-      section,
-      dob: dob || '',
-      photo,
-      sameAsPhone: true,
-      interestedSegments: selectedSegments.length > 0 ? selectedSegments : ['General Member'],
-      skills: selectedSkills,
-      experienceAchievements: experienceAchievements.trim(),
-      agreedToRules: true,
-      status: 'approved',
-      submittedAt: new Date().toLocaleString('en-US', { timeZone: 'Asia/Dhaka' })
-    });
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await onAdd(
+        e,
+        {
+          membershipId: (membershipId.trim() || suggestedId || '').toUpperCase(),
+          name: name.trim() || 'Club Member',
+          studentId: studentId.trim() || 'N/A',
+          phone: phone.trim() || 'N/A',
+          whatsapp: whatsapp.trim() || phone.trim() || 'N/A',
+          email: email.trim(),
+          batch,
+          section,
+          dob: dob || '',
+          photo,
+          sameAsPhone: true,
+          interestedSegments: selectedSegments.length > 0 ? selectedSegments : ['General Member'],
+          skills: selectedSkills,
+          experienceAchievements: experienceAchievements.trim(),
+          agreedToRules: true,
+          status: 'approved',
+          submittedAt: new Date().toLocaleString('en-US', { timeZone: 'Asia/Dhaka' })
+        },
+        email.trim() ? autoPassword : undefined
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -3096,10 +3144,60 @@ function AddMemberManualModal({
                 placeholder="student@gmail.com" 
                 className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white" 
               />
-              <span className="text-[10px] text-slate-500 mt-1 block">
-                No password required — member can use Forgot Password on Sign In with this email.
+            </div>
+          </div>
+
+          {/* Live Auto-Generated Password Preview (Roll + 3 Random Digits) */}
+          <div className="p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200 space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-emerald-700" />
+                <span className="font-bold text-emerald-950 text-xs">
+                  Auto-Generated Login Password
+                </span>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-white border border-emerald-200 text-emerald-800 text-[10px] font-bold">
+                {cleanRoll ? 'Roll + 3 Digits' : 'Auto + 3 Digits'}
               </span>
             </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex-1 px-3.5 py-2 rounded-xl bg-white border border-emerald-200 font-mono font-black text-sm text-slate-900 tracking-wider select-all">
+                {autoPassword}
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyAutoPassword}
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-xs transition-colors cursor-pointer shrink-0"
+                title="Copy password"
+              >
+                {copiedPassword ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={regenerateSuffix}
+                className="p-2 rounded-xl bg-white hover:bg-emerald-100 border border-emerald-200 text-emerald-800 transition-colors cursor-pointer shrink-0"
+                title="Generate different 3 digits"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <p className="text-[10.5px] text-emerald-900/80 leading-snug">
+              {email.trim()
+                ? `Member can immediately sign in using ${email.trim()} and this password (or reset anytime via Forgot Password).`
+                : 'Type Roll Number above (e.g. 20251588) and Email to activate immediate login with this password.'}
+            </p>
           </div>
 
           {/* Segments */}
@@ -3228,8 +3326,19 @@ function AddMemberManualModal({
             <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors cursor-pointer">
               Cancel
             </button>
-            <button type="submit" className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs transition-colors cursor-pointer">
-              Save Member
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold shadow-xs transition-colors cursor-pointer inline-flex items-center gap-2"
+            >
+              {submitting ? (
+                <>
+                  <DotLoader size="sm" color="white" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <span>Save Member</span>
+              )}
             </button>
           </div>
         </form>

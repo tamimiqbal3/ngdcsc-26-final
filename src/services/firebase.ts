@@ -7,6 +7,9 @@ import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   updateProfile,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
   signInWithPopup, 
   GoogleAuthProvider, 
   signOut, 
@@ -1397,6 +1400,8 @@ export function formatAuthError(err: any): string {
       return 'Network connection error. Please check your internet and try again.';
     case 'auth/user-disabled':
       return 'This account has been disabled. Please contact the club committee.';
+    case 'auth/requires-recent-login':
+      return 'Please sign out and sign back in before updating your password.';
     case 'auth/operation-not-allowed':
       return 'Email & password sign-in is temporarily unavailable. Please contact the club administrator.';
     default:
@@ -1521,17 +1526,23 @@ function generateSecureTempPassword(): string {
  */
 export async function ensureMemberAuthAccount(
   email: string,
-  displayName?: string
+  displayName?: string,
+  customPassword?: string
 ): Promise<string | null> {
   const cleanEmail = email.trim();
   if (!cleanEmail) return null;
+
+  const passwordToUse =
+    customPassword && customPassword.length >= 6
+      ? customPassword
+      : generateSecureTempPassword();
 
   const secAuth = getSecondaryAuth();
   try {
     const cred = await createUserWithEmailAndPassword(
       secAuth,
       cleanEmail,
-      generateSecureTempPassword()
+      passwordToUse
     );
     if (displayName && cred.user) {
       await updateProfile(cred.user, { displayName: displayName.trim() }).catch(() => {});
@@ -1572,6 +1583,26 @@ export async function sendMemberPasswordReset(email: string): Promise<void> {
  */
 export async function logoutMemberAccount(): Promise<void> {
   await signOut(auth);
+}
+
+/**
+ * Re-authenticate with current password and update to new password.
+ * Old password immediately becomes invalid once updated.
+ */
+export async function changeMemberPassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.email) {
+    const err: any = new Error('Please sign in again to change your password.');
+    err.code = 'auth/requires-recent-login';
+    throw err;
+  }
+
+  const credential = EmailAuthProvider.credential(user.email, currentPassword);
+  await reauthenticateWithCredential(user, credential);
+  await updatePassword(user, newPassword);
 }
 
 /**

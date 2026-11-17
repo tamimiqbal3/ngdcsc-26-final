@@ -23,7 +23,10 @@ import {
   Download,
   UserPlus,
   FileText,
-  Edit3
+  Edit3,
+  KeyRound,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
@@ -38,7 +41,9 @@ import {
   getCachedMemberProfileForUser,
   fetchMemberProfileForUser,
   updateOwnMemberProfile,
-  logoutMemberAccount
+  logoutMemberAccount,
+  changeMemberPassword,
+  formatAuthError
 } from './services/firebase';
 import ImageAdjustModal from './components/ImageAdjustModal';
 import DotLoader from './components/DotLoader';
@@ -52,7 +57,7 @@ const CLUB_SEGMENTS = [
   'Scientific Wall Magazine & Publication'
 ];
 
-type DashboardPage = 'slip' | 'edit';
+type DashboardPage = 'slip' | 'edit' | 'password';
 
 interface MemberDashboardProps {
   user: FirebaseUser;
@@ -112,6 +117,16 @@ export default function MemberDashboard({
   const [downloadSlipSuccess, setDownloadSlipSuccess] = useState(false);
   const hiddenSlipRef = useRef<HTMLDivElement>(null);
 
+  // Change password state
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+
   const populateForm = (rec: SubmissionRecord) => {
     setPhoto(rec.photo || null);
     setName(rec.name || '');
@@ -158,6 +173,8 @@ export default function MemberDashboard({
     setActivePage(page);
     setErrorMsg(null);
     setSaveSuccessMsg(null);
+    setPasswordError(null);
+    setPasswordSuccess(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -282,6 +299,48 @@ export default function MemberDashboard({
   const handleSignOut = async () => {
     await logoutMemberAccount();
     onSignedOut();
+  };
+
+  const handlePasswordChangeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(null);
+
+    if (!currentPassword) {
+      setPasswordError('Please enter your current password.');
+      return;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      setPasswordError('New password must be at least 6 characters long.');
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setPasswordError('New password must be different from your current password.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('New Password and Confirm New Password do not match.');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      await changeMemberPassword(currentPassword, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setPasswordSuccess(
+        'Password updated successfully! Use your new password next time you sign in — your previous password is no longer valid.'
+      );
+    } catch (err: any) {
+      if (err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-credential') {
+        setPasswordError('Current password is incorrect. Please check and try again.');
+      } else {
+        setPasswordError(formatAuthError(err));
+      }
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
   const handleDirectDownloadSlip = async () => {
@@ -438,11 +497,11 @@ export default function MemberDashboard({
               </p>
             </div>
 
-            <div className="inline-flex items-center p-1 rounded-2xl bg-slate-100/90 border border-slate-200/80 self-start sm:self-auto">
+            <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-2xl bg-slate-100/90 border border-slate-200/80 self-start sm:self-auto">
               <button
                 type="button"
                 onClick={() => switchPage('slip')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activePage === 'slip'
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -455,7 +514,7 @@ export default function MemberDashboard({
               <button
                 type="button"
                 onClick={() => switchPage('edit')}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activePage === 'edit'
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -463,6 +522,19 @@ export default function MemberDashboard({
               >
                 <Edit3 className="w-3.5 h-3.5 text-emerald-600" />
                 <span>Edit Profile</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => switchPage('password')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activePage === 'password'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <KeyRound className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Change Password</span>
               </button>
             </div>
           </div>
@@ -1131,6 +1203,155 @@ export default function MemberDashboard({
                   <>
                     <Save className="w-4 h-4 text-emerald-400" />
                     <span>Save Updated Information</span>
+                  </>
+                )}
+              </button>
+            </form>
+          )}
+
+          {/* PAGE 3: CHANGE PASSWORD PAGE */}
+          {activePage === 'password' && (
+            <form
+              onSubmit={handlePasswordChangeSubmit}
+              className="bg-white/90 backdrop-blur-2xl rounded-3xl border border-slate-200/90 shadow-xl p-6 sm:p-8 space-y-5 text-left animate-in fade-in duration-200"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-200/80">
+                <div>
+                  <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+                    Change Password
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Update your login password. Once changed, your previous password will no longer work.
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold self-start sm:self-center shrink-0">
+                  <KeyRound className="w-3 h-3 text-emerald-600" />
+                  <span>Account Security</span>
+                </span>
+              </div>
+
+              {passwordError && (
+                <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 flex items-center gap-3 text-rose-800 text-xs font-bold">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{passwordError}</span>
+                </div>
+              )}
+
+              {passwordSuccess && (
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-3 text-emerald-800 text-xs font-bold">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{passwordSuccess}</span>
+                </div>
+              )}
+
+              <div className="p-5 rounded-2xl bg-slate-50/70 border border-slate-200/80 space-y-4">
+                <div>
+                  <label
+                    htmlFor="dashboard-current-password"
+                    className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5"
+                  >
+                    Current Password *
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <input
+                      id="dashboard-current-password"
+                      type={showCurrentPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      required
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="Enter your current password"
+                      className="w-full pl-10 pr-11 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                      aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+                    >
+                      {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label
+                      htmlFor="dashboard-new-password"
+                      className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5"
+                    >
+                      New Password *
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <KeyRound className="w-4 h-4" />
+                      </div>
+                      <input
+                        id="dashboard-new-password"
+                        type={showNewPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        required
+                        minLength={6}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="At least 6 characters"
+                        className="w-full pl-10 pr-11 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                        aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+                      >
+                        {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="dashboard-confirm-new-password"
+                      className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5"
+                    >
+                      Confirm New Password *
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <KeyRound className="w-4 h-4" />
+                      </div>
+                      <input
+                        id="dashboard-confirm-new-password"
+                        type={showNewPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        required
+                        minLength={6}
+                        value={confirmNewPassword}
+                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                        placeholder="Re-enter new password"
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={changingPassword}
+                className="w-full py-3.5 rounded-2xl bg-slate-900 hover:bg-black text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {changingPassword ? (
+                  <>
+                    <DotLoader size="sm" color="white" />
+                    <span>Updating Password...</span>
+                  </>
+                ) : (
+                  <>
+                    <KeyRound className="w-4 h-4 text-emerald-400" />
+                    <span>Update Password</span>
                   </>
                 )}
               </button>
