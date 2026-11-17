@@ -2,6 +2,9 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getAuth, 
   signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile,
   signInWithPopup, 
   GoogleAuthProvider, 
   signOut, 
@@ -28,6 +31,7 @@ import {
   Unsubscribe
 } from 'firebase/firestore';
 import { 
+  MembershipFormData,
   SubmissionRecord, 
   ExecutiveMember, 
   ClubNotice, 
@@ -1338,4 +1342,244 @@ export async function deleteEmailLogFromFirebase(logId: string): Promise<void> {
   }
 }
 
+// ==================== MEMBER AUTH & DASHBOARD PROFILE ====================
 
+/**
+ * Translates authentication error codes into clean user-facing messages
+ */
+export function formatAuthError(err: any): string {
+  const code = err?.code || '';
+  switch (code) {
+    case 'auth/email-already-in-use':
+      return 'An account with this email address already exists. Please sign in instead.';
+    case 'auth/invalid-email':
+      return 'Please enter a valid email address.';
+    case 'auth/weak-password':
+      return 'Password is too weak. Please use at least 6 characters.';
+    case 'auth/user-not-found':
+      return 'No member account found with this email address.';
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential':
+      return 'Incorrect email or password. Please check and try again.';
+    case 'auth/too-many-requests':
+      return 'Too many failed attempts. Please wait a few minutes and try again.';
+    case 'auth/network-request-failed':
+      return 'Network connection error. Please check your internet and try again.';
+    case 'auth/user-disabled':
+      return 'This account has been disabled. Please contact the club committee.';
+    case 'auth/operation-not-allowed':
+      return 'Email & password sign-in is temporarily unavailable. Please contact the club administrator.';
+    default:
+      return err?.message && !String(err.message).toLowerCase().includes('firebase')
+        ? String(err.message)
+        : 'Authentication failed. Please check your credentials and try again.';
+  }
+}
+
+/**
+ * Create a new member account during membership registration
+ */
+export async function registerMemberAccount(
+  email: string,
+  password: string,
+  displayName?: string
+): Promise<User> {
+  const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+  if (displayName && cred.user) {
+    try {
+      await updateProfile(cred.user, { displayName: displayName.trim() });
+    } catch {
+      // non-critical
+    }
+  }
+  return cred.user;
+}
+
+/**
+ * Sign in an existing member with email and password
+ */
+export async function loginMemberAccount(email: string, password: string): Promise<User> {
+  const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+  return cred.user;
+}
+
+/**
+ * Send password reset email to a member
+ */
+export async function sendMemberPasswordReset(email: string): Promise<void> {
+  await sendPasswordResetEmail(auth, email.trim());
+}
+
+/**
+ * Sign out current user
+ */
+export async function logoutMemberAccount(): Promise<void> {
+  await signOut(auth);
+}
+
+/**
+ * Fetch the logged-in member's profile record by UID (or fallback to email)
+ */
+export async function fetchMemberProfileForUser(
+  uid: string,
+  email?: string | null
+): Promise<SubmissionRecord | null> {
+  try {
+    const colRef = collection(db, 'members');
+
+    // 1. Primary lookup by Firebase Auth UID
+    const uidSnap = await getDocs(query(colRef, where('uid', '==', uid), limit(1)));
+    if (!uidSnap.empty) {
+      const d = uidSnap.docs[0];
+      return { id: d.id, ...(d.data() as any) } as SubmissionRecord;
+    }
+
+    // 2. Fallback lookup by email (for previously registered members)
+    if (email && email.trim()) {
+      const cleanEmail = email.trim();
+      const lowerEmail = cleanEmail.toLowerCase();
+      const emailQueries = [
+        query(colRef, where('email', '==', cleanEmail), limit(1)),
+        ...(lowerEmail !== cleanEmail ? [query(colRef, where('email', '==', lowerEmail), limit(1))] : [])
+      ];
+
+      for (const q of emailQueries) {
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const d = snap.docs[0];
+          const data = d.data() as any;
+          // Bind uid silently if missing
+          if (!data.uid) {
+            updateDoc(doc(db, 'members', d.id), { uid }).catch(() => {});
+          }
+          return { id: d.id, ...data, uid: data.uid || uid } as SubmissionRecord;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Member profile lookup warning:', err);
+  }
+
+  // 3. Local cache fallback
+  const cached = getCachedMembers();
+  const normEmail = (email || '').trim().toLowerCase();
+  const localMatch = cached.find(
+    m => (m.uid && m.uid === uid) || (normEmail && (m.email || '').trim().toLowerCase() === normEmail)
+  );
+  return localMatch || null;
+}
+
+/**
+ * Self-service profile update from My Dashboard.
+ * Strictly strips studentId (Roll), status, membershipId, and rejectionReason so Roll can NEVER be changed.
+ */
+export async function updateOwnMemberProfile(
+  memberId: string,
+  uid: string,
+  updates: Partial<MembershipFormData>,
+  existingMember?: SubmissionRecord
+): Promise<SubmissionRecord> {
+  // Explicitly pick ONLY allowed editable fields (excluding studentId / Roll)
+  const safeUpdates: Record<string, any> = cleanFirestoreData({
+    photo: updates.photo !== undefined ? updates.photo : existingMember?.photo ?? null,
+    name: updates.name !== undefined ? updates.name.trim() : existingMember?.name,
+    phone: updates.phone !== undefined ? updates.phone.trim() : existingMember?.phone,
+    whatsapp: updates.whatsapp !== undefined ? updates.whatsapp.trim() : existingMember?.whatsapp,
+    sameAsPhone: updates.sameAsPhone !== undefined ? updates.sameAsPhone : existingMember?.sameAsPhone,
+    email: updates.email !== undefined ? updates.email.trim() : existingMember?.email,
+    section: updates.section !== undefined ? updates.section : existingMember?.section,
+    dob: updates.dob !== undefined ? updates.dob : existingMember?.dob,
+    batch: updates.batch !== undefined ? updates.batch : existingMember?.batch,
+    interestedSegments: updates.interestedSegments !== undefined ? updates.interestedSegments : existingMember?.interestedSegments,
+    skills: updates.skills !== undefined ? updates.skills : existingMember?.skills,
+    experienceAchievements: updates.experienceAchievements !== undefined ? updates.experienceAchievements : existingMember?.experienceAchievements,
+    uid
+  });
+
+  // Update Firestore 'members' document
+  const docRef = doc(db, 'members', memberId);
+  try {
+    await updateDoc(docRef, {
+      ...safeUpdates,
+      updatedAt: serverTimestamp()
+    });
+  } catch (err: any) {
+    if (err?.code === 'not-found' && existingMember) {
+      await setDoc(docRef, cleanFirestoreData({
+        ...existingMember,
+        ...safeUpdates,
+        studentId: existingMember.studentId,
+        updatedAt: serverTimestamp()
+      }));
+    } else {
+      throw err;
+    }
+  }
+
+  const mergedRecord: SubmissionRecord = {
+    ...(existingMember || ({} as SubmissionRecord)),
+    ...safeUpdates,
+    id: memberId,
+    uid,
+    studentId: existingMember?.studentId || ''
+  };
+
+  // Update localStorage caches
+  try {
+    const cached = getCachedMembers();
+    const updatedList = cached.some(m => m.id === memberId)
+      ? cached.map(m => (m.id === memberId ? mergedRecord : m))
+      : [mergedRecord, ...cached];
+    localStorage.setItem(LS_MEMBERS_KEY, JSON.stringify(updatedList));
+    localStorage.setItem('ngdc_sc_submissions_v1', JSON.stringify(updatedList));
+  } catch {
+    // ignore
+  }
+
+  // Sync member_status docs so status lookup reflects updated name/photo/phone/batch/section
+  const oldNormPhone = existingMember?.phone ? normalizePhoneNumber(existingMember.phone) : '';
+  const newNormPhone = mergedRecord.phone ? normalizePhoneNumber(mergedRecord.phone) : '';
+
+  if (oldNormPhone && newNormPhone && oldNormPhone !== newNormPhone) {
+    const staleKeys = [oldNormPhone, `+88${oldNormPhone}`, `88${oldNormPhone}`, existingMember?.phone?.trim() || ''].filter(Boolean);
+    await Promise.allSettled(staleKeys.map(k => deleteDoc(doc(db, 'member_status', k)).catch(() => {})));
+  }
+
+  const statusPayload = cleanFirestoreData({
+    id: memberId,
+    membershipId: mergedRecord.membershipId || null,
+    name: mergedRecord.name,
+    photo: mergedRecord.photo || null,
+    status: mergedRecord.status || 'pending',
+    rejectionReason: mergedRecord.status === 'approved' ? null : (mergedRecord.rejectionReason || null),
+    batch: mergedRecord.batch,
+    section: mergedRecord.section,
+    phone: mergedRecord.phone,
+    submittedAt: mergedRecord.submittedAt || mergedRecord.createdAt,
+    updatedAt: serverTimestamp()
+  });
+
+  const lookupKeys = new Set<string>();
+  if (newNormPhone) {
+    lookupKeys.add(newNormPhone);
+    lookupKeys.add(`+88${newNormPhone}`);
+    lookupKeys.add(`88${newNormPhone}`);
+  }
+  if (mergedRecord.phone) {
+    lookupKeys.add(mergedRecord.phone.trim());
+  }
+  if (mergedRecord.membershipId) {
+    const mid = mergedRecord.membershipId.toUpperCase().trim();
+    lookupKeys.add(mid);
+    const digits = mid.replace(/\D/g, '');
+    if (digits) lookupKeys.add(digits);
+  }
+
+  await Promise.allSettled(
+    Array.from(lookupKeys).map(k =>
+      setDoc(doc(db, 'member_status', k), statusPayload, { merge: true }).catch(() => {})
+    )
+  );
+
+  return mergedRecord;
+}

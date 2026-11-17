@@ -37,8 +37,14 @@ import {
   CreditCard,
   Clock,
   Scissors,
-  Lock
+  Lock,
+  LogIn,
+  UserCheck,
+  Eye,
+  EyeOff,
+  Loader2
 } from 'lucide-react';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { 
   MembershipFormData, 
   SubmissionRecord, 
@@ -56,9 +62,14 @@ import MemberStatusSearch from './MemberStatusSearch';
 import ConfirmationSlipPage from './ConfirmationSlipPage';
 import AdminPanel from './AdminPanel';
 import NotFoundPage from './NotFoundPage';
+import MemberAuthPage from './MemberAuthPage';
+import MemberDashboard from './MemberDashboard';
 import ImageAdjustModal from './components/ImageAdjustModal';
 import { 
+  auth,
   saveMemberToFirebase, 
+  registerMemberAccount,
+  formatAuthError,
   fetchNoticesFromFirebase, 
   subscribeToNotices, 
   getNextMembershipId, 
@@ -93,7 +104,7 @@ const INITIAL_FORM: MembershipFormData = {
   agreedToRules: false
 };
 
-type ViewType = 'home' | 'form' | 'committee' | 'notices' | 'status' | 'slip' | 'admin' | '404';
+type ViewType = 'home' | 'form' | 'committee' | 'notices' | 'status' | 'slip' | 'login' | 'dashboard' | 'admin' | '404';
 
 // Helper to determine view from current URL path & hash
 const resolveCurrentView = (): ViewType => {
@@ -102,11 +113,13 @@ const resolveCurrentView = (): ViewType => {
   const hash = window.location.hash.toLowerCase().replace(/^#\/?/, '');
 
   if (hash === 'admin' || rawPath === '/admin' || rawPath.endsWith('/admin')) return 'admin';
+  if (hash === 'login' || hash === 'signin' || rawPath === '/login' || rawPath.endsWith('/login')) return 'login';
+  if (hash === 'dashboard' || hash === 'my-dashboard' || rawPath === '/dashboard' || rawPath === '/my-dashboard' || rawPath.endsWith('/dashboard')) return 'dashboard';
   if (hash === 'notices' || rawPath === '/notices' || rawPath.endsWith('/notices')) return 'notices';
   if (hash === 'committee' || rawPath === '/committee' || rawPath.endsWith('/committee')) return 'committee';
   if (hash === 'status' || hash === 'check-status' || rawPath === '/status' || rawPath.endsWith('/status')) return 'status';
   if (hash.startsWith('slip') || rawPath === '/slip' || rawPath.endsWith('/slip')) return 'slip';
-  if (hash === 'form' || hash === 'register' || rawPath === '/form' || rawPath === '/register' || rawPath.endsWith('/form') || rawPath.endsWith('/register')) return 'form';
+  if (hash === 'form' || hash === 'register' || hash === 'signup' || rawPath === '/form' || rawPath === '/register' || rawPath === '/signup' || rawPath.endsWith('/form') || rawPath.endsWith('/register')) return 'form';
   if (rawPath === '' || rawPath === '/' || rawPath === '/index.html' || hash === '' || hash === 'home') return 'home';
 
   // Any other URL shows our themed 404 forbidden page
@@ -529,7 +542,22 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [adjustingPhoto, setAdjustingPhoto] = useState<string | null>(null);
+  const [accountPassword, setAccountPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showRegPassword, setShowRegPassword] = useState(false);
   
+  // Auth state for Member Login & My Dashboard
+  const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
+  const [authInitialized, setAuthInitialized] = useState(false);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setAuthUser(user);
+      setAuthInitialized(true);
+    });
+    return () => unsub();
+  }, []);
+
   // URL detection for /admin, /notices, /committee, /, and unknown routes -> 404
   const [currentView, setCurrentView] = useState<ViewType>(resolveCurrentView);
 
@@ -721,6 +749,20 @@ export default function App() {
       setErrorMsg('Please enter your mail address.');
       return;
     }
+    if (!authUser) {
+      if (!accountPassword || accountPassword.length < 6) {
+        setErrorMsg('Please create an account password (at least 6 characters).');
+        const pwEl = document.getElementById('student-password');
+        if (pwEl) pwEl.focus();
+        return;
+      }
+      if (accountPassword !== confirmPassword) {
+        setErrorMsg('Password and Confirm Password do not match.');
+        const cpwEl = document.getElementById('student-confirm-password');
+        if (cpwEl) cpwEl.focus();
+        return;
+      }
+    }
     if (!formData.dob) {
       setErrorMsg('Please enter your date of birth.');
       return;
@@ -748,8 +790,26 @@ export default function App() {
 
     setIsSubmitting(true);
 
+    let memberUid = authUser?.uid;
+    if (!authUser) {
+      try {
+        const createdUser = await registerMemberAccount(
+          formData.email,
+          accountPassword,
+          formData.name
+        );
+        memberUid = createdUser.uid;
+      } catch (authErr: any) {
+        setErrorMsg(formatAuthError(authErr));
+        setIsSubmitting(false);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+    }
+
     const newRecord: SubmissionRecord = {
       ...formData,
+      uid: memberUid,
       membershipId: undefined,
       status: 'pending',
       submittedAt: new Date().toLocaleString('en-GB', {
@@ -759,12 +819,12 @@ export default function App() {
       })
     };
 
-    // 1. Save directly to Firebase Firestore
+    // 1. Save directly to cloud database
     try {
       const fbId = await saveMemberToFirebase(newRecord);
       newRecord.id = fbId;
     } catch (err) {
-      console.warn('Firebase save warning:', err);
+      console.warn('Database save warning:', err);
     }
 
     // 2. Save locally for instant offline preview
@@ -786,6 +846,9 @@ export default function App() {
     setFormData(INITIAL_FORM);
     setSubmittedData(null);
     setErrorMsg(null);
+    setAccountPassword('');
+    setConfirmPassword('');
+    setShowRegPassword(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -890,18 +953,21 @@ export default function App() {
 
           {/* Right Action Buttons */}
           <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* Quick Register Pill */}
+            {/* Icon-only Login / My Dashboard Button */}
             <button
               type="button"
-              onClick={() => navigateTo('form')}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
-                currentView === 'form'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'bg-slate-900 hover:bg-black text-white shadow-xs'
+              onClick={() => navigateTo(authUser ? 'dashboard' : 'login')}
+              className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all cursor-pointer shadow-2xs ${
+                currentView === 'login' || currentView === 'dashboard'
+                  ? 'bg-emerald-600 border-emerald-600 text-white'
+                  : authUser
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                  : 'bg-white/90 hover:bg-slate-100 border-slate-200/90 text-slate-700'
               }`}
+              title={authUser ? 'My Dashboard' : 'Sign In'}
+              aria-label={authUser ? 'My Dashboard' : 'Sign In'}
             >
-              <span>{registrationSetting?.status === 'closed' ? 'Portal Status' : 'Register'}</span>
-              <ChevronRight className="w-3.5 h-3.5" />
+              {authUser ? <UserCheck className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
             </button>
 
             {/* Mobile Menu Hamburger */}
@@ -1077,6 +1143,46 @@ export default function App() {
           onGoToRegistration={() => navigateTo('form')}
           onOpenSlipPage={() => navigateTo('slip')}
         />
+      ) : currentView === 'login' ? (
+        !authInitialized ? (
+          <div className="w-full max-w-md pt-32 pb-16 text-center">
+            <Loader2 className="w-7 h-7 animate-spin text-emerald-600 mx-auto" />
+          </div>
+        ) : authUser ? (
+          <MemberDashboard
+            user={authUser}
+            registrationSetting={registrationSetting}
+            onBackToHome={() => navigateTo('home')}
+            onGoToRegistration={() => navigateTo('form')}
+            onSignedOut={() => navigateTo('login')}
+          />
+        ) : (
+          <MemberAuthPage
+            onBackToHome={() => navigateTo('home')}
+            onGoToRegister={() => navigateTo('form')}
+            onLoginSuccess={() => navigateTo('dashboard')}
+          />
+        )
+      ) : currentView === 'dashboard' ? (
+        !authInitialized ? (
+          <div className="w-full max-w-md pt-32 pb-16 text-center">
+            <Loader2 className="w-7 h-7 animate-spin text-emerald-600 mx-auto" />
+          </div>
+        ) : authUser ? (
+          <MemberDashboard
+            user={authUser}
+            registrationSetting={registrationSetting}
+            onBackToHome={() => navigateTo('home')}
+            onGoToRegistration={() => navigateTo('form')}
+            onSignedOut={() => navigateTo('login')}
+          />
+        ) : (
+          <MemberAuthPage
+            onBackToHome={() => navigateTo('home')}
+            onGoToRegister={() => navigateTo('form')}
+            onLoginSuccess={() => navigateTo('dashboard')}
+          />
+        )
       ) : currentView === 'home' ? (
         <HomePage 
           onGoToForm={() => navigateTo('form')} 
@@ -1309,6 +1415,14 @@ export default function App() {
             <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2.5">
               <button
                 type="button"
+                onClick={() => navigateTo('dashboard')}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-black shadow-sm transition-all cursor-pointer"
+              >
+                <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Open My Dashboard</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => navigateTo('status')}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-sm transition-all cursor-pointer"
               >
@@ -1490,21 +1604,48 @@ export default function App() {
               </span>
             </div>
 
-            {/* Quick Link Banner for Checking Status */}
-            <div className="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 text-slate-600">
-                <Search className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Already applied? Verify your review status or Membership ID anytime.</span>
+            {/* Quick Link Banner for Signed-In Member / Checking Status */}
+            {authUser ? (
+              <div className="p-3.5 rounded-2xl bg-emerald-50/90 border border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-emerald-900 font-medium">
+                  <UserCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Signed in as <strong>{authUser.email}</strong>. You can view or edit your submitted info from My Dashboard.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigateTo('dashboard')}
+                  className="px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs transition-all cursor-pointer shrink-0 flex items-center gap-1.5"
+                >
+                  <span>My Dashboard</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => navigateTo('status')}
-                className="px-3.5 py-1.5 rounded-full bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200 shadow-2xs transition-all cursor-pointer shrink-0 flex items-center gap-1.5"
-              >
-                <span>Check Status</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-slate-600">
+                  <Search className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Already registered? Sign in to edit your profile or verify your application status.</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => navigateTo('login')}
+                    className="px-3.5 py-1.5 rounded-full bg-slate-900 hover:bg-black text-white text-xs font-semibold shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <LogIn className="w-3.5 h-3.5" />
+                    <span>Sign In</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigateTo('status')}
+                    className="px-3.5 py-1.5 rounded-full bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>Check Status</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
 
             {errorMsg && (
               <div className="p-4 rounded-2xl bg-rose-50/90 border border-rose-200 flex items-center gap-3 text-rose-800 text-xs font-bold animate-in fade-in">
@@ -1760,6 +1901,66 @@ export default function App() {
                   />
                 </div>
               </div>
+
+              {/* Account Password for Member Login & My Dashboard */}
+              {!authUser && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  <div>
+                    <label htmlFor="student-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Create Password <span className="text-emerald-600 font-bold">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <input
+                        type={showRegPassword ? 'text' : 'password'}
+                        id="student-password"
+                        required
+                        minLength={6}
+                        autoComplete="new-password"
+                        placeholder="At least 6 characters"
+                        value={accountPassword}
+                        onChange={(e) => setAccountPassword(e.target.value)}
+                        className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 focus:bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium shadow-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowRegPassword(!showRegPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                        aria-label={showRegPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="student-confirm-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Confirm Password <span className="text-emerald-600 font-bold">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <input
+                        type={showRegPassword ? 'text' : 'password'}
+                        id="student-confirm-password"
+                        required
+                        minLength={6}
+                        autoComplete="new-password"
+                        placeholder="Re-enter password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 focus:bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium shadow-xs"
+                      />
+                    </div>
+                  </div>
+                  <p className="sm:col-span-2 text-[11px] text-slate-500 -mt-1">
+                    Use your email and password later to sign in and edit your profile from My Dashboard.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* SECTION 3: ACADEMIC DETAILS & SESSION */}

@@ -298,7 +298,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       await updateRegistrationSetting(updated);
     } catch (err) {
       console.error('Failed to update registration setting:', err);
-      alert('Failed to update registration setting in Firebase.');
+      alert('Failed to update registration setting. Please try again.');
     } finally {
       setSavingRegSetting(false);
     }
@@ -323,7 +323,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       await updateRegistrationSetting(updated);
     } catch (err) {
       console.error('Failed to update registration setting:', err);
-      alert('Failed to update registration setting in Firebase.');
+      alert('Failed to update registration setting. Please try again.');
     } finally {
       setSavingRegSetting(false);
     }
@@ -918,13 +918,8 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                   <span>Google Sign-in Not Enabled</span>
                 </div>
                 <p className="text-[11px] text-amber-200/90 leading-snug">
-                  Google Sign-in is not yet enabled in your Firebase Console authentication settings.
+                  Google Sign-in is currently unavailable. Please contact the system administrator.
                 </p>
-                <div className="text-[10px] text-slate-300 space-y-1 bg-slate-950/80 p-2.5 rounded-xl border border-slate-800 font-mono">
-                  <p>1. Go to console.firebase.google.com</p>
-                  <p>2. Authentication &rarr; Sign-in method</p>
-                  <p>3. Select Google, toggle Enable & Save</p>
-                </div>
               </div>
             ) : loginError ? (
               <div className="mb-5 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs font-medium flex items-center justify-center gap-2 text-center">
@@ -960,7 +955,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
             {/* Note about access */}
             <p className="mt-4 text-[11px] text-slate-500 leading-relaxed">
-              Protected by Firebase Authentication. Only pre-authorized executive Google accounts have database access.
+              Protected access. Only pre-authorized executive Google accounts can enter the administration portal.
             </p>
 
           </div>

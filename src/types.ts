@@ -38,6 +38,7 @@ export interface MembershipFormData {
 
 export interface SubmissionRecord extends MembershipFormData {
   id?: string;
+  uid?: string;
   membershipId?: string;
   submittedAt: string;
   status?: MemberStatus;
@@ -53,6 +54,7 @@ export interface SubmissionRecord extends MembershipFormData {
 
 export interface PublicMemberStatus {
   id?: string;
+  uid?: string;
   membershipId?: string;
   name: string;
   photo: string | null;
