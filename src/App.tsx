@@ -41,7 +41,8 @@ import {
   LogIn,
   UserCheck,
   Eye,
-  EyeOff
+  EyeOff,
+  Link2
 } from 'lucide-react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { 
@@ -70,11 +71,11 @@ import {
   saveMemberToFirebase, 
   registerMemberAccount,
   formatAuthError,
-  fetchNoticesFromFirebase, 
   subscribeToNotices, 
   subscribeToActiveMemberCount,
-  getNextMembershipId, 
-  generateNextMembershipId,
+  getCachedActiveMemberCount,
+  getCachedNotices,
+  getCachedRegistrationSetting,
   subscribeRegistrationSetting,
   DEFAULT_REGISTRATION_SETTING
 } from './services/firebase';
@@ -129,17 +130,16 @@ const resolveCurrentView = (): ViewType => {
 
 function ClubFooter() {
   return (
-    <footer className="mt-auto pt-12 pb-6 text-center w-full flex flex-col items-center gap-3 relative z-10 px-4">
-      {/* Sleek Apple Frosted Social Pills */}
-      <div className="flex items-center justify-center gap-2">
+    <footer className="mt-auto w-full max-w-5xl mx-auto pt-10 pb-8 text-center flex flex-col items-center gap-3 relative z-10 px-4 border-t border-slate-200/70">
+      <div className="flex items-center justify-center gap-4 text-slate-500">
         <a 
           href="https://chat.whatsapp.com/J0ooCmabbIT2dfJdXTLhni" 
           target="_blank" 
           rel="noopener noreferrer" 
-          className="w-8 h-8 rounded-full bg-white/75 hover:bg-[#25D366]/15 border border-slate-200/80 hover:border-[#25D366]/40 text-slate-600 hover:text-[#25D366] flex items-center justify-center transition-all shadow-xs backdrop-blur-md"
+          className="p-1.5 hover:text-[#25D366] transition-colors"
           title="Official WhatsApp Community"
         >
-          <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
             <path d="M12.031 0C5.394 0 0 5.394 0 12.031c0 2.119.553 4.185 1.603 6.007L.062 24l6.148-1.613c1.764.962 3.766 1.47 5.821 1.47 6.637 0 12.031-5.394 12.031-12.031C24.062 5.394 18.668 0 12.031 0zm0 21.848c-1.802 0-3.567-.484-5.105-1.398l-.366-.217-3.792.995 1.012-3.696-.239-.379c-1.006-1.601-1.537-3.468-1.537-5.385 0-5.515 4.485-10 10-10 5.515 0 10 4.485 10 10 0 5.515-4.485 10-10 10zm5.474-7.481c-.3-.15-1.776-.876-2.051-.976-.275-.1-.475-.15-.675.15-.2.3-.776.976-.951 1.176-.175.2-.35.225-.65.075-.3-.15-1.267-.467-2.414-1.489-.892-.796-1.495-1.779-1.67-2.079-.175-.3-.019-.462.131-.611.136-.134.3-.35.45-.525.15-.175.2-.3.3-.5.1-.2.05-.375-.025-.525-.075-.15-.675-1.626-.925-2.226-.244-.585-.492-.505-.675-.515-.175-.009-.375-.009-.575-.009s-.525.075-.8.375c-.275.3-1.05 1.026-1.05 2.501s1.075 2.899 1.225 3.099c.15.2 2.115 3.23 5.124 4.53.716.31 1.275.495 1.71.633.719.229 1.373.197 1.89.12.577-.086 1.776-.726 2.026-1.426.25-.7.25-1.301.175-1.426-.075-.125-.275-.2-.575-.35z"/>
           </svg>
         </a>
@@ -148,51 +148,44 @@ function ClubFooter() {
           href="https://facebook.com/ngdcsc" 
           target="_blank" 
           rel="noopener noreferrer" 
-          className="w-8 h-8 rounded-full bg-white/75 hover:bg-blue-500/15 border border-slate-200/80 hover:border-blue-400/40 text-slate-600 hover:text-blue-600 flex items-center justify-center transition-all shadow-xs backdrop-blur-md"
+          className="p-1.5 hover:text-blue-600 transition-colors"
           title="Official Facebook Page"
         >
-          <Facebook className="w-3.5 h-3.5" />
+          <Facebook className="w-4 h-4" />
         </a>
 
         <a 
           href="https://instagram.com/ngdcsc_" 
           target="_blank" 
           rel="noopener noreferrer" 
-          className="w-8 h-8 rounded-full bg-white/75 hover:bg-pink-500/15 border border-slate-200/80 hover:border-pink-400/40 text-slate-600 hover:text-pink-600 flex items-center justify-center transition-all shadow-xs backdrop-blur-md"
+          className="p-1.5 hover:text-pink-600 transition-colors"
           title="Official Instagram"
         >
-          <Instagram className="w-3.5 h-3.5" />
+          <Instagram className="w-4 h-4" />
         </a>
 
         <a 
           href="mailto:ngdcsc.org@gmail.com" 
-          className="w-8 h-8 rounded-full bg-white/75 hover:bg-emerald-500/15 border border-slate-200/80 hover:border-emerald-400/40 text-slate-600 hover:text-emerald-700 flex items-center justify-center transition-all shadow-xs backdrop-blur-md"
+          className="p-1.5 hover:text-emerald-700 transition-colors"
           title="Official Email"
         >
-          <Mail className="w-3.5 h-3.5" />
+          <Mail className="w-4 h-4" />
         </a>
       </div>
 
-      <div className="flex items-center justify-center gap-1.5 flex-wrap text-[11px] text-slate-500 font-medium">
-        <span>© 2026 NGDC Science Club • New Government Degree College, Rajshahi.</span>
-      </div>
-
-      {/* Developer Credit Pill */}
-      <div className="flex items-center justify-center">
+      <div className="flex items-center justify-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-slate-500 font-medium">
+        <span>© 2026 NGDC Science Club • New Government Degree College, Rajshahi</span>
+        <span className="text-slate-300 hidden sm:inline">•</span>
         <a
           href="https://portfolio.tamimiq.shop"
           target="_blank"
           rel="noopener noreferrer"
-          className="group inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-white/75 hover:bg-white border border-slate-200/80 hover:border-slate-300 shadow-[0_1px_8px_rgba(0,0,0,0.03)] backdrop-blur-xl transition-all duration-200 text-[11px]"
+          className="inline-flex items-center gap-1 text-slate-600 hover:text-emerald-700 transition-colors font-semibold"
           title="Visit Portfolio of Developer Tamim Iqbal"
         >
-          <span className="text-slate-500 font-normal">
-            Developed by
-          </span>
-          <span className="font-semibold text-slate-900 group-hover:text-emerald-700 transition-colors">
-            Tamim Iqbal
-          </span>
-          <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-emerald-700 transition-colors" />
+          <span className="font-normal text-slate-500">Developed by</span>
+          <span>Tamim Iqbal</span>
+          <ExternalLink className="w-2.5 h-2.5 opacity-70" />
         </a>
       </div>
     </footer>
@@ -202,7 +195,6 @@ function ClubFooter() {
 function HomePage({ 
   onGoToForm,
   onGoToNotices,
-  onGoToCommittee,
   onGoToStatus,
   registrationSetting,
   latestNotice,
@@ -219,27 +211,24 @@ function HomePage({
   activeMemberCount: number | null;
 }) {
   return (
-    <div className="w-full max-w-5xl relative z-10 px-4 sm:px-6 pt-24 sm:pt-28 pb-8 formal-page-enter flex-1 flex flex-col items-center">
+    <div className="w-full max-w-5xl relative z-10 px-4 sm:px-6 pt-24 sm:pt-28 pb-10 formal-page-enter flex-1 flex flex-col items-center">
       
-      {/* 1. HERO SECTION (Minimalist Apple Style) */}
-      <div className="w-full max-w-3xl text-center space-y-4 pt-2 pb-6">
-        {/* College Badge */}
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/75 backdrop-blur-xl border border-black/[0.07] text-slate-700 text-xs font-medium shadow-[0_2px_12px_rgba(0,0,0,0.03)]">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+      {/* 1. HERO SECTION */}
+      <div className="w-full max-w-3xl text-center space-y-4 pt-2 pb-8">
+        <div className="inline-flex items-center gap-2 text-slate-600 text-xs font-medium">
+          <span className="w-2 h-2 rounded-full bg-emerald-500" />
           <span>New Govt. Degree College • Rajshahi</span>
         </div>
 
-        {/* Official Club Logo */}
         <div className="flex justify-center pt-1">
           <img 
-            src="https://plain-apac-prod-public.komododecks.com/202609/21/iFpbvbXJaON4rnVidFRy/image.png" 
+            src="/assets/club-logo.png" 
             alt="NGDC Science Club Crest" 
-            className="h-20 sm:h-24 w-auto object-contain hover:scale-105 transition-transform duration-300 drop-shadow-[0_12px_30px_rgba(0,0,0,0.06)]"
-            referrerPolicy="no-referrer"
+            decoding="async"
+            className="h-20 sm:h-24 w-auto object-contain hover:scale-105 transition-transform duration-300"
           />
         </div>
 
-        {/* Headline */}
         <div className="space-y-1">
           <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-900 tracking-tight leading-[1.12]">
             NGDC Science Club
@@ -249,17 +238,16 @@ function HomePage({
           </p>
         </div>
 
-        {/* Subtitle */}
         <p className="text-sm sm:text-base text-slate-600 max-w-2xl mx-auto leading-relaxed font-normal">
           The official science club of New Govt. Degree College. Empowering students in Science Olympiads, robotics, research projects, and scientific innovations.
         </p>
 
-        {/* Apple Action Buttons Row */}
+        {/* Action Buttons */}
         <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
           <button
             type="button"
             onClick={onGoToForm}
-            className="px-6 py-3 rounded-full bg-slate-900 hover:bg-black text-white font-medium text-xs sm:text-sm shadow-sm hover:shadow-md transition-all flex items-center gap-2 cursor-pointer transform hover:-translate-y-0.5"
+            className="px-6 py-3 rounded-full bg-slate-900 hover:bg-black text-white font-medium text-xs sm:text-sm shadow-xs transition-all flex items-center gap-2 cursor-pointer"
           >
             <span>
               {registrationSetting?.status === 'closed'
@@ -274,7 +262,7 @@ function HomePage({
           <button
             type="button"
             onClick={onGoToStatus}
-            className="px-5 py-3 rounded-full bg-white/80 hover:bg-white text-slate-800 font-medium text-xs sm:text-sm border border-slate-200/90 shadow-[0_2px_12px_rgba(0,0,0,0.03)] transition-all flex items-center gap-2 cursor-pointer backdrop-blur-xl transform hover:-translate-y-0.5"
+            className="px-5 py-3 rounded-full bg-white hover:bg-slate-50 text-slate-800 font-medium text-xs sm:text-sm border border-slate-200/90 shadow-2xs transition-all flex items-center gap-2 cursor-pointer"
           >
             <Search className="w-4 h-4 text-slate-500" />
             <span>Check Application Status</span>
@@ -290,13 +278,13 @@ function HomePage({
           </button>
         </div>
 
-        {/* Live Notice Banner Pill */}
+        {/* Live Notice Banner */}
         {latestNotice && (
           <div className="pt-2">
             <button
               type="button"
               onClick={() => onOpenNotice && onOpenNotice(latestNotice)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 hover:bg-white border border-emerald-300/80 shadow-xs backdrop-blur-xl text-xs text-slate-700 transition-all cursor-pointer group max-w-xl text-left"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white hover:bg-emerald-50/40 border border-emerald-200 text-xs text-slate-700 transition-all cursor-pointer group max-w-xl text-left shadow-2xs"
             >
               <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
               <span className="font-semibold text-emerald-800 shrink-0">Announcement:</span>
@@ -309,234 +297,191 @@ function HomePage({
         )}
       </div>
 
-      {/* 2. STATS OVERVIEW (Minimal Apple Cards) */}
-      <div className="w-full grid grid-cols-2 md:grid-cols-4 gap-3 my-5">
-        <div className="p-4 rounded-3xl bg-white/70 hover:bg-white/85 backdrop-blur-xl border border-black/[0.06] shadow-[0_4px_20px_rgba(0,0,0,0.03)] text-center transition-all group">
-          <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 mx-auto flex items-center justify-center mb-2 border border-emerald-100">
-            <Users className="w-4 h-4" />
-          </div>
-          <span className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight block tabular-nums">
-            {activeMemberCount !== null ? activeMemberCount : '...'}
-          </span>
-          <span className="text-xs font-semibold text-slate-700 mt-0.5 flex items-center justify-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Active Members</span>
-          </span>
-          <span className="text-[11px] text-slate-500">HSC 27 &amp; 28 Batches</span>
-        </div>
-
-        <div className="p-4 rounded-3xl bg-white/70 hover:bg-white/85 backdrop-blur-xl border border-black/[0.06] shadow-[0_4px_20px_rgba(0,0,0,0.03)] text-center transition-all group">
-          <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-700 mx-auto flex items-center justify-center mb-2 border border-blue-100">
-            <Award className="w-4 h-4" />
-          </div>
-          <span className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight block">20+</span>
-          <span className="text-xs font-semibold text-slate-700 block mt-0.5">Olympiad Awards</span>
-          <span className="text-[11px] text-slate-500">Math, Physics, Bio &amp; Chem</span>
-        </div>
-
-        <div className="p-4 rounded-3xl bg-white/70 hover:bg-white/85 backdrop-blur-xl border border-black/[0.06] shadow-[0_4px_20px_rgba(0,0,0,0.03)] text-center transition-all group">
-          <div className="w-8 h-8 rounded-full bg-purple-50 text-purple-700 mx-auto flex items-center justify-center mb-2 border border-purple-100">
-            <Atom className="w-4 h-4" />
-          </div>
-          <span className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight block">6 Wings</span>
-          <span className="text-xs font-semibold text-slate-700 block mt-0.5">Activity Wings</span>
-          <span className="text-[11px] text-slate-500">Workshops &amp; projects</span>
-        </div>
-
-        <div className="p-4 rounded-3xl bg-white/70 hover:bg-white/85 backdrop-blur-xl border border-black/[0.06] shadow-[0_4px_20px_rgba(0,0,0,0.03)] text-center transition-all group">
-          <div className="w-8 h-8 rounded-full bg-amber-50 text-amber-700 mx-auto flex items-center justify-center mb-2 border border-amber-100">
-            <Trophy className="w-4 h-4" />
-          </div>
-          <span className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight block">1st Fest</span>
-          <span className="text-xs font-semibold text-slate-700 block mt-0.5">Annual Science Fest</span>
-          <span className="text-[11px] text-slate-500">College science event</span>
-        </div>
-      </div>
-
-      {/* 3. BENTO GRID: macOS Window Style Cards */}
-      <div className="w-full space-y-4 my-2">
-        
-        {/* BENTO CARD 1: Society Overview & Identity (macOS Window) */}
-        <div className="w-full bg-white/75 hover:bg-white/85 backdrop-blur-2xl border border-black/[0.07] rounded-3xl p-6 sm:p-8 shadow-[0_8px_30px_rgba(0,0,0,0.04)] text-left transition-all">
-          {/* macOS Window Controls */}
-          <div className="flex items-center justify-between pb-4 border-b border-black/[0.05] mb-5">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-[#ff5f56] inline-block" />
-              <span className="w-3 h-3 rounded-full bg-[#ffbd2e] inline-block" />
-              <span className="w-3 h-3 rounded-full bg-[#27c93f] inline-block" />
-            </div>
-            <span className="text-[11px] font-mono text-slate-400">society_profile.app</span>
-            <span className="text-[11px] font-semibold text-slate-500 bg-black/[0.03] px-2.5 py-0.5 rounded-full">
-              Rajshahi, Bangladesh
+      {/* 2. UNIFIED OVERVIEW DOCUMENT (Clean single surface with hairline dividers, no nested boxes) */}
+      <div className="w-full bg-white border border-slate-200/90 rounded-2xl shadow-xs divide-y divide-slate-100 text-left">
+        {/* Stats Row */}
+        <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+          <div className="p-5 text-center">
+            <span className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight block tabular-nums">
+              {activeMemberCount !== null ? activeMemberCount : '...'}
             </span>
+            <span className="text-xs font-semibold text-slate-700 mt-1 flex items-center justify-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span>Active Members</span>
+            </span>
+            <span className="text-[11px] text-slate-500 block mt-0.5">HSC 27 &amp; 28 Batches</span>
           </div>
 
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-                About NGDC Science Club
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">
-                Official student science club of New Govt. Degree College, Rajshahi
-              </p>
-            </div>
+          <div className="p-5 text-center">
+            <span className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight block">20+</span>
+            <span className="text-xs font-semibold text-slate-700 block mt-1">Olympiad Awards</span>
+            <span className="text-[11px] text-slate-500 block mt-0.5">Math, Physics, Bio &amp; Chem</span>
+          </div>
 
-            <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-normal">
-              <strong>NGDC Science Club (NGDCSC)</strong> is the official club for science students at New Govt. Degree College, Rajshahi. The club provides a collaborative platform for Class 11 and Class 12 students to engage in Science Olympiads, robotics, practical scientific experiments, and inter-college competitions.
+          <div className="p-5 text-center">
+            <span className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight block">6 Wings</span>
+            <span className="text-xs font-semibold text-slate-700 block mt-1">Activity Wings</span>
+            <span className="text-[11px] text-slate-500 block mt-0.5">Workshops &amp; projects</span>
+          </div>
+
+          <div className="p-5 text-center">
+            <span className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight block">1st Fest</span>
+            <span className="text-xs font-semibold text-slate-700 block mt-1">Annual Science Fest</span>
+            <span className="text-[11px] text-slate-500 block mt-0.5">College science event</span>
+          </div>
+        </div>
+
+        {/* About */}
+        <div className="p-6 sm:p-8 space-y-5">
+          <div>
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+              About NGDC Science Club
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed mt-2">
+              <strong>NGDC Science Club (NGDCSC)</strong> is the official student science organization of New Govt. Degree College, Rajshahi, providing a collaborative platform for Class 11 and Class 12 science students to participate in Science Olympiads, robotics, research projects, and inter-college competitions.
             </p>
+          </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-              <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-1.5">
-                <div className="flex items-center gap-2 text-slate-900 font-semibold text-xs">
-                  <Award className="w-4 h-4 text-emerald-600" />
-                  <span>Olympiad Coaching</span>
-                </div>
-                <p className="text-[11px] text-slate-600 leading-relaxed">
-                  Rigorous preparation and mentorship for Math, Physics, Chemistry, Biology, and Astronomy Olympiads.
-                </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 pt-2">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-slate-900 font-semibold text-xs">
+                <Award className="w-4 h-4 text-emerald-600" />
+                <span>Olympiad Coaching</span>
               </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Preparation and mentorship for Math, Physics, Chemistry, Biology, and Astronomy Olympiads.
+              </p>
+            </div>
 
-              <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-1.5">
-                <div className="flex items-center gap-2 text-slate-900 font-semibold text-xs">
-                  <Cpu className="w-4 h-4 text-blue-600" />
-                  <span>Robotics &amp; Innovation</span>
-                </div>
-                <p className="text-[11px] text-slate-600 leading-relaxed">
-                  Practical workshops covering embedded microcontrollers, electronics, Python algorithms, and hardware.
-                </p>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-slate-900 font-semibold text-xs">
+                <Cpu className="w-4 h-4 text-blue-600" />
+                <span>Robotics &amp; Innovation</span>
               </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Hands-on workshops covering embedded microcontrollers, electronics, Python algorithms, and hardware.
+              </p>
+            </div>
 
-              <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-1.5">
-                <div className="flex items-center gap-2 text-slate-900 font-semibold text-xs">
-                  <Sparkles className="w-4 h-4 text-purple-600" />
-                  <span>Annual Science Fest</span>
-                </div>
-                <p className="text-[11px] text-slate-600 leading-relaxed">
-                  Host of the Inter-College Science Festival, research project fairs, scientific wall magazines, and quizzes.
-                </p>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-slate-900 font-semibold text-xs">
+                <Sparkles className="w-4 h-4 text-purple-600" />
+                <span>Annual Science Fest</span>
               </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Host of the Inter-College Science Festival, project exhibitions, wall magazines, and quizzes.
+              </p>
             </div>
           </div>
         </div>
 
-        {/* BENTO CARD 2: The 6 Scientific Wings */}
-        <div className="w-full bg-white/75 hover:bg-white/85 backdrop-blur-2xl border border-black/[0.07] rounded-3xl p-6 sm:p-8 shadow-[0_8px_30px_rgba(0,0,0,0.04)] text-left transition-all">
-          <div className="flex items-center justify-between pb-4 border-b border-black/[0.05] mb-5">
-            <div className="space-y-0.5">
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-                The 6 Specialized Wings
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">
-                Six dedicated scientific divisions open to enrolled club members
-              </p>
-            </div>
-            <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
-              Class 11 &amp; 12
-            </span>
+        {/* 6 Scientific Wings */}
+        <div className="p-6 sm:p-8 space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+              Specialized Wings
+            </h2>
+            <span className="text-xs font-medium text-emerald-700">Class 11 &amp; 12</span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <div className="p-4 rounded-2xl bg-white/80 border border-slate-200/90 shadow-xs space-y-1.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
+            <div className="space-y-1">
               <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                <Rocket className="w-4 h-4 text-emerald-600" />
+                <Rocket className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>Astronomy &amp; Astrophysics</span>
               </span>
-              <p className="text-[11px] text-slate-600 leading-relaxed">
-                Stargazing sessions, cosmological simulations, telescope handling, and astronomical observation camps.
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Stargazing sessions, cosmological simulations, telescope handling, and observation camps.
               </p>
             </div>
 
-            <div className="p-4 rounded-2xl bg-white/80 border border-slate-200/90 shadow-xs space-y-1.5">
+            <div className="space-y-1">
               <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                <Atom className="w-4 h-4 text-blue-600" />
+                <Atom className="w-4 h-4 text-blue-600 shrink-0" />
                 <span>Chemistry &amp; Molecular</span>
               </span>
-              <p className="text-[11px] text-slate-600 leading-relaxed">
-                Reaction investigation workshops, organic synthesis study circles, and National Chemistry Olympiad preparation.
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Reaction workshops, organic synthesis study circles, and Chemistry Olympiad training.
               </p>
             </div>
 
-            <div className="p-4 rounded-2xl bg-white/80 border border-slate-200/90 shadow-xs space-y-1.5">
+            <div className="space-y-1">
               <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-purple-600" />
+                <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
                 <span>Biology &amp; Biotechnology</span>
               </span>
-              <p className="text-[11px] text-slate-600 leading-relaxed">
-                Microbiology, genetics exploration, botanical identification, and National Biology Olympiad preparation.
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Microbiology, genetics exploration, botanical study, and Biology Olympiad preparation.
               </p>
             </div>
 
-            <div className="p-4 rounded-2xl bg-white/80 border border-slate-200/90 shadow-xs space-y-1.5">
+            <div className="space-y-1">
               <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                <Award className="w-4 h-4 text-amber-600" />
+                <Award className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>Mathematics &amp; Logic</span>
               </span>
-              <p className="text-[11px] text-slate-600 leading-relaxed">
-                Discrete math, number theory, geometry problem-solving, and intensive training for Bangladesh Math Olympiad.
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Number theory, geometry problem-solving, and Bangladesh Math Olympiad mentoring.
               </p>
             </div>
 
-            <div className="p-4 rounded-2xl bg-white/80 border border-slate-200/90 shadow-xs space-y-1.5">
+            <div className="space-y-1">
               <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-indigo-600" />
+                <Cpu className="w-4 h-4 text-indigo-600 shrink-0" />
                 <span>Robotics &amp; Programming</span>
               </span>
-              <p className="text-[11px] text-slate-600 leading-relaxed">
+              <p className="text-xs text-slate-600 leading-relaxed">
                 Arduino, sensor integration, Python scripting, automated bots, and computing challenges.
               </p>
             </div>
 
-            <div className="p-4 rounded-2xl bg-white/80 border border-slate-200/90 shadow-xs space-y-1.5">
+            <div className="space-y-1">
               <span className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                <FileText className="w-4 h-4 text-rose-600" />
+                <FileText className="w-4 h-4 text-rose-600 shrink-0" />
                 <span>Projects &amp; Publications</span>
               </span>
-              <p className="text-[11px] text-slate-600 leading-relaxed">
-                Scientific wall magazine editorial design, research poster displays, and innovation exhibits.
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Scientific wall magazine editorial design, research posters, and innovation exhibits.
               </p>
             </div>
           </div>
         </div>
 
-        {/* BENTO CARD 3: Flagship Science Fest */}
-        <div className="w-full bg-white/75 hover:bg-white/85 backdrop-blur-2xl border border-black/[0.07] rounded-3xl p-6 sm:p-8 shadow-[0_8px_30px_rgba(0,0,0,0.04)] text-left transition-all">
-          <div className="flex flex-col md:flex-row items-center gap-6 sm:gap-8">
-            <div className="w-full md:w-5/12 rounded-2xl overflow-hidden border border-slate-200/90 bg-slate-100 shadow-sm shrink-0">
-              <img 
-                src="https://plain-apac-prod-public.komododecks.com/202609/24/YmHrAHI7CXKAZBKyvjDY/image.jpg" 
-                alt="1st NGDC Science Fest Event" 
-                className="w-full h-auto object-cover hover:scale-[1.02] transition-transform duration-300"
-                referrerPolicy="no-referrer"
-              />
-            </div>
-            <div className="w-full md:w-7/12 space-y-3.5">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  Annual Event
-                </span>
-                <span className="text-xs text-slate-500 font-medium">NGDC Campus • Rajshahi</span>
-              </div>
-              <h3 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-                The 1st NGDC Science Fest
-              </h3>
-              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-normal">
-                Organized by NGDC Science Club featuring Science Project Displays, Olympiads, Rubik's Cube Speedcubing, Wall Magazines, and Science Quizzes.
-              </p>
-              <div className="pt-1">
-                <a
-                  href="https://facebook.com/events/s/the-1st-new-govt-degree-colleg/1068668486164256/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 py-2.5 px-5 rounded-full bg-[#0071e3] hover:bg-[#0077ed] text-white font-medium text-xs shadow-xs transition-all cursor-pointer group"
-                >
-                  <span>View Fest Details</span>
-                  <ExternalLink className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                </a>
-              </div>
+        {/* Flagship Science Fest */}
+        <div className="p-6 sm:p-8 flex flex-col md:flex-row items-center gap-6 sm:gap-8">
+          <div className="w-full md:w-5/12 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shrink-0">
+            <img 
+              src="https://plain-apac-prod-public.komododecks.com/202609/24/YmHrAHI7CXKAZBKyvjDY/image.jpg" 
+              alt="1st NGDC Science Fest Event" 
+              loading="lazy"
+              decoding="async"
+              className="w-full h-auto object-cover"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          <div className="w-full md:w-7/12 space-y-3">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 block">
+              Annual Campus Event • Rajshahi
+            </span>
+            <h3 className="text-xl font-bold text-slate-900 tracking-tight">
+              The 1st NGDC Science Fest
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Organized by NGDC Science Club featuring Science Project Displays, Olympiads, Rubik's Cube Speedcubing, Wall Magazines, and Science Quizzes.
+            </p>
+            <div className="pt-1">
+              <a
+                href="https://facebook.com/events/s/the-1st-new-govt-degree-colleg/1068668486164256/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 py-2 px-4 rounded-full bg-slate-900 hover:bg-black text-white font-medium text-xs transition-all cursor-pointer group"
+              >
+                <span>View Fest Details</span>
+                <ExternalLink className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </a>
             </div>
           </div>
         </div>
-
       </div>
 
     </div>
@@ -570,11 +515,12 @@ export default function App() {
   const [currentView, setCurrentView] = useState<ViewType>(resolveCurrentView);
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [liveNotices, setLiveNotices] = useState<ClubNotice[]>([]);
+  const [liveNotices, setLiveNotices] = useState<ClubNotice[]>(() => getCachedNotices());
   const [selectedNotice, setSelectedNotice] = useState<ClubNotice | null>(null);
-  const [activeMemberCount, setActiveMemberCount] = useState<number | null>(null);
+  const [copiedHomeNoticeLink, setCopiedHomeNoticeLink] = useState(false);
+  const [activeMemberCount, setActiveMemberCount] = useState<number | null>(() => getCachedActiveMemberCount());
 
-  // Real-time listener for notices: guarantees latest notices on banner across all devices without refresh
+  // Real-time listener for notices
   useEffect(() => {
     const unsubscribe = subscribeToNotices((data) => {
       setLiveNotices(data);
@@ -582,7 +528,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Real-time listener for active (approved) members count
+  // Lightweight listener for active (approved) members count
   useEffect(() => {
     const unsubscribe = subscribeToActiveMemberCount((count) => {
       setActiveMemberCount(count);
@@ -591,7 +537,7 @@ export default function App() {
   }, []);
 
   // Registration portal open/closed setting
-  const [registrationSetting, setRegistrationSetting] = useState<MembershipRegistrationSetting>(DEFAULT_REGISTRATION_SETTING);
+  const [registrationSetting, setRegistrationSetting] = useState<MembershipRegistrationSetting>(() => getCachedRegistrationSetting());
 
   // Real-time listener for registration setting
   useEffect(() => {
@@ -880,9 +826,9 @@ export default function App() {
       {/* Subtle Luminous Science Canvas Animation Background */}
       <ScienceBackground />
 
-      {/* Modern Apple macOS Floating Glass Navigation Bar */}
+      {/* Modern Floating Navigation Bar */}
       <header className="fixed top-3 sm:top-4 inset-x-0 mx-auto max-w-5xl z-50 px-3 sm:px-4">
-        <div className="w-full bg-white/75 hover:bg-white/85 backdrop-blur-2xl border border-black/[0.08] rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.06)] px-3 sm:px-4 py-2 flex items-center justify-between transition-all">
+        <div className="w-full bg-white/90 backdrop-blur-md border border-black/[0.08] rounded-full shadow-[0_6px_24px_rgba(0,0,0,0.05)] px-3 sm:px-4 py-2 flex items-center justify-between transition-all">
           {/* Brand Identity */}
           <button
             type="button"
@@ -890,10 +836,10 @@ export default function App() {
             className="flex items-center gap-2.5 cursor-pointer text-left group"
           >
             <img
-              src="https://plain-apac-prod-public.komododecks.com/202609/21/iFpbvbXJaON4rnVidFRy/image.png"
+              src="/assets/club-logo.png"
               alt="NGDC Science Club"
+              decoding="async"
               className="w-7 h-7 sm:w-8 sm:h-8 object-contain group-hover:scale-105 transition-transform"
-              referrerPolicy="no-referrer"
             />
             <div className="flex flex-col">
               <span className="text-xs sm:text-sm font-semibold text-slate-900 tracking-tight leading-tight flex items-center gap-1.5">
@@ -997,7 +943,7 @@ export default function App() {
         {menuOpen && (
           <div 
             ref={menuRef}
-            className="md:hidden mt-2 p-3 bg-white/95 backdrop-blur-2xl border border-black/[0.08] rounded-3xl shadow-xl space-y-1 animate-in fade-in zoom-in-95 duration-150 text-slate-800"
+            className="md:hidden mt-2 p-3 bg-white border border-black/[0.08] rounded-2xl shadow-xl space-y-1 animate-in fade-in zoom-in-95 duration-150 text-slate-800"
           >
             <button
               type="button"
@@ -1057,10 +1003,10 @@ export default function App() {
         )}
       </header>
 
-      {/* Selected Notice Modal (When clicking scrolling marquee notice) - Apple Frosted Modal */}
+      {/* Selected Notice Modal (When clicking homepage announcement) */}
       {selectedNotice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md animate-in fade-in">
-          <div className="bg-white/95 backdrop-blur-2xl rounded-3xl border border-slate-200/90 shadow-2xl max-w-lg w-full p-6 text-slate-800 relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 text-slate-800 relative">
             <button 
               type="button"
               onClick={() => setSelectedNotice(null)}
@@ -1108,7 +1054,38 @@ export default function App() {
               </div>
             )}
 
-            <div className="flex justify-end pt-2">
+            <div className="flex items-center justify-between gap-2 pt-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  const shareUrl = `${window.location.origin}/notices?id=${encodeURIComponent(selectedNotice.id)}`;
+                  try {
+                    await navigator.clipboard.writeText(shareUrl);
+                    setCopiedHomeNoticeLink(true);
+                    setTimeout(() => setCopiedHomeNoticeLink(false), 2200);
+                  } catch {
+                    // ignore clipboard failure
+                  }
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors inline-flex items-center gap-1.5 border ${
+                  copiedHomeNoticeLink
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
+                }`}
+              >
+                {copiedHomeNoticeLink ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Link Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Copy Link</span>
+                  </>
+                )}
+              </button>
+
               <button
                 type="button"
                 onClick={() => setSelectedNotice(null)}
@@ -1206,56 +1183,51 @@ export default function App() {
           activeMemberCount={activeMemberCount}
         />
       ) : (
-        /* Form Container with macOS layout and top clearance for floating navbar */
+        /* Registration Form Container */
         <div className="w-full max-w-3xl relative z-10 px-4 sm:px-6 pt-24 sm:pt-28 pb-12 formal-page-enter">
-          {/* Back to Home Navigation & Check Status */}
-          <div className="mb-5 flex items-center justify-between">
+          {/* Top Navigation Bar */}
+          <div className="mb-6 flex items-center justify-between">
             <button
               type="button"
               onClick={() => navigateTo('home')}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 hover:bg-white text-slate-700 hover:text-slate-900 text-xs font-medium border border-slate-200/90 shadow-xs transition-all cursor-pointer group backdrop-blur-md"
+              className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 text-xs font-medium border border-slate-200 shadow-2xs transition-colors cursor-pointer"
             >
-              <ArrowLeft className="w-3.5 h-3.5 text-emerald-600 group-hover:-translate-x-0.5 transition-transform" />
+              <ArrowLeft className="w-3.5 h-3.5 text-emerald-600" />
               <span>Back to Home</span>
             </button>
 
             <button
               type="button"
               onClick={() => navigateTo('status')}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold border border-emerald-200 shadow-xs transition-all cursor-pointer backdrop-blur-md"
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium border border-slate-200 shadow-2xs transition-colors cursor-pointer"
             >
               <Search className="w-3.5 h-3.5 text-emerald-600" />
               <span>Check Status</span>
             </button>
           </div>
         
-          {/* Simple Clean Header: Official Club Logo with No Background */}
-          <div className="text-center mb-7 space-y-1.5">
-            <div className="flex justify-center mb-3">
+          {/* Formal Header */}
+          <div className="text-center mb-7 space-y-2">
+            <div className="flex justify-center">
               <img 
-                src="https://plain-apac-prod-public.komododecks.com/202609/21/iFpbvbXJaON4rnVidFRy/image.png" 
+                src="/assets/club-logo.png" 
                 alt="NGDC Science Club Logo" 
-                className="h-20 sm:h-24 w-auto object-contain hover:scale-105 transition-transform drop-shadow-[0_10px_25px_rgba(0,0,0,0.06)]"
-                referrerPolicy="no-referrer"
+                decoding="async"
+                className="h-16 sm:h-20 w-auto object-contain"
               />
             </div>
             
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-semibold mb-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Session 2026–2027 • HSC 27 &amp; HSC 28</span>
-            </div>
-
-            <h1 className="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-              NGDC SCIENCE CLUB
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+              Membership Registration
             </h1>
-            <p className="text-xs sm:text-sm font-semibold text-emerald-700 tracking-wider uppercase">
-              Official Membership Registration Portal
+            <p className="text-xs sm:text-sm text-slate-500">
+              NGDC Science Club • New Government Degree College, Rajshahi (HSC 27 &amp; HSC 28)
             </p>
           </div>
 
-        {/* SUBMISSION SUCCESS VIEW - APPLE LIGHT FROSTED CARD */}
+        {/* SUBMISSION SUCCESS VIEW */}
         {submittedData ? (
-          <div className="bg-white/85 backdrop-blur-2xl rounded-3xl border border-slate-200/90 shadow-[0_8px_30px_rgb(0,0,0,0.06)] p-7 sm:p-9 text-center animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-7 sm:p-9 text-center animate-in fade-in zoom-in-95 duration-200">
             <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto mb-4 shadow-sm">
               <CheckCircle2 className="w-8 h-8 text-emerald-600" />
             </div>
@@ -1452,19 +1424,19 @@ export default function App() {
             </div>
           </div>
         ) : registrationSetting.status !== 'open' ? (
-          /* FORMAL REGISTRATION NOTICE (FORM REPLACED BY FORMAL CLOSED / COMING SOON NOTICE - APPLE LIGHT THEME) */
-          <div className={`backdrop-blur-2xl rounded-3xl border shadow-[0_8px_30px_rgb(0,0,0,0.06)] p-6 sm:p-9 text-center animate-in fade-in zoom-in-95 duration-200 space-y-6 ${
+          /* FORMAL REGISTRATION NOTICE (CLOSED / COMING SOON) */
+          <div className={`bg-white rounded-2xl border shadow-sm p-6 sm:p-9 text-center animate-in fade-in zoom-in-95 duration-200 space-y-6 ${
             registrationSetting.status === 'closed'
-              ? 'bg-white/85 border-rose-200'
-              : 'bg-white/85 border-amber-200'
+              ? 'border-rose-200'
+              : 'border-amber-200'
           }`}>
-            {/* Club Identity Header with Official Logo */}
+            {/* Club Identity Header */}
             <div className="flex flex-col items-center justify-center gap-2">
               <img 
-                src="https://plain-apac-prod-public.komododecks.com/202609/21/iFpbvbXJaON4rnVidFRy/image.png" 
+                src="/assets/club-logo.png" 
                 alt="NGDC Science Club Logo" 
-                className="h-16 sm:h-20 w-auto object-contain drop-shadow-[0_4px_16px_rgba(0,0,0,0.08)]"
-                referrerPolicy="no-referrer"
+                decoding="async"
+                className="h-16 sm:h-20 w-auto object-contain"
               />
               <div className="text-center">
                 <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-wider uppercase">
@@ -1597,120 +1569,85 @@ export default function App() {
             </div>
           </div>
         ) : (
-          /* REGISTRATION FORM - APPLE TRANSLUCENT FROSTED CARD */
+          /* REGISTRATION FORM - CLEAN SINGLE-SURFACE FORMAL LAYOUT */
           <form 
             onSubmit={handleSubmit}
-            className="bg-white/85 backdrop-blur-2xl rounded-3xl border border-slate-200/90 shadow-[0_12px_40px_rgba(0,0,0,0.06)] p-6 sm:p-10 space-y-7 transition-all text-left"
+            className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-10 space-y-8 text-left"
             id="ngdc-science-club-form"
           >
-            {/* macOS Window Title Bar */}
-            <div className="flex items-center justify-between pb-4 border-b border-black/[0.06]">
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-[#ff5f56] inline-block shadow-2xs" />
-                <span className="w-3 h-3 rounded-full bg-[#ffbd2e] inline-block shadow-2xs" />
-                <span className="w-3 h-3 rounded-full bg-[#27c93f] inline-block shadow-2xs" />
-              </div>
-              <span className="text-[11px] font-mono text-slate-400">membership_application.form</span>
-              <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2.5 py-0.5 rounded-full">
-                Admission Form
-              </span>
-            </div>
-
-            {/* Quick Link Banner for Signed-In Member / Checking Status */}
-            {authUser ? (
-              <div className="p-3.5 rounded-2xl bg-emerald-50/90 border border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2 text-emerald-900 font-medium">
-                  <UserCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Signed in as <strong>{authUser.email}</strong>. You can view or edit your submitted info from My Dashboard.</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => navigateTo('dashboard')}
-                  className="px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs transition-all cursor-pointer shrink-0 flex items-center gap-1.5"
-                >
-                  <span>My Dashboard</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ) : (
-              <div className="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2 text-slate-600">
-                  <Search className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Already registered? Sign in to edit your profile or verify your application status.</span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
+            {/* Compact Status / Sign-in Line */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-5 border-b border-slate-100 text-xs">
+              {authUser ? (
+                <>
+                  <span className="text-slate-600">
+                    Signed in as <strong className="text-slate-900">{authUser.email}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => navigateTo('dashboard')}
+                    className="inline-flex items-center gap-1 font-semibold text-emerald-700 hover:text-emerald-800 cursor-pointer"
+                  >
+                    <span>Open My Dashboard</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="text-slate-500">Already registered with the club?</span>
                   <button
                     type="button"
                     onClick={() => navigateTo('login')}
-                    className="px-3.5 py-1.5 rounded-full bg-slate-900 hover:bg-black text-white text-xs font-semibold shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
+                    className="inline-flex items-center gap-1.5 font-semibold text-slate-800 hover:text-emerald-700 cursor-pointer"
                   >
                     <LogIn className="w-3.5 h-3.5" />
-                    <span>Sign In</span>
+                    <span>Member Sign In</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => navigateTo('status')}
-                    className="px-3.5 py-1.5 rounded-full bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <span>Check Status</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
+                </>
+              )}
+            </div>
 
             {errorMsg && (
-              <div className="p-4 rounded-2xl bg-rose-50/90 border border-rose-200 flex items-center gap-3 text-rose-800 text-xs font-bold animate-in fade-in">
+              <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 flex items-center gap-3 text-rose-800 text-xs font-semibold animate-in fade-in">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                 <span>{errorMsg}</span>
               </div>
             )}
 
-            {/* SECTION 1: APPLICANT IDENTITY & PHOTOGRAPH */}
-            <div className="p-5 sm:p-6 rounded-2xl bg-slate-50/60 border border-slate-200/80 space-y-4">
-              <div className="flex items-center gap-2 pb-3 border-b border-slate-200/60">
-                <div className="w-6 h-6 rounded-full bg-emerald-100/80 text-emerald-800 flex items-center justify-center text-xs font-bold">
-                  1
-                </div>
-                <div>
-                  <h3 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">
-                    Applicant Identity &amp; Photograph
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Provide formal passport photograph and full legal name
-                  </p>
-                </div>
-              </div>
+            {/* SECTION 1: PERSONAL INFORMATION & PHOTOGRAPH */}
+            <div className="space-y-5">
+              <h2 className="text-sm font-bold text-slate-900 tracking-tight">
+                Personal Information
+              </h2>
 
-              {/* Photo Upload Zone */}
-              <div id="photo-upload-section" className="space-y-3">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    Passport Size Photo <span className="text-emerald-600 font-bold">*</span>
+              {/* Passport Photo Upload */}
+              <div id="photo-upload-section" className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-semibold text-slate-700">
+                    Passport Size Photo <span className="text-rose-500">*</span>
                   </label>
                   {formData.photo && (
                     <button
                       type="button"
                       onClick={() => setAdjustingPhoto(formData.photo)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold transition-all cursor-pointer shadow-xs"
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 cursor-pointer"
                     >
-                      <Scissors className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Adjust / Crop Photo</span>
+                      <Scissors className="w-3.5 h-3.5" />
+                      <span>Crop / Adjust</span>
                     </button>
                   )}
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-center gap-5 p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+                <div className="flex items-center gap-4">
                   <div 
                     onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
                     onDragLeave={() => setDragActive(false)}
                     onDrop={handleDrop}
                     onClick={() => fileInputRef.current?.click()}
-                    className={`relative w-28 h-32 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center text-center cursor-pointer transition-all overflow-hidden bg-slate-50 shrink-0 ${
+                    className={`relative w-24 h-28 rounded-xl border-2 border-dashed flex flex-col items-center justify-center text-center cursor-pointer transition-all overflow-hidden bg-slate-50 shrink-0 ${
                       dragActive 
-                        ? 'border-emerald-500 bg-emerald-50/50 shadow-sm' 
+                        ? 'border-emerald-500 bg-emerald-50/40' 
                         : formData.photo 
-                          ? 'border-emerald-500 shadow-xs' 
+                          ? 'border-emerald-500' 
                           : 'border-slate-300 hover:border-emerald-500 hover:bg-slate-100/70'
                     }`}
                     id="photo-upload-area"
@@ -1722,26 +1659,23 @@ export default function App() {
                           alt="Uploaded student preview" 
                           className="w-full h-full object-cover" 
                         />
-                        <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">
-                          <Camera className="w-5 h-5 mb-0.5 text-white" />
-                          <span className="text-[10px] font-semibold">Change</span>
+                        <div className="absolute inset-0 bg-slate-900/55 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">
+                          <Camera className="w-4 h-4 mb-0.5" />
+                          <span className="text-[10px] font-medium">Change</span>
                         </div>
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); removePhoto(); }}
-                          className="absolute top-1.5 right-1.5 p-1 bg-white/95 text-slate-600 hover:text-rose-600 rounded-full shadow-xs transition-colors"
+                          className="absolute top-1 right-1 p-1 bg-white/95 text-slate-600 hover:text-rose-600 rounded-full shadow-xs"
                           title="Remove photo"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-3 h-3" />
                         </button>
                       </div>
                     ) : (
                       <div className="p-2 flex flex-col items-center">
-                        <div className="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center mb-1 text-slate-500 shadow-2xs">
-                          <Camera className="w-4 h-4" />
-                        </div>
-                        <span className="text-[11px] font-bold text-slate-800">Upload Photo</span>
-                        <span className="text-[9px] text-slate-400 font-medium">Max 8MB</span>
+                        <Camera className="w-4 h-4 text-slate-400 mb-1" />
+                        <span className="text-[11px] font-semibold text-slate-700">Upload</span>
                       </div>
                     )}
                     <input 
@@ -1754,30 +1688,24 @@ export default function App() {
                     />
                   </div>
 
-                  <div className="text-center sm:text-left text-xs text-slate-600 space-y-1.5 flex-1">
-                    <p className="font-bold text-slate-900 flex items-center justify-center sm:justify-start gap-1">
-                      <span>Official Formal Student Photograph</span>
-                      <span className="text-emerald-600 font-bold">*</span>
-                    </p>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">
-                      Upload a front-facing passport photograph with clear lighting. Drag and drop file or click the upload box. Zoom, rotation, and face centering can be adjusted after selection.
-                    </p>
+                  <div className="text-xs text-slate-500 space-y-1.5">
+                    <p className="text-slate-700 font-medium">Front-facing student photograph</p>
+                    <p>JPG, PNG or WebP up to 8MB.</p>
                     {formData.photo && (
-                      <div className="flex items-center gap-2 pt-1 flex-wrap justify-center sm:justify-start">
+                      <div className="flex items-center gap-3 pt-0.5">
                         <button
                           type="button"
                           onClick={() => setAdjustingPhoto(formData.photo)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold border border-emerald-200 cursor-pointer transition-colors shadow-2xs"
+                          className="text-xs font-semibold text-emerald-700 hover:underline cursor-pointer"
                         >
-                          <Scissors className="w-3 h-3 text-emerald-600" />
-                          <span>Crop &amp; Center</span>
+                          Crop &amp; Center
                         </button>
                         <button
                           type="button"
                           onClick={() => fileInputRef.current?.click()}
-                          className="px-3 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium cursor-pointer transition-colors"
+                          className="text-xs font-medium text-slate-600 hover:text-slate-900 hover:underline cursor-pointer"
                         >
-                          Change Photo
+                          Replace
                         </button>
                       </div>
                     )}
@@ -1785,10 +1713,10 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Full Name Field */}
+              {/* Full Name */}
               <div>
-                <label htmlFor="student-name" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Full Name <span className="text-emerald-600 font-bold">*</span>
+                <label htmlFor="student-name" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Full Name <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -1798,36 +1726,26 @@ export default function App() {
                     type="text"
                     id="student-name"
                     required
-                    placeholder="Enter full name as registered in college"
+                    placeholder="Full name as registered in college"
                     value={formData.name}
                     onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 focus:bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium shadow-xs"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 outline-none transition-all font-medium"
                   />
                 </div>
               </div>
             </div>
 
-            {/* SECTION 2: CONTACT & COMMUNICATIONS */}
-            <div className="p-5 sm:p-6 rounded-2xl bg-slate-50/60 border border-slate-200/80 space-y-4">
-              <div className="flex items-center gap-2 pb-3 border-b border-slate-200/60">
-                <div className="w-6 h-6 rounded-full bg-emerald-100/80 text-emerald-800 flex items-center justify-center text-xs font-bold">
-                  2
-                </div>
-                <div>
-                  <h3 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">
-                    Contact &amp; Communications
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Used for official club notices, event invites, and emergency outreach
-                  </p>
-                </div>
-              </div>
+            {/* SECTION 2: CONTACT & ACCOUNT CREDENTIALS */}
+            <div className="pt-7 border-t border-slate-100 space-y-5">
+              <h2 className="text-sm font-bold text-slate-900 tracking-tight">
+                Contact &amp; Account Login
+              </h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Phone Number */}
                 <div>
-                  <label htmlFor="student-phone" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Phone Number <span className="text-emerald-600 font-bold">*</span>
+                  <label htmlFor="student-phone" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Phone Number <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -1840,34 +1758,26 @@ export default function App() {
                       placeholder="01XXXXXXXXX"
                       value={formData.phone}
                       onChange={(e) => handlePhoneChange(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 focus:bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-mono font-medium shadow-xs"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 outline-none transition-all font-mono font-medium"
                     />
                   </div>
                 </div>
 
                 {/* WhatsApp Number */}
                 <div>
-                  <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
-                    <label htmlFor="student-whatsapp" className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                      WhatsApp Number <span className="text-emerald-600 font-bold">*</span>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label htmlFor="student-whatsapp" className="text-xs font-semibold text-slate-700">
+                      WhatsApp Number <span className="text-rose-500">*</span>
                     </label>
-                    {/* Apple Style Same as Phone Toggle */}
-                    <label 
-                      htmlFor="same-phone-tick" 
-                      className={`inline-flex items-center gap-1.5 cursor-pointer text-xs select-none px-2.5 py-0.5 rounded-full border transition-all ${
-                        formData.sameAsPhone 
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-semibold' 
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
+                    <label htmlFor="same-phone-tick" className="inline-flex items-center gap-1.5 cursor-pointer text-xs text-slate-600 select-none">
                       <input
                         type="checkbox"
                         id="same-phone-tick"
                         checked={formData.sameAsPhone}
                         onChange={(e) => handleSameAsPhoneToggle(e.target.checked)}
-                        className="w-3 h-3 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                        className="w-3.5 h-3.5 accent-emerald-600 rounded cursor-pointer"
                       />
-                      <span className="text-[10px]">Same as Phone</span>
+                      <span>Same as phone</span>
                     </label>
                   </div>
 
@@ -1883,10 +1793,10 @@ export default function App() {
                       placeholder="01XXXXXXXXX"
                       value={formData.whatsapp}
                       onChange={(e) => setFormData(prev => ({ ...prev, whatsapp: e.target.value }))}
-                      className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm outline-none transition-all font-mono font-medium shadow-xs ${
+                      className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm outline-none transition-all font-mono font-medium ${
                         formData.sameAsPhone
-                          ? 'bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed'
-                          : 'bg-white hover:border-slate-300 focus:bg-white border-slate-200 text-slate-900 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20'
+                          ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
+                          : 'bg-white hover:border-slate-300 border-slate-200 text-slate-900 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15'
                       }`}
                     />
                   </div>
@@ -1895,8 +1805,8 @@ export default function App() {
 
               {/* Email Address */}
               <div>
-                <label htmlFor="student-email" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Email Address <span className="text-emerald-600 font-bold">*</span>
+                <label htmlFor="student-email" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Email Address <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -1909,16 +1819,16 @@ export default function App() {
                     placeholder="student@gmail.com"
                     value={formData.email}
                     onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 focus:bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium shadow-xs"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 outline-none transition-all font-medium"
                   />
                 </div>
               </div>
 
-              {/* Account Password for Member Login & My Dashboard */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              {/* Account Password */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="student-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Create Password <span className="text-emerald-600 font-bold">*</span>
+                  <label htmlFor="student-password" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Password <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -1930,10 +1840,10 @@ export default function App() {
                       required
                       minLength={6}
                       autoComplete="new-password"
-                      placeholder="At least 6 characters"
+                      placeholder="Minimum 6 characters"
                       value={accountPassword}
                       onChange={(e) => setAccountPassword(e.target.value)}
-                      className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 focus:bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium shadow-xs"
+                      className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 outline-none transition-all font-medium"
                     />
                     <button
                       type="button"
@@ -1947,8 +1857,8 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label htmlFor="student-confirm-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Confirm Password <span className="text-emerald-600 font-bold">*</span>
+                  <label htmlFor="student-confirm-password" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Confirm Password <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -1963,37 +1873,23 @@ export default function App() {
                       placeholder="Re-enter password"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 focus:bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium shadow-xs"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 outline-none transition-all font-medium"
                     />
                   </div>
                 </div>
-                <p className="sm:col-span-2 text-[11px] text-slate-500 -mt-1">
-                  Use your email and password later to sign in and edit your profile from My Dashboard.
-                </p>
               </div>
             </div>
 
-            {/* SECTION 3: ACADEMIC DETAILS & SESSION */}
-            <div className="p-5 sm:p-6 rounded-2xl bg-slate-50/60 border border-slate-200/80 space-y-4">
-              <div className="flex items-center gap-2 pb-3 border-b border-slate-200/60">
-                <div className="w-6 h-6 rounded-full bg-emerald-100/80 text-emerald-800 flex items-center justify-center text-xs font-bold">
-                  3
-                </div>
-                <div>
-                  <h3 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">
-                    Academic Record &amp; College Batch
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    College identity, section division, and academic session
-                  </p>
-                </div>
-              </div>
+            {/* SECTION 3: ACADEMIC DETAILS */}
+            <div className="pt-7 border-t border-slate-100 space-y-5">
+              <h2 className="text-sm font-bold text-slate-900 tracking-tight">
+                Academic Information
+              </h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Student ID / Roll */}
                 <div>
-                  <label htmlFor="student-id" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Student ID / College Roll <span className="text-emerald-600 font-bold">*</span>
+                  <label htmlFor="student-id" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    College Roll / Student ID <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -2003,18 +1899,17 @@ export default function App() {
                       type="text"
                       id="student-id"
                       required
-                      placeholder="Enter college roll or student ID"
+                      placeholder="e.g. 20251588"
                       value={formData.studentId}
                       onChange={(e) => setFormData(prev => ({ ...prev, studentId: e.target.value }))}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 focus:bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-mono font-medium shadow-xs"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 outline-none transition-all font-mono font-medium"
                     />
                   </div>
                 </div>
 
-                {/* Date of Birth */}
                 <div>
-                  <label htmlFor="student-dob" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Date of Birth <span className="text-emerald-600 font-bold">*</span>
+                  <label htmlFor="student-dob" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Date of Birth <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -2026,18 +1921,18 @@ export default function App() {
                       required
                       value={formData.dob}
                       onChange={(e) => setFormData(prev => ({ ...prev, dob: e.target.value }))}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 focus:bg-white text-slate-900 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-mono shadow-xs"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 text-slate-900 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 outline-none transition-all font-mono"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Section Selector (A, B, C, D) */}
+              {/* Section Selector */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                  College Section <span className="text-emerald-600 font-bold">*</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  College Section <span className="text-rose-500">*</span>
                 </label>
-                <div className="grid grid-cols-4 gap-2 sm:gap-3" id="section-selector-group">
+                <div className="grid grid-cols-4 gap-2.5" id="section-selector-group">
                   {(['A', 'B', 'C', 'D'] as SectionType[]).map((sec) => {
                     const isSelected = formData.section === sec;
                     return (
@@ -2046,10 +1941,10 @@ export default function App() {
                         type="button"
                         id={`section-${sec.toLowerCase()}`}
                         onClick={() => setFormData(prev => ({ ...prev, section: sec }))}
-                        className={`py-2.5 px-3 rounded-xl border text-center font-bold text-xs transition-all cursor-pointer ${
+                        className={`py-2.5 px-3 rounded-xl border text-center font-semibold text-xs transition-colors cursor-pointer ${
                           isSelected
-                            ? 'bg-slate-900 border-slate-900 text-white shadow-xs font-black'
-                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
+                            ? 'bg-slate-900 border-slate-900 text-white'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                         }`}
                       >
                         Section {sec}
@@ -2059,10 +1954,10 @@ export default function App() {
                 </div>
               </div>
 
-              {/* HSC Batches (HSC 27, HSC 28) */}
+              {/* HSC Batch */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                  HSC Batch Session <span className="text-emerald-600 font-bold">*</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  HSC Batch <span className="text-rose-500">*</span>
                 </label>
                 <div className="grid grid-cols-2 gap-3" id="batch-selector-group">
                   {(['HSC 27', 'HSC 28'] as BatchType[]).map((batch) => {
@@ -2073,24 +1968,22 @@ export default function App() {
                         type="button"
                         id={`batch-${batch.replace(/\s+/g, '-').toLowerCase()}`}
                         onClick={() => setFormData(prev => ({ ...prev, batch }))}
-                        className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                        className={`px-4 py-3 rounded-xl border text-left transition-colors cursor-pointer flex items-center justify-between ${
                           isSelected
-                            ? 'bg-emerald-50/90 border-emerald-400 shadow-xs ring-1 ring-emerald-300'
-                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                            ? 'bg-emerald-50 border-emerald-500 text-slate-900'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                         }`}
                       >
                         <div>
-                          <span className={`text-sm font-extrabold block ${isSelected ? 'text-slate-900' : 'text-slate-800'}`}>
-                            {batch}
-                          </span>
-                          <span className="text-[11px] text-slate-500 font-medium">
-                            {batch === 'HSC 27' ? 'Class 12 • Senior Science' : 'Class 11 • Junior Science'}
+                          <span className="text-sm font-bold block">{batch}</span>
+                          <span className="text-[11px] text-slate-500">
+                            {batch === 'HSC 27' ? 'Class 12 Science' : 'Class 11 Science'}
                           </span>
                         </div>
-                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
-                          isSelected ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 bg-white'
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                          isSelected ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300'
                         }`}>
-                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
                         </div>
                       </button>
                     );
@@ -2099,188 +1992,137 @@ export default function App() {
               </div>
             </div>
 
-            {/* SECTION 4: SCIENTIFIC WINGS & TALENTS */}
-            <div className="p-5 sm:p-6 rounded-2xl bg-slate-50/60 border border-slate-200/80 space-y-5">
-              <div className="flex items-center gap-2 pb-3 border-b border-slate-200/60">
-                <div className="w-6 h-6 rounded-full bg-emerald-100/80 text-emerald-800 flex items-center justify-center text-xs font-bold">
-                  4
-                </div>
-                <div>
-                  <h3 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">
-                    Scientific Wings, Talents &amp; Experience
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Choose your focus disciplines and co-curricular strengths
-                  </p>
-                </div>
-              </div>
+            {/* SECTION 4: WINGS, SKILLS & EXPERIENCE */}
+            <div className="pt-7 border-t border-slate-100 space-y-5">
+              <h2 className="text-sm font-bold text-slate-900 tracking-tight">
+                Interests &amp; Skills
+              </h2>
 
-              {/* Interested Segments Checkboxes (Mandatory) */}
+              {/* Interested Segments */}
               <div>
-                <div className="mb-2">
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    Interested Science Wings <span className="text-emerald-600 font-bold">*</span>
-                  </label>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Select at least one discipline you would like to participate in (Mandatory):
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5" id="segments-checkbox-group">
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  Interested Science Wings <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" id="segments-checkbox-group">
                   {CLUB_SEGMENTS.map((segment) => {
                     const isChecked = formData.interestedSegments.includes(segment);
                     return (
                       <label
                         key={segment}
                         onClick={() => toggleSegment(segment)}
-                        className={`flex items-start gap-3 p-3 rounded-2xl border cursor-pointer select-none transition-all ${
+                        className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border cursor-pointer select-none transition-colors ${
                           isChecked 
-                            ? 'bg-emerald-50/90 border-emerald-300 ring-1 ring-emerald-300 text-emerald-950 font-semibold shadow-xs' 
-                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                            ? 'bg-emerald-50/80 border-emerald-400 text-emerald-950 font-semibold' 
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                         }`}
                       >
-                        <div className={`mt-0.5 w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
                           isChecked ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-300'
                         }`}>
                           {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
                         </div>
-                        <span className="text-xs font-bold leading-snug">
-                          {segment}
-                        </span>
+                        <span className="text-xs leading-snug">{segment}</span>
                       </label>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Skills & Co-Curricular Talents */}
+              {/* Skills */}
               <div>
-                <div className="mb-2">
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    Skills &amp; Technical Talents <span className="text-emerald-600 font-bold">*</span>
-                  </label>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Select your skills across technology, design, coordination, and lab work (Select at least one):
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5" id="skills-checkbox-group">
+                <label className="block text-xs font-semibold text-slate-700 mb-2">
+                  Skills &amp; Talents <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2" id="skills-checkbox-group">
                   {((registrationSetting.skills && registrationSetting.skills.length > 0) ? registrationSetting.skills : DEFAULT_SKILL_OPTIONS).map((skill) => {
                     const isChecked = (formData.skills || []).includes(skill);
                     return (
                       <label
                         key={skill}
                         onClick={() => toggleSkill(skill)}
-                        className={`flex items-start gap-2.5 p-3 rounded-2xl border cursor-pointer select-none transition-all ${
+                        className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border cursor-pointer select-none transition-colors ${
                           isChecked 
-                            ? 'bg-emerald-50/90 border-emerald-300 ring-1 ring-emerald-300 text-emerald-950 font-semibold shadow-xs' 
-                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                            ? 'bg-emerald-50/80 border-emerald-400 text-emerald-950 font-semibold' 
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                         }`}
                       >
-                        <div className={`mt-0.5 w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
                           isChecked ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-300'
                         }`}>
                           {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
                         </div>
-                        <span className="text-xs font-bold leading-snug">
-                          {skill}
-                        </span>
+                        <span className="text-xs leading-snug">{skill}</span>
                       </label>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Experience or Achievements */}
+              {/* Experience */}
               <div>
-                <div className="mb-1.5">
-                  <label htmlFor="experience-achievements" className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    Experience or Achievements <span className="text-emerald-600 font-bold">*</span>
-                  </label>
-                </div>
+                <label htmlFor="experience-achievements" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Experience or Achievements <span className="text-rose-500">*</span>
+                </label>
                 <textarea
                   id="experience-achievements"
                   rows={3}
                   required
-                  placeholder="Share your past science olympiad participation, science projects, coding skills, or type 'None' if you are beginning your scientific journey"
+                  placeholder="List past Olympiads, science projects, skills, or write 'None'"
                   value={formData.experienceAchievements || ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, experienceAchievements: e.target.value }))}
-                  className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 focus:bg-white text-slate-900 placeholder:text-slate-400 text-xs sm:text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium leading-relaxed resize-y shadow-xs"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 outline-none transition-all leading-relaxed resize-y"
                 />
               </div>
             </div>
 
-            {/* SECTION 5: RULES & UNDERTAKING */}
-            <div className="rounded-2xl p-5 sm:p-6 bg-slate-50/90 border border-slate-200/90 space-y-4 shadow-xs" id="rules-regulations-card">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs shrink-0 border border-emerald-200">
-                  <ShieldCheck className="w-5 h-5 text-emerald-700" />
-                </div>
-                <div>
-                  <h4 className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide">
-                    Club Rules &amp; Regulations
-                  </h4>
-                  <p className="text-[11px] text-emerald-700 font-semibold">
-                    Official code of conduct and attendance requirements
-                  </p>
-                </div>
-              </div>
+            {/* SECTION 5: CLUB RULES & DECLARATION */}
+            <div className="pt-7 border-t border-slate-100 space-y-4" id="rules-regulations-card">
+              <h2 className="text-sm font-bold text-slate-900 tracking-tight">
+                Club Rules &amp; Declaration
+              </h2>
 
-              <div className="space-y-2.5 text-xs text-slate-700 leading-relaxed font-medium pl-1">
-                <div className="flex items-start gap-2.5">
-                  <span className="font-black text-emerald-600 shrink-0">1.</span>
-                  <p>
-                    <strong className="text-slate-900 font-bold">Attendance &amp; Cancellation:</strong> Missing two (2) consecutive club sessions, workshops, or weekly meetings without prior notice or valid written approval will result in automatic cancellation of club membership.
-                  </p>
-                </div>
-                <div className="flex items-start gap-2.5">
-                  <span className="font-black text-emerald-600 shrink-0">2.</span>
-                  <p>
-                    <strong className="text-slate-900 font-bold">Mandatory Olympiad Participation:</strong> All members must actively prepare for and regularly participate in Science Olympiads (Math, Physics, Bio, Chem, Informatics, Astronomy), science fairs, and project exhibitions.
-                  </p>
-                </div>
-                <div className="flex items-start gap-2.5">
-                  <span className="font-black text-emerald-600 shrink-0">3.</span>
-                  <p>
-                    <strong className="text-slate-900 font-bold">Discipline &amp; Conduct:</strong> Every member must uphold strict academic integrity, mutual respect, ethical standards, and represent New Government Degree College with dignity.
-                  </p>
-                </div>
-                <div className="flex items-start gap-2.5">
-                  <span className="font-black text-emerald-600 shrink-0">4.</span>
-                  <p>
-                    <strong className="text-slate-900 font-bold">Active Dedication:</strong> Members must complete assigned scientific tasks, collaborate respectfully in group activities, and adhere to guidelines set by the Executive Committee.
-                  </p>
-                </div>
-              </div>
+              <ol className="list-decimal list-inside space-y-2 text-xs text-slate-600 leading-relaxed">
+                <li>
+                  <strong className="text-slate-800">Attendance:</strong> Missing two consecutive sessions without prior notice may result in membership cancellation.
+                </li>
+                <li>
+                  <strong className="text-slate-800">Participation:</strong> Members actively participate in Science Olympiads, science fairs, and project exhibitions.
+                </li>
+                <li>
+                  <strong className="text-slate-800">Conduct:</strong> Uphold academic integrity, mutual respect, and college discipline at all times.
+                </li>
+                <li>
+                  <strong className="text-slate-800">Commitment:</strong> Complete assigned club tasks and follow guidelines set by the Executive Committee.
+                </li>
+              </ol>
 
-              {/* Mandatory Agreement Checkbox */}
               <label 
                 id="rules-agreement-checkbox"
                 onClick={() => setFormData(prev => ({ ...prev, agreedToRules: !prev.agreedToRules }))}
-                className={`mt-2 flex items-start gap-3 p-3.5 rounded-2xl border cursor-pointer select-none transition-all ${
+                className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer select-none transition-colors ${
                   formData.agreedToRules
-                    ? 'bg-emerald-50 border-emerald-400 text-emerald-950 shadow-2xs ring-1 ring-emerald-300'
-                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    ? 'bg-emerald-50 border-emerald-400 text-emerald-950 font-semibold'
+                    : 'bg-slate-50/70 border-slate-200 text-slate-700 hover:bg-slate-100/70'
                 }`}
               >
-                <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
                   formData.agreedToRules ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-300'
                 }`}>
                   {formData.agreedToRules && <Check className="w-3 h-3 stroke-[3]" />}
                 </div>
-                <span className="text-xs font-bold leading-snug">
-                  I have read, understood, and agree to strictly abide by all the Rules &amp; Regulations of NGDC Science Club. <span className="text-emerald-600 font-bold">*</span>
+                <span className="text-xs leading-snug">
+                  I agree to abide by all the rules and regulations of NGDC Science Club. <span className="text-rose-500">*</span>
                 </span>
               </label>
             </div>
 
-            {/* SUBMIT BUTTON */}
-            <div className="pt-2 space-y-2 text-center">
+            {/* SUBMIT */}
+            <div className="pt-2">
               <button
                 type="submit"
                 id="submit-form-button"
                 disabled={isSubmitting}
-                className="w-full py-4 rounded-2xl bg-slate-900 hover:bg-black text-white font-bold text-sm shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transform hover:-translate-y-0.5"
+                className="w-full py-3.5 rounded-xl bg-slate-900 hover:bg-black text-white font-semibold text-sm shadow-sm transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {isSubmitting ? (
                   <>
@@ -2288,15 +2130,9 @@ export default function App() {
                     <span>Submitting Application...</span>
                   </>
                 ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 text-emerald-400" />
-                    <span>Submit Membership Application</span>
-                  </>
+                  <span>Submit Membership Application</span>
                 )}
               </button>
-              <p className="text-[11px] text-slate-500 font-normal">
-                Your application will be officially recorded and assigned an application tracking status.
-              </p>
             </div>
           </form>
         )}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { fetchCommitteeFromFirebase, subscribeToCommittee } from './services/firebase';
+import { subscribeToCommittee } from './services/firebase';
 import { ExecutiveMember } from './types';
 
 export type CommitteeMember = ExecutiveMember;
@@ -142,10 +142,10 @@ export default function ExecutiveCommitteePage({ onBackToRegistration }: Executi
       <div className="text-center mb-10">
         <div className="flex justify-center mb-4">
           <img 
-            src="https://plain-apac-prod-public.komododecks.com/202609/21/iFpbvbXJaON4rnVidFRy/image.png" 
+            src="/assets/club-logo.png" 
             alt="NGDC Science Club Logo" 
-            className="h-20 sm:h-24 w-auto object-contain hover:scale-105 transition-transform drop-shadow-[0_10px_25px_rgba(0,0,0,0.08)]"
-            referrerPolicy="no-referrer"
+            decoding="async"
+            className="h-20 sm:h-24 w-auto object-contain hover:scale-105 transition-transform"
           />
         </div>
         
@@ -157,20 +157,22 @@ export default function ExecutiveCommitteePage({ onBackToRegistration }: Executi
         </p>
       </div>
 
-      {/* COMMITTEE MEMBERS GRID - APPLE LIGHT TRANSLUCENT FROSTED CARDS */}
+      {/* COMMITTEE MEMBERS GRID */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
         {members.map((member) => {
           const isExecMember = member.role.toLowerCase().includes('executive member');
           return (
             <div
               key={member.id}
-              className="group relative rounded-3xl p-4 sm:p-5 bg-white/85 hover:bg-white backdrop-blur-xl border border-slate-200/90 hover:border-emerald-500/40 shadow-[0_4px_24px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgba(16,185,129,0.12)] transition-all duration-300 flex flex-col items-center text-center"
+              className="group relative rounded-3xl p-4 sm:p-5 bg-white hover:bg-white border border-slate-200 hover:border-emerald-500/40 shadow-xs hover:shadow-md transition-all duration-300 flex flex-col items-center text-center"
             >
               {/* LARGE PHOTO */}
-              <div className="relative w-full aspect-4/5 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 group-hover:border-emerald-400/50 transition-colors shadow-xs mb-4">
+              <div className="relative w-full aspect-4/5 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 group-hover:border-emerald-400/50 transition-colors mb-4">
                 <img 
                   src={member.image} 
                   alt={member.name} 
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
                   referrerPolicy="no-referrer"
                   onError={(e) => {

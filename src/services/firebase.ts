@@ -33,6 +33,7 @@ import {
   serverTimestamp,
   onSnapshot,
   limit,
+  getCountFromServer,
   Unsubscribe
 } from 'firebase/firestore';
 import { 
@@ -46,7 +47,11 @@ import {
   RegistrationStatusMode,
   DEFAULT_SKILL_OPTIONS,
   EmailLogRecord,
-  EmailType
+  EmailType,
+  AttendanceRecord,
+  AttendanceSession,
+  AttendanceStatus,
+  AttendanceMethod
 } from '../types';
 
 import { getAnalytics, isSupported } from 'firebase/analytics';
@@ -123,6 +128,37 @@ export const SUPER_ADMIN_EMAILS = [
 const LS_MEMBERS_KEY = 'ngdcsc_firebase_members_cache';
 const LS_COMMITTEE_KEY = 'ngdcsc_firebase_committee_cache';
 const LS_NOTICES_KEY = 'ngdcsc_firebase_notices_cache';
+const LS_ACTIVE_MEMBER_COUNT_KEY = 'ngdcsc_active_member_count_cache';
+
+export function getCachedActiveMemberCount(): number | null {
+  try {
+    const raw = localStorage.getItem(LS_ACTIVE_MEMBER_COUNT_KEY);
+    if (raw !== null) {
+      const n = parseInt(raw, 10);
+      if (!isNaN(n) && n >= 0) return n;
+    }
+    const members = getCachedMembers();
+    if (members.length > 0) {
+      return members.filter((m) => m.status === 'approved').length;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+export function getCachedNotices(): ClubNotice[] {
+  try {
+    const raw = localStorage.getItem(LS_NOTICES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
 
 // ==================== MEMBER / REGISTRATION OPERATIONS ====================
 
@@ -396,29 +432,60 @@ export function subscribeToMembers(
 }
 
 /**
- * Real-time listener for Active (Approved) Member Count
- * Live-updates immediately whenever a member is approved, added, or removed.
+ * Lightweight listener for Active (Approved) Member Count using server-side count aggregation
+ * Avoids downloading heavy member documents & base64 photos on page load.
  */
 export function subscribeToActiveMemberCount(
   callback: (count: number) => void
 ): Unsubscribe {
-  const cached = getCachedMembers();
-  if (cached.length > 0) {
-    callback(cached.filter((m) => m.status === 'approved').length);
+  const cachedCount = getCachedActiveMemberCount();
+  if (cachedCount !== null) {
+    callback(cachedCount);
   }
 
-  const q = query(collection(db, 'members'), where('status', '==', 'approved'));
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      callback(snapshot.size);
-    },
-    (err) => {
-      console.warn('Realtime active member count warning:', err);
-      const fallback = getCachedMembers();
-      callback(fallback.filter((m) => m.status === 'approved').length);
+  let cancelled = false;
+  const approvedQuery = query(collection(db, 'members'), where('status', '==', 'approved'));
+
+  const refreshCount = async () => {
+    if (cancelled) return;
+    try {
+      const snapshot = await getCountFromServer(approvedQuery);
+      if (cancelled) return;
+      const count = snapshot.data().count;
+      try {
+        localStorage.setItem(LS_ACTIVE_MEMBER_COUNT_KEY, String(count));
+      } catch {
+        // ignore
+      }
+      callback(count);
+    } catch (err) {
+      console.warn('Active member count fetch warning:', err);
+      const fallback = getCachedActiveMemberCount();
+      if (!cancelled && fallback !== null) {
+        callback(fallback);
+      }
     }
-  );
+  };
+
+  refreshCount();
+  const intervalId = typeof window !== 'undefined' ? window.setInterval(refreshCount, 45000) : 0;
+  const handleFocus = () => {
+    if (typeof document !== 'undefined' && !document.hidden) {
+      refreshCount();
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', handleFocus);
+  }
+
+  return () => {
+    cancelled = true;
+    if (intervalId) window.clearInterval(intervalId);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', handleFocus);
+    }
+  };
 }
 
 /**
@@ -1041,6 +1108,11 @@ export async function fetchNoticesFromFirebase(): Promise<ClubNotice[]> {
 export function subscribeToNotices(
   callback: (notices: ClubNotice[]) => void
 ): Unsubscribe {
+  const cachedNotices = getCachedNotices();
+  if (cachedNotices.length > 0) {
+    callback(cachedNotices);
+  }
+
   const colRef = collection(db, 'notices');
 
   return onSnapshot(colRef, (snapshot) => {
@@ -1144,8 +1216,27 @@ export const DEFAULT_REGISTRATION_SETTING: MembershipRegistrationSetting = {
   status: 'open',
   headline: 'Online Membership Registration',
   message: 'Welcome to NGDC Science Club (New Government Degree College, Rajshahi). Please complete the form below to join our community.',
-  skills: DEFAULT_SKILL_OPTIONS
+  skills: DEFAULT_SKILL_OPTIONS,
+  allowMemberEdit: true
 };
+
+export function getCachedRegistrationSetting(): MembershipRegistrationSetting {
+  try {
+    const raw = localStorage.getItem(LS_REGISTRATION_SETTING_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as MembershipRegistrationSetting;
+      return {
+        ...DEFAULT_REGISTRATION_SETTING,
+        ...parsed,
+        skills: parsed.skills && parsed.skills.length > 0 ? parsed.skills : DEFAULT_SKILL_OPTIONS,
+        allowMemberEdit: parsed.allowMemberEdit !== false
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_REGISTRATION_SETTING;
+}
 
 /**
  * Get current registration setting
@@ -1154,16 +1245,26 @@ export async function getRegistrationSetting(): Promise<MembershipRegistrationSe
   try {
     const raw = localStorage.getItem(LS_REGISTRATION_SETTING_KEY);
     const cached = raw ? JSON.parse(raw) : null;
-    if (cached) return cached;
+    if (cached) {
+      return {
+        ...DEFAULT_REGISTRATION_SETTING,
+        ...cached,
+        skills: cached.skills && cached.skills.length > 0 ? cached.skills : DEFAULT_SKILL_OPTIONS,
+        allowMemberEdit: cached.allowMemberEdit !== false
+      };
+    }
   } catch {}
 
   try {
     const snap = await getDoc(doc(db, 'settings', 'membership_registration'));
     if (snap.exists()) {
-      const data = snap.data() as MembershipRegistrationSetting;
-      if (!data.skills || data.skills.length === 0) {
-        data.skills = DEFAULT_SKILL_OPTIONS;
-      }
+      const raw = snap.data() as MembershipRegistrationSetting;
+      const data: MembershipRegistrationSetting = {
+        ...DEFAULT_REGISTRATION_SETTING,
+        ...raw,
+        skills: raw.skills && raw.skills.length > 0 ? raw.skills : DEFAULT_SKILL_OPTIONS,
+        allowMemberEdit: raw.allowMemberEdit !== false
+      };
       localStorage.setItem(LS_REGISTRATION_SETTING_KEY, JSON.stringify(data));
       return data;
     }
@@ -1178,30 +1279,20 @@ export async function getRegistrationSetting(): Promise<MembershipRegistrationSe
  * Subscribe to registration setting in real-time
  */
 export function subscribeRegistrationSetting(callback: (setting: MembershipRegistrationSetting) => void): Unsubscribe {
-  try {
-    const raw = localStorage.getItem(LS_REGISTRATION_SETTING_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (!parsed.skills || parsed.skills.length === 0) {
-        parsed.skills = DEFAULT_SKILL_OPTIONS;
-      }
-      callback(parsed);
-    } else {
-      callback(DEFAULT_REGISTRATION_SETTING);
-    }
-  } catch {
-    callback(DEFAULT_REGISTRATION_SETTING);
-  }
+  callback(getCachedRegistrationSetting());
 
   const docRef = doc(db, 'settings', 'membership_registration');
   return onSnapshot(
     docRef,
     (snap) => {
       if (snap.exists()) {
-        const data = snap.data() as MembershipRegistrationSetting;
-        if (!data.skills || data.skills.length === 0) {
-          data.skills = DEFAULT_SKILL_OPTIONS;
-        }
+        const raw = snap.data() as MembershipRegistrationSetting;
+        const data: MembershipRegistrationSetting = {
+          ...DEFAULT_REGISTRATION_SETTING,
+          ...raw,
+          skills: raw.skills && raw.skills.length > 0 ? raw.skills : DEFAULT_SKILL_OPTIONS,
+          allowMemberEdit: raw.allowMemberEdit !== false
+        };
         localStorage.setItem(LS_REGISTRATION_SETTING_KEY, JSON.stringify(data));
         callback(data);
       } else {
@@ -1220,7 +1311,8 @@ export function subscribeRegistrationSetting(callback: (setting: MembershipRegis
 export async function updateRegistrationSetting(setting: MembershipRegistrationSetting): Promise<void> {
   const completeSetting: MembershipRegistrationSetting = {
     ...setting,
-    skills: setting.skills && setting.skills.length > 0 ? setting.skills : DEFAULT_SKILL_OPTIONS
+    skills: setting.skills && setting.skills.length > 0 ? setting.skills : DEFAULT_SKILL_OPTIONS,
+    allowMemberEdit: setting.allowMemberEdit !== false
   };
 
   try {
@@ -1237,6 +1329,7 @@ export async function updateRegistrationSetting(setting: MembershipRegistrationS
       ? 'The membership registration window for NGDC Science Club (New Government Degree College, Rajshahi) is currently closed for this session. Thank you for your interest. For any queries or assistance, please contact us via email at ngdcsc.org@gmail.com.'
       : 'Welcome to NGDC Science Club (New Government Degree College, Rajshahi). Please complete the form below to join our community.'),
     skills: completeSetting.skills,
+    allowMemberEdit: completeSetting.allowMemberEdit,
     updatedAt: new Date().toISOString()
   }, { merge: true });
 }
@@ -1682,6 +1775,20 @@ export async function updateOwnMemberProfile(
   updates: Partial<MembershipFormData>,
   existingMember?: SubmissionRecord
 ): Promise<SubmissionRecord> {
+  // Verify admin allows member profile editing
+  try {
+    const settingSnap = await getDoc(doc(db, 'settings', 'membership_registration'));
+    if (settingSnap.exists() && settingSnap.data()?.allowMemberEdit === false) {
+      const err: any = new Error('Profile editing is currently disabled by the club administrator.');
+      err.code = 'edit-locked-by-admin';
+      throw err;
+    }
+  } catch (checkErr: any) {
+    if (checkErr?.code === 'edit-locked-by-admin') {
+      throw checkErr;
+    }
+  }
+
   // Explicitly pick ONLY allowed editable fields (excluding studentId / Roll, phone, and email)
   const safeUpdates: Record<string, any> = cleanFirestoreData({
     photo: updates.photo !== undefined ? updates.photo : existingMember?.photo ?? null,
@@ -1784,3 +1891,417 @@ export async function updateOwnMemberProfile(
 
   return mergedRecord;
 }
+
+// ==================== EVENT & SESSION ATTENDANCE OPERATIONS ====================
+
+const LS_ATTENDANCE_KEY = 'ngdcsc_firebase_attendance_cache';
+const LS_ATTENDANCE_SESSIONS_KEY = 'ngdcsc_firebase_attendance_sessions_cache';
+
+export function getTodayLocalDateStr(dateObj: Date = new Date()): string {
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function formatLiveTimeLabel(dateObj: Date = new Date()): string {
+  return dateObj.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+}
+
+export function extractMembershipIdFromQr(rawValue: string): string {
+  const trimmed = (rawValue || '').trim();
+  if (!trimmed) return '';
+
+  // Match explicit NGDCSC-XXX pattern anywhere inside text or URL
+  const directMatch = trimmed.toUpperCase().match(/NGDCSC[-\s_]?(\d{1,5})/);
+  if (directMatch) {
+    return `NGDCSC-${directMatch[1].padStart(3, '0')}`;
+  }
+
+  // Try JSON payload if applicable
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const candidate = parsed.membershipId || parsed.id || parsed.memberId || '';
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return extractMembershipIdFromQr(candidate);
+      }
+    } catch {
+      // ignore invalid JSON
+    }
+  }
+
+  // Numeric-only fallback (e.g. "8" -> "NGDCSC-008")
+  if (/^\d{1,5}$/.test(trimmed)) {
+    return `NGDCSC-${trimmed.padStart(3, '0')}`;
+  }
+
+  return trimmed.toUpperCase();
+}
+
+export function getCachedAttendance(): AttendanceRecord[] {
+  try {
+    const raw = localStorage.getItem(LS_ATTENDANCE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+export function getCachedAttendanceSessions(): AttendanceSession[] {
+  try {
+    const raw = localStorage.getItem(LS_ATTENDANCE_SESSIONS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+function getMemberAttendanceCacheKey(uid: string): string {
+  return `ngdcsc_my_attendance_cache_${uid}`;
+}
+
+export function getCachedMyAttendance(uid?: string | null): AttendanceRecord[] {
+  if (!uid) return [];
+  try {
+    const raw = localStorage.getItem(getMemberAttendanceCacheKey(uid));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+function sortAttendanceNewestFirst(list: AttendanceRecord[]): AttendanceRecord[] {
+  return [...list].sort((a, b) => {
+    if (a.date !== b.date) return b.date.localeCompare(a.date);
+    return (b.scannedAt || '').localeCompare(a.scannedAt || '');
+  });
+}
+
+export function subscribeToAttendanceSessions(
+  callback: (sessions: AttendanceSession[]) => void
+): Unsubscribe {
+  const cached = getCachedAttendanceSessions();
+  if (cached.length > 0) {
+    callback(cached);
+  }
+
+  const colRef = collection(db, 'attendance_sessions');
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const list: AttendanceSession[] = [];
+      snapshot.forEach((d) => {
+        const data = d.data() as any;
+        list.push({
+          date: data.date || d.id,
+          eventTitle: data.eventTitle || 'Club Session',
+          updatedAt: data.updatedAt,
+          updatedBy: data.updatedBy
+        });
+      });
+      list.sort((a, b) => b.date.localeCompare(a.date));
+      try {
+        localStorage.setItem(LS_ATTENDANCE_SESSIONS_KEY, JSON.stringify(list));
+      } catch {
+        // ignore
+      }
+      callback(list);
+    },
+    (err) => {
+      console.warn('Attendance sessions listener error:', err);
+    }
+  );
+}
+
+export async function upsertAttendanceSession(
+  date: string,
+  eventTitle: string,
+  adminEmail?: string
+): Promise<AttendanceSession> {
+  const cleanDate = date.trim() || getTodayLocalDateStr();
+  const cleanTitle = eventTitle.trim() || 'Club Session';
+  const payload = cleanFirestoreData({
+    date: cleanDate,
+    eventTitle: cleanTitle,
+    updatedAt: new Date().toISOString(),
+    updatedBy: adminEmail || 'Admin'
+  });
+
+  await setDoc(doc(db, 'attendance_sessions', cleanDate), payload, { merge: true });
+
+  const session: AttendanceSession = {
+    date: cleanDate,
+    eventTitle: cleanTitle,
+    updatedAt: payload.updatedAt,
+    updatedBy: payload.updatedBy
+  };
+
+  try {
+    const existing = getCachedAttendanceSessions();
+    const merged = [session, ...existing.filter((s) => s.date !== cleanDate)].sort((a, b) =>
+      b.date.localeCompare(a.date)
+    );
+    localStorage.setItem(LS_ATTENDANCE_SESSIONS_KEY, JSON.stringify(merged));
+  } catch {
+    // ignore
+  }
+
+  return session;
+}
+
+export function subscribeToAllAttendance(
+  callback: (records: AttendanceRecord[]) => void
+): Unsubscribe {
+  const cached = getCachedAttendance();
+  if (cached.length > 0) {
+    callback(cached);
+  }
+
+  const colRef = collection(db, 'attendance');
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const list: AttendanceRecord[] = [];
+      snapshot.forEach((d) => {
+        list.push({ id: d.id, ...(d.data() as any) } as AttendanceRecord);
+      });
+      const sorted = sortAttendanceNewestFirst(list);
+      try {
+        localStorage.setItem(LS_ATTENDANCE_KEY, JSON.stringify(sorted));
+      } catch {
+        // ignore
+      }
+      callback(sorted);
+    },
+    (err) => {
+      console.warn('Attendance listener error:', err);
+    }
+  );
+}
+
+export async function markMemberAttendance(params: {
+  member: SubmissionRecord;
+  date: string;
+  eventTitle: string;
+  status?: AttendanceStatus;
+  method?: AttendanceMethod;
+  note?: string;
+  markedBy?: string;
+  scannedDateObj?: Date;
+}): Promise<AttendanceRecord> {
+  const {
+    member,
+    date,
+    eventTitle,
+    status = 'present',
+    method = 'qr_scan',
+    note = '',
+    markedBy = 'Admin',
+    scannedDateObj = new Date()
+  } = params;
+
+  const cleanDate = date.trim() || getTodayLocalDateStr(scannedDateObj);
+  const memberDocId = member.id || member.membershipId || member.studentId || member.phone;
+  const recordId = `${cleanDate}__${memberDocId}`;
+  const cleanTitle = eventTitle.trim() || 'Club Session';
+  const cleanEmail = (member.email || '').trim();
+  const cleanEmailLower = cleanEmail.toLowerCase();
+
+  const record: AttendanceRecord = {
+    id: recordId,
+    date: cleanDate,
+    eventTitle: cleanTitle,
+    memberId: memberDocId,
+    membershipId: (member.membershipId || '').toUpperCase() || memberDocId,
+    memberName: member.name || 'Member',
+    memberRoll: member.studentId || '',
+    memberBatch: member.batch || '',
+    memberSection: member.section || '',
+    memberUid: member.uid || null,
+    memberEmail: cleanEmail || null,
+    memberEmailLower: cleanEmailLower || null,
+    status,
+    scannedAt: scannedDateObj.toISOString(),
+    scannedTimeLabel: formatLiveTimeLabel(scannedDateObj),
+    method,
+    note: note.trim(),
+    markedBy,
+    updatedAt: new Date().toISOString()
+  };
+
+  await Promise.all([
+    setDoc(doc(db, 'attendance', recordId), cleanFirestoreData(record), { merge: true }),
+    upsertAttendanceSession(cleanDate, cleanTitle, markedBy)
+  ]);
+
+  try {
+    const cached = getCachedAttendance();
+    const updated = sortAttendanceNewestFirst([
+      record,
+      ...cached.filter((r) => r.id !== recordId)
+    ]);
+    localStorage.setItem(LS_ATTENDANCE_KEY, JSON.stringify(updated));
+  } catch {
+    // ignore
+  }
+
+  return record;
+}
+
+export async function updateAttendanceRecord(
+  existing: AttendanceRecord,
+  updates: {
+    date?: string;
+    eventTitle?: string;
+    status?: AttendanceStatus;
+    scannedTimeLabel?: string;
+    scannedAt?: string;
+    note?: string;
+  },
+  adminEmail?: string
+): Promise<AttendanceRecord> {
+  const newDate = (updates.date ?? existing.date).trim() || existing.date;
+  const newId = `${newDate}__${existing.memberId}`;
+  const newTitle = (updates.eventTitle ?? existing.eventTitle).trim() || 'Club Session';
+
+  const updatedRecord: AttendanceRecord = {
+    ...existing,
+    id: newId,
+    date: newDate,
+    eventTitle: newTitle,
+    status: updates.status ?? existing.status,
+    scannedTimeLabel: (updates.scannedTimeLabel ?? existing.scannedTimeLabel).trim() || formatLiveTimeLabel(),
+    scannedAt: updates.scannedAt ?? existing.scannedAt,
+    note: (updates.note ?? existing.note ?? '').trim(),
+    markedBy: adminEmail || existing.markedBy || 'Admin',
+    updatedAt: new Date().toISOString()
+  };
+
+  if (newId !== existing.id) {
+    await deleteDoc(doc(db, 'attendance', existing.id)).catch(() => {});
+  }
+
+  await Promise.all([
+    setDoc(doc(db, 'attendance', newId), cleanFirestoreData(updatedRecord), { merge: true }),
+    upsertAttendanceSession(newDate, newTitle, adminEmail)
+  ]);
+
+  try {
+    const cached = getCachedAttendance();
+    const updated = sortAttendanceNewestFirst([
+      updatedRecord,
+      ...cached.filter((r) => r.id !== existing.id && r.id !== newId)
+    ]);
+    localStorage.setItem(LS_ATTENDANCE_KEY, JSON.stringify(updated));
+  } catch {
+    // ignore
+  }
+
+  return updatedRecord;
+}
+
+export async function deleteAttendanceRecord(recordId: string): Promise<void> {
+  await deleteDoc(doc(db, 'attendance', recordId));
+  try {
+    const cached = getCachedAttendance();
+    localStorage.setItem(
+      LS_ATTENDANCE_KEY,
+      JSON.stringify(cached.filter((r) => r.id !== recordId))
+    );
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Strictly isolated per-member attendance listener:
+ * Queries ONLY records owned by the logged-in user's UID or lowercase email.
+ */
+export function subscribeToMyAttendance(
+  uid: string,
+  email: string | null | undefined,
+  callback: (records: AttendanceRecord[]) => void
+): Unsubscribe {
+  const cached = getCachedMyAttendance(uid);
+  if (cached.length > 0) {
+    callback(cached);
+  }
+
+  const colRef = collection(db, 'attendance');
+  const cleanEmailLower = (email || '').trim().toLowerCase();
+
+  const uidRecords = new Map<string, AttendanceRecord>();
+  const emailRecords = new Map<string, AttendanceRecord>();
+
+  const emitMerged = () => {
+    const combined = new Map<string, AttendanceRecord>();
+    uidRecords.forEach((v, k) => combined.set(k, v));
+    emailRecords.forEach((v, k) => combined.set(k, v));
+    const sorted = sortAttendanceNewestFirst(Array.from(combined.values()));
+    try {
+      localStorage.setItem(getMemberAttendanceCacheKey(uid), JSON.stringify(sorted));
+    } catch {
+      // ignore
+    }
+    callback(sorted);
+  };
+
+  const unsubs: Unsubscribe[] = [];
+
+  unsubs.push(
+    onSnapshot(
+      query(colRef, where('memberUid', '==', uid)),
+      (snap) => {
+        uidRecords.clear();
+        snap.forEach((d) => {
+          uidRecords.set(d.id, { id: d.id, ...(d.data() as any) } as AttendanceRecord);
+        });
+        emitMerged();
+      },
+      (err) => {
+        console.warn('My attendance UID query error:', err);
+      }
+    )
+  );
+
+  if (cleanEmailLower) {
+    unsubs.push(
+      onSnapshot(
+        query(colRef, where('memberEmailLower', '==', cleanEmailLower)),
+        (snap) => {
+          emailRecords.clear();
+          snap.forEach((d) => {
+            emailRecords.set(d.id, { id: d.id, ...(d.data() as any) } as AttendanceRecord);
+          });
+          emitMerged();
+        },
+        (err) => {
+          console.warn('My attendance email query error:', err);
+        }
+      )
+    );
+  }
+
+  return () => {
+    unsubs.forEach((u) => u());
+  };
+}
+

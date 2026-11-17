@@ -31,11 +31,14 @@ service cloud.firestore {
     }
 
     // 3. Member Registrations: Anyone can submit registration (create) and check status (read);
-    // authorized admin can update/delete; signed-in owner can update profile except Roll (studentId), phone, email & review fields
+    // authorized admin can update/delete; signed-in owner can update profile only when admin allows member editing,
+    // and Roll (studentId), phone, email & review fields remain strictly locked
     match /members/{memberId} {
       allow create, read: if true;
       allow update: if isSuperAdmin() || (
         isMemberOwner() &&
+        (!exists(/databases/$(database)/documents/settings/membership_registration) ||
+         get(/databases/$(database)/documents/settings/membership_registration).data.get('allowMemberEdit', true) == true) &&
         request.resource.data.get('studentId', null) == resource.data.get('studentId', null) &&
         request.resource.data.get('phone', null) == resource.data.get('phone', null) &&
         request.resource.data.get('email', null) == resource.data.get('email', null) &&
@@ -62,6 +65,27 @@ service cloud.firestore {
     // 6. Email Dispatch & Activity Logs: Only authorized club admin can read/write
     match /email_logs/{logId} {
       allow read, write: if isSuperAdmin();
+    }
+
+    // 7. Attendance Sessions (date + event title metadata only, zero PII):
+    // Signed-in members and admins can read session dates; only authorized admin can create/edit/delete
+    match /attendance_sessions/{sessionDate} {
+      allow read: if request.auth != null;
+      allow write: if isSuperAdmin();
+    }
+
+    // 8. Member Attendance Records:
+    // Strictly isolated: authorized admin can read/write all attendance records;
+    // an individual signed-in member can ONLY read their own attendance records.
+    match /attendance/{attendanceId} {
+      allow read: if isSuperAdmin() || (
+        request.auth != null && (
+          resource.data.memberUid == request.auth.uid ||
+          resource.data.memberEmail == request.auth.token.email ||
+          resource.data.memberEmailLower == request.auth.token.email.lower()
+        )
+      );
+      allow create, update, delete: if isSuperAdmin();
     }
 
     // Fallback: Default deny for any other collections

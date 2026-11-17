@@ -12,6 +12,7 @@ import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import { searchMemberStatus } from './services/firebase';
 import DotLoader from './components/DotLoader';
+import MemberQrCode from './components/MemberQrCode';
 
 interface ConfirmationSlipPageProps {
   member?: PublicMemberStatus | null;
@@ -290,7 +291,7 @@ export default function ConfirmationSlipPage({
                         className="max-h-full max-w-full object-contain"
                         crossOrigin="anonymous"
                         onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).src = 'https://plain-apac-prod-public.komododecks.com/202609/21/iFpbvbXJaON4rnVidFRy/image.png';
+                          (e.currentTarget as HTMLImageElement).src = '/assets/club-logo.png';
                         }}
                       />
                     </div>
@@ -322,8 +323,8 @@ export default function ConfirmationSlipPage({
               <div className="pt-2">
                 <div className="border border-slate-200 rounded-xl p-6 sm:p-7 bg-white shadow-2xs space-y-6">
                   
-                  {/* Top Row: Photo + Core Identity Banner */}
-                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 pb-6 border-b border-slate-100">
+                  {/* Top Row: Photo + Core Identity Banner + Event QR Code */}
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-6 pb-6 border-b border-slate-100">
                     
                     {/* Passport Photo */}
                     <div className="w-32 h-40 rounded-lg border-2 border-slate-300 p-1 bg-white shrink-0 overflow-hidden shadow-2xs flex items-center justify-center">
@@ -343,7 +344,7 @@ export default function ConfirmationSlipPage({
                     </div>
 
                     {/* Member Primary Info */}
-                    <div className="flex-1 text-center sm:text-left space-y-2.5 pt-1">
+                    <div className="flex-1 text-center sm:text-left space-y-2.5 pt-1 min-w-0">
                       <div>
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                           Member Name
@@ -375,6 +376,11 @@ export default function ConfirmationSlipPage({
                           </span>
                         )}
                       </div>
+                    </div>
+
+                    {/* Event Verification QR Code (Membership ID) */}
+                    <div className="shrink-0 flex items-center justify-center">
+                      <MemberQrCode membershipId={memberId} size={96} />
                     </div>
 
                   </div>

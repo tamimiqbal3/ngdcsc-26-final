@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldAlert, Home, ArrowLeft, Lock, FileText, Users, Bell, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, Home, Lock, Users, Bell } from 'lucide-react';
 import ScienceBackground from './ScienceBackground';
 
 interface NotFoundPageProps {
@@ -22,14 +22,14 @@ export default function NotFoundPage({
       {/* Light Animated Science Grid Background */}
       <ScienceBackground />
 
-      <div className="relative z-10 max-w-lg w-full bg-white/85 backdrop-blur-2xl border border-rose-200/90 rounded-3xl p-6 sm:p-8 text-center shadow-[0_8px_30px_rgb(0,0,0,0.06)] formal-page-enter">
+      <div className="relative z-10 max-w-lg w-full bg-white border border-rose-200 rounded-3xl p-6 sm:p-8 text-center shadow-sm formal-page-enter">
         {/* Official Club Logo */}
         <div className="flex justify-center mb-4">
           <img
-            src="https://plain-apac-prod-public.komododecks.com/202609/21/iFpbvbXJaON4rnVidFRy/image.png"
+            src="/assets/club-logo.png"
             alt="NGDC Science Club Logo"
-            className="h-20 w-auto object-contain drop-shadow-md hover:scale-105 transition-transform"
-            referrerPolicy="no-referrer"
+            decoding="async"
+            className="h-20 w-auto object-contain"
           />
         </div>
 

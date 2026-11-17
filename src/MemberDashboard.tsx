@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { User as FirebaseUser } from 'firebase/auth';
 import {
   ArrowLeft,
@@ -26,7 +26,9 @@ import {
   Edit3,
   KeyRound,
   Eye,
-  EyeOff
+  EyeOff,
+  ClipboardCheck,
+  QrCode
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
@@ -35,7 +37,9 @@ import {
   SectionType,
   BatchType,
   MembershipRegistrationSetting,
-  DEFAULT_SKILL_OPTIONS
+  DEFAULT_SKILL_OPTIONS,
+  AttendanceRecord,
+  AttendanceSession
 } from './types';
 import {
   getCachedMemberProfileForUser,
@@ -43,10 +47,16 @@ import {
   updateOwnMemberProfile,
   logoutMemberAccount,
   changeMemberPassword,
-  formatAuthError
+  formatAuthError,
+  subscribeToMyAttendance,
+  subscribeToAttendanceSessions,
+  getCachedMyAttendance,
+  getCachedAttendanceSessions,
+  getTodayLocalDateStr
 } from './services/firebase';
 import ImageAdjustModal from './components/ImageAdjustModal';
 import DotLoader from './components/DotLoader';
+import MemberQrCode from './components/MemberQrCode';
 
 const CLUB_SEGMENTS = [
   'Science Olympiad (Math, Physics, Bio, Chem)',
@@ -57,7 +67,7 @@ const CLUB_SEGMENTS = [
   'Scientific Wall Magazine & Publication'
 ];
 
-type DashboardPage = 'slip' | 'edit' | 'password';
+type DashboardPage = 'slip' | 'attendance' | 'edit' | 'password';
 
 interface MemberDashboardProps {
   user: FirebaseUser;
@@ -79,6 +89,8 @@ export default function MemberDashboard({
     initialCachedRef.current = getCachedMemberProfileForUser(user.uid, user.email);
   }
   const initialCached = initialCachedRef.current;
+
+  const isEditAllowed = registrationSetting.allowMemberEdit !== false;
 
   const [loading, setLoading] = useState(!initialCached);
   const [member, setMember] = useState<SubmissionRecord | null>(initialCached);
@@ -127,6 +139,14 @@ export default function MemberDashboard({
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
 
+  // Individual Member Attendance state (strictly isolated to this logged-in member)
+  const [myAttendanceRecords, setMyAttendanceRecords] = useState<AttendanceRecord[]>(() =>
+    getCachedMyAttendance(user.uid)
+  );
+  const [attendanceSessions, setAttendanceSessions] = useState<AttendanceSession[]>(() =>
+    getCachedAttendanceSessions()
+  );
+
   const populateForm = (rec: SubmissionRecord) => {
     setPhoto(rec.photo || null);
     setName(rec.name || '');
@@ -169,6 +189,80 @@ export default function MemberDashboard({
     };
   }, [user.uid, user.email]);
 
+  // Real-time subscription to ONLY this member's attendance & official session dates
+  useEffect(() => {
+    const targetEmail = member?.email || user.email;
+    const unsubMyAttendance = subscribeToMyAttendance(user.uid, targetEmail, (records) => {
+      setMyAttendanceRecords(records);
+    });
+    const unsubSessions = subscribeToAttendanceSessions((sessions) => {
+      setAttendanceSessions(sessions);
+    });
+    return () => {
+      unsubMyAttendance();
+      unsubSessions();
+    };
+  }, [user.uid, user.email, member?.email]);
+
+  const todayDateStr = getTodayLocalDateStr();
+
+  const myAttendanceRows = useMemo(() => {
+    const byDate = new Map<string, AttendanceRecord>();
+    myAttendanceRecords.forEach((rec) => {
+      byDate.set(rec.date, rec);
+    });
+
+    const allDates = new Set<string>();
+    myAttendanceRecords.forEach((r) => allDates.add(r.date));
+    attendanceSessions.forEach((s) => allDates.add(s.date));
+
+    const sessionMap = new Map<string, AttendanceSession>();
+    attendanceSessions.forEach((s) => sessionMap.set(s.date, s));
+
+    const rows = Array.from(allDates).map((date) => {
+      const rec = byDate.get(date);
+      const sess = sessionMap.get(date);
+      if (rec) {
+        return {
+          date,
+          eventTitle: rec.eventTitle || sess?.eventTitle || 'Club Session',
+          status: rec.status,
+          timeLabel: rec.status === 'present' ? rec.scannedTimeLabel : '—',
+          method: rec.method,
+          note: rec.note || ''
+        };
+      }
+      return {
+        date,
+        eventTitle: sess?.eventTitle || 'Club Session',
+        status: 'absent' as const,
+        timeLabel: 'Not Scanned',
+        method: 'manual' as const,
+        note: ''
+      };
+    });
+
+    rows.sort((a, b) => b.date.localeCompare(a.date));
+    return rows;
+  }, [myAttendanceRecords, attendanceSessions]);
+
+  const myPresentCount = useMemo(
+    () => myAttendanceRows.filter((r) => r.status === 'present').length,
+    [myAttendanceRows]
+  );
+  const myAbsentCount = useMemo(
+    () => myAttendanceRows.filter((r) => r.status === 'absent').length,
+    [myAttendanceRows]
+  );
+  const myAttendanceRate =
+    myAttendanceRows.length > 0
+      ? Math.round((myPresentCount / myAttendanceRows.length) * 100)
+      : 0;
+  const myTodayAttendance = useMemo(
+    () => myAttendanceRecords.find((r) => r.date === todayDateStr) || null,
+    [myAttendanceRecords, todayDateStr]
+  );
+
   const switchPage = (page: DashboardPage) => {
     setActivePage(page);
     setErrorMsg(null);
@@ -179,6 +273,7 @@ export default function MemberDashboard({
   };
 
   const handleSameAsPhoneToggle = (checked: boolean) => {
+    if (!isEditAllowed) return;
     isFormDirtyRef.current = true;
     setSameAsPhone(checked);
     if (checked && member?.phone) {
@@ -187,6 +282,7 @@ export default function MemberDashboard({
   };
 
   const toggleSegment = (seg: string) => {
+    if (!isEditAllowed) return;
     isFormDirtyRef.current = true;
     setInterestedSegments((prev) =>
       prev.includes(seg) ? prev.filter((s) => s !== seg) : [...prev, seg]
@@ -194,6 +290,7 @@ export default function MemberDashboard({
   };
 
   const toggleSkill = (sk: string) => {
+    if (!isEditAllowed) return;
     isFormDirtyRef.current = true;
     setSkills((prev) =>
       prev.includes(sk) ? prev.filter((s) => s !== sk) : [...prev, sk]
@@ -201,6 +298,7 @@ export default function MemberDashboard({
   };
 
   const handleFile = (file: File) => {
+    if (!isEditAllowed) return;
     if (!file.type.startsWith('image/')) {
       setErrorMsg('Please select a valid image file (JPG, PNG, WebP).');
       return;
@@ -230,6 +328,11 @@ export default function MemberDashboard({
 
     setErrorMsg(null);
     setSaveSuccessMsg(null);
+
+    if (!isEditAllowed) {
+      setErrorMsg('Profile editing is currently disabled by the club administrator.');
+      return;
+    }
 
     if (!photo) {
       setErrorMsg('Passport photo is required.');
@@ -285,8 +388,10 @@ export default function MemberDashboard({
       setTimeout(() => setSaveSuccessMsg(null), 4000);
     } catch (err: any) {
       console.error('Error updating profile:', err);
-      if (err?.code === 'permission-denied') {
-        setErrorMsg('Unable to save changes due to server permissions. Please contact the club administrator.');
+      if (err?.code === 'edit-locked-by-admin') {
+        setErrorMsg('Profile editing is currently disabled by the club administrator.');
+      } else if (err?.code === 'permission-denied') {
+        setErrorMsg('Profile editing is currently locked or unavailable. Please contact the club administrator.');
       } else {
         setErrorMsg('Failed to save your changes. Please try again.');
       }
@@ -448,14 +553,14 @@ export default function MemberDashboard({
 
       {/* Loading State */}
       {loading ? (
-        <div className="bg-white/85 backdrop-blur-2xl rounded-3xl border border-slate-200/90 p-12 text-center shadow-lg">
+        <div className="bg-white rounded-2xl border border-slate-200/90 p-12 text-center shadow-sm">
           <DotLoader size="lg" color="emerald" className="mx-auto mb-4" />
           <p className="text-sm font-bold text-slate-800">Loading My Dashboard...</p>
           <p className="text-xs text-slate-500 mt-1">Fetching your membership profile</p>
         </div>
       ) : !member ? (
         /* No Member Profile Found for Account */
-        <div className="bg-white/90 backdrop-blur-2xl rounded-3xl border border-slate-200/90 p-8 sm:p-10 text-center shadow-xl space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-200/90 p-8 sm:p-10 text-center shadow-sm space-y-4">
           <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500">
             <User className="w-7 h-7" />
           </div>
@@ -487,7 +592,7 @@ export default function MemberDashboard({
       ) : (
         <div className="space-y-5">
           {/* Segmented Page Switcher: Clean Separate Pages */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/85 backdrop-blur-2xl border border-slate-200/90 rounded-3xl p-4 sm:px-6 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200/90 rounded-2xl p-4 sm:px-6 shadow-xs">
             <div>
               <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
                 My Dashboard
@@ -497,11 +602,11 @@ export default function MemberDashboard({
               </p>
             </div>
 
-            <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-2xl bg-slate-100/90 border border-slate-200/80 self-start sm:self-auto">
+            <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/80 self-start sm:self-auto">
               <button
                 type="button"
                 onClick={() => switchPage('slip')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activePage === 'slip'
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -513,21 +618,38 @@ export default function MemberDashboard({
 
               <button
                 type="button"
+                onClick={() => switchPage('attendance')}
+                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activePage === 'attendance'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <ClipboardCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Attendance</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => switchPage('edit')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activePage === 'edit'
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <Edit3 className="w-3.5 h-3.5 text-emerald-600" />
+                {isEditAllowed ? (
+                  <Edit3 className="w-3.5 h-3.5 text-emerald-600" />
+                ) : (
+                  <Lock className="w-3.5 h-3.5 text-rose-500" />
+                )}
                 <span>Edit Profile</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => switchPage('password')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activePage === 'password'
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -541,7 +663,7 @@ export default function MemberDashboard({
 
           {/* PAGE 1: CONFIRMATION SLIP PAGE */}
           {activePage === 'slip' && (
-            <div className="bg-white/90 backdrop-blur-2xl rounded-3xl border border-slate-200/90 shadow-xl p-6 sm:p-8 space-y-6 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-6 animate-in fade-in duration-200">
               {member.status === 'approved' ? (
                 <>
                   {/* Approved Header & Actions */}
@@ -623,28 +745,40 @@ export default function MemberDashboard({
                       </div>
 
                       <div className="flex-1 text-center sm:text-left space-y-2.5 min-w-0">
-                        <div>
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                            Member Name
-                          </span>
-                          <p className="text-xl sm:text-2xl font-black text-slate-900 truncate">
-                            {member.name}
-                          </p>
-                        </div>
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                          <div className="space-y-2.5 min-w-0">
+                            <div>
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                                Member Name
+                              </span>
+                              <p className="text-xl sm:text-2xl font-black text-slate-900 truncate">
+                                {member.name}
+                              </p>
+                            </div>
 
-                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 font-mono text-xs sm:text-sm font-black">
-                          <span>Membership ID:</span>
-                          <span>{member.membershipId || 'NGDCSC-APPROVED'}</span>
-                          {member.membershipId && (
-                            <button
-                              type="button"
-                              onClick={() => handleCopyId(member.membershipId!)}
-                              className="p-1 rounded hover:bg-emerald-100 text-emerald-700 cursor-pointer"
-                              title="Copy Membership ID"
-                            >
-                              {copiedId ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                            </button>
-                          )}
+                            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 font-mono text-xs sm:text-sm font-black">
+                              <span>Membership ID:</span>
+                              <span>{member.membershipId || 'NGDCSC-APPROVED'}</span>
+                              {member.membershipId && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyId(member.membershipId!)}
+                                  className="p-1 rounded hover:bg-emerald-100 text-emerald-700 cursor-pointer"
+                                  title="Copy Membership ID"
+                                >
+                                  {copiedId ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex justify-center sm:justify-end shrink-0">
+                            <MemberQrCode
+                              membershipId={member.membershipId || 'NGDCSC-APPROVED'}
+                              size={84}
+                              compact
+                            />
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-2.5 pt-2 text-left text-xs">
@@ -746,55 +880,230 @@ export default function MemberDashboard({
             </div>
           )}
 
-          {/* PAGE 2: EDIT PROFILE PAGE */}
+          {/* PAGE 2: MY ATTENDANCE PAGE (STRICTLY PERSONAL) */}
+          {activePage === 'attendance' && (
+            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-6 text-left animate-in fade-in duration-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200/80">
+                <div>
+                  <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+                    My Attendance Record
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Personal event &amp; session check-in history for{' '}
+                    <span className="font-mono font-semibold text-slate-700">
+                      {member.membershipId || member.studentId}
+                    </span>
+                    . Only you can view your individual attendance.
+                  </p>
+                </div>
+
+                {member.status === 'approved' && (
+                  <button
+                    type="button"
+                    onClick={() => switchPage('slip')}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold cursor-pointer transition-colors self-start sm:self-center shrink-0"
+                  >
+                    <QrCode className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Show My Check-In QR</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Today's Live Status Banner */}
+              <div
+                className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                  myTodayAttendance?.status === 'present'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                    : 'bg-slate-50 border-slate-200 text-slate-800'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  {myTodayAttendance?.status === 'present' ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <Clock className="w-5 h-5 text-slate-400 shrink-0 mt-0.5" />
+                  )}
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-bold">
+                      {myTodayAttendance?.status === 'present'
+                        ? `Checked In Today (${todayDateStr})`
+                        : `Not Checked In Today (${todayDateStr})`}
+                    </p>
+                    <p className="text-xs opacity-80">
+                      {myTodayAttendance?.status === 'present'
+                        ? `${myTodayAttendance.eventTitle} • Scanned at ${myTodayAttendance.scannedTimeLabel}`
+                        : 'Present your Confirmation Slip QR code to a club admin at the event venue to mark your attendance.'}
+                    </p>
+                  </div>
+                </div>
+
+                <span
+                  className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-black uppercase self-start sm:self-center shrink-0 ${
+                    myTodayAttendance?.status === 'present'
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {myTodayAttendance?.status === 'present' ? 'Present' : 'Not Marked'}
+                </span>
+              </div>
+
+              {/* Personal Summary Counters */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-4 rounded-xl border border-slate-200 bg-white">
+                  <span className="text-[11px] font-bold uppercase text-emerald-700 block">
+                    Present
+                  </span>
+                  <p className="text-2xl font-black text-slate-900 mt-0.5">{myPresentCount}</p>
+                  <span className="text-[11px] text-slate-500">Sessions attended</span>
+                </div>
+
+                <div className="p-4 rounded-xl border border-slate-200 bg-white">
+                  <span className="text-[11px] font-bold uppercase text-rose-600 block">
+                    Absent
+                  </span>
+                  <p className="text-2xl font-black text-slate-900 mt-0.5">{myAbsentCount}</p>
+                  <span className="text-[11px] text-slate-500">Missed / Not scanned</span>
+                </div>
+
+                <div className="p-4 rounded-xl border border-slate-200 bg-white">
+                  <span className="text-[11px] font-bold uppercase text-slate-500 block">
+                    Attendance
+                  </span>
+                  <p className="text-2xl font-black text-slate-900 mt-0.5">{myAttendanceRate}%</p>
+                  <span className="text-[11px] text-slate-500">
+                    Of {myAttendanceRows.length} session{myAttendanceRows.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Personal History List */}
+              {myAttendanceRows.length === 0 ? (
+                <div className="py-10 text-center border border-slate-200 rounded-xl bg-slate-50/70 space-y-2">
+                  <ClipboardCheck className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p className="text-sm font-bold text-slate-700">No attendance sessions recorded yet</p>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    Whenever an admin scans your Confirmation Slip QR code at a club event or meeting, your date and check-in time will appear here automatically.
+                  </p>
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
+                  {myAttendanceRows.map((row) => {
+                    const isPresent = row.status === 'present';
+                    return (
+                      <div
+                        key={row.date}
+                        className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50/70 transition-colors"
+                      >
+                        <div className="space-y-0.5 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-xs font-bold text-slate-900">
+                              {row.date}
+                            </span>
+                            <span className="text-slate-300">•</span>
+                            <span className="text-xs font-bold text-slate-800 truncate">
+                              {row.eventTitle}
+                            </span>
+                          </div>
+                          {row.note && (
+                            <p className="text-[11px] text-slate-500">Note: {row.note}</p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-xs font-mono text-slate-600">
+                            {isPresent ? row.timeLabel : 'Not Scanned'}
+                          </span>
+                          {isPresent ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Present</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-bold">
+                              <XCircle className="w-3.5 h-3.5 text-rose-500" />
+                              <span>Absent</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* PAGE 3: EDIT PROFILE PAGE */}
           {activePage === 'edit' && (
             <form
               onSubmit={handleSaveChanges}
               onChange={() => {
-                isFormDirtyRef.current = true;
+                if (isEditAllowed) {
+                  isFormDirtyRef.current = true;
+                }
               }}
-              className="bg-white/90 backdrop-blur-2xl rounded-3xl border border-slate-200/90 shadow-xl p-6 sm:p-8 space-y-6 text-left animate-in fade-in duration-200"
+              className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-6 text-left animate-in fade-in duration-200"
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-200/80">
                 <div>
-                  <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+                  <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
                     Edit Profile
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Update your profile details below. College Roll, Phone Number, and Email Address are locked.
+                    {isEditAllowed
+                      ? 'Update your profile details below. College Roll, Phone Number, and Email Address are locked.'
+                      : 'Profile editing is currently locked by the club administrator.'}
                   </p>
                 </div>
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[11px] font-bold self-start sm:self-center shrink-0">
-                  <Lock className="w-3 h-3 text-slate-500" />
-                  <span>Roll, Phone &amp; Email Locked</span>
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-bold self-start sm:self-center shrink-0 ${
+                  isEditAllowed
+                    ? 'bg-slate-100 border-slate-200 text-slate-600'
+                    : 'bg-rose-50 border-rose-200 text-rose-700'
+                }`}>
+                  <Lock className={`w-3 h-3 ${isEditAllowed ? 'text-slate-500' : 'text-rose-600'}`} />
+                  <span>{isEditAllowed ? 'Roll, Phone & Email Locked' : 'Editing Locked by Admin'}</span>
                 </span>
               </div>
 
+              {!isEditAllowed && (
+                <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-3 text-rose-800 text-xs font-semibold">
+                  <Lock className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-rose-900">Profile Editing Temporarily Disabled</p>
+                    <p className="text-rose-700 font-normal mt-0.5 leading-relaxed">
+                      The club administrator has turned off member profile editing. You can view your details below, but changes cannot be saved until editing is re-enabled.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {errorMsg && (
-                <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 flex items-center gap-3 text-rose-800 text-xs font-bold">
+                <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 flex items-center gap-3 text-rose-800 text-xs font-bold">
                   <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                   <span>{errorMsg}</span>
                 </div>
               )}
 
               {saveSuccessMsg && (
-                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-3 text-emerald-800 text-xs font-bold">
+                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-3 text-emerald-800 text-xs font-bold">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>{saveSuccessMsg}</span>
                 </div>
               )}
 
+              <fieldset disabled={!isEditAllowed} className={`space-y-6 ${!isEditAllowed ? 'opacity-70 select-none' : ''}`}>
               {/* Photo & Identity */}
-              <div className="p-5 rounded-2xl bg-slate-50/70 border border-slate-200/80 space-y-4">
+              <div className="space-y-4">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                     Passport Size Photo *
                   </label>
-                  {photo && (
+                  {photo && isEditAllowed && (
                     <button
                       type="button"
                       onClick={() => setAdjustingPhoto(photo)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold transition-all cursor-pointer"
                     >
                       <Scissors className="w-3.5 h-3.5 text-emerald-600" />
                       <span>Adjust / Crop Photo</span>
@@ -802,30 +1111,36 @@ export default function MemberDashboard({
                   )}
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-2xl bg-white border border-slate-200/90">
+                <div className="flex flex-col sm:flex-row items-center gap-4">
                   <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className="relative w-24 h-28 rounded-2xl border-2 border-dashed border-slate-300 hover:border-emerald-500 flex flex-col items-center justify-center text-center cursor-pointer overflow-hidden bg-slate-50 shrink-0"
+                    onClick={() => isEditAllowed && fileInputRef.current?.click()}
+                    className={`relative w-24 h-28 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-center overflow-hidden bg-slate-50 shrink-0 ${
+                      isEditAllowed ? 'hover:border-emerald-500 cursor-pointer' : 'cursor-not-allowed'
+                    }`}
                   >
                     {photo ? (
                       <div className="relative w-full h-full group">
                         <img src={photo} alt="Student" className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">
-                          <Camera className="w-4 h-4 mb-0.5" />
-                          <span className="text-[10px] font-semibold">Change</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPhoto(null);
-                            if (fileInputRef.current) fileInputRef.current.value = '';
-                          }}
-                          className="absolute top-1 right-1 p-1 bg-white/95 text-slate-600 hover:text-rose-600 rounded-full shadow-xs"
-                          title="Remove photo"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+                        {isEditAllowed && (
+                          <>
+                            <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">
+                              <Camera className="w-4 h-4 mb-0.5" />
+                              <span className="text-[10px] font-semibold">Change</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPhoto(null);
+                                if (fileInputRef.current) fileInputRef.current.value = '';
+                              }}
+                              className="absolute top-1 right-1 p-1 bg-white/95 text-slate-600 hover:text-rose-600 rounded-full shadow-xs"
+                              title="Remove photo"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     ) : (
                       <div className="p-2 flex flex-col items-center">
@@ -836,24 +1151,27 @@ export default function MemberDashboard({
                     <input
                       type="file"
                       ref={fileInputRef}
+                      disabled={!isEditAllowed}
                       onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
                       accept="image/*"
                       className="hidden"
                     />
                   </div>
 
-                  <div className="text-center sm:text-left text-xs text-slate-600 space-y-2 flex-1">
-                    <p className="font-bold text-slate-900">Update Passport Photograph</p>
+                  <div className="text-center sm:text-left text-xs text-slate-600 space-y-1.5 flex-1">
+                    <p className="font-semibold text-slate-900">Passport Photograph</p>
                     <p className="text-[11px] text-slate-500">
-                      Click the photo box to upload a new image, or adjust crop &amp; alignment.
+                      JPG or PNG up to 8MB.
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold cursor-pointer transition-colors"
-                    >
-                      Choose New Image
-                    </button>
+                    {isEditAllowed && (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold cursor-pointer transition-colors"
+                      >
+                        Choose New Image
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -878,7 +1196,7 @@ export default function MemberDashboard({
               </div>
 
               {/* Contact Details */}
-              <div className="p-5 rounded-2xl bg-slate-50/70 border border-slate-200/80 space-y-4">
+              <div className="pt-6 border-t border-slate-100 space-y-4">
                 <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
                   Contact Information
                 </h3>
@@ -989,7 +1307,7 @@ export default function MemberDashboard({
               </div>
 
               {/* Academic Details */}
-              <div className="p-5 rounded-2xl bg-slate-50/70 border border-slate-200/80 space-y-4">
+              <div className="pt-6 border-t border-slate-100 space-y-4">
                 <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
                   Academic Record
                 </h3>
@@ -1112,7 +1430,7 @@ export default function MemberDashboard({
               </div>
 
               {/* Wings, Skills, Experience */}
-              <div className="p-5 rounded-2xl bg-slate-50/70 border border-slate-200/80 space-y-5">
+              <div className="pt-6 border-t border-slate-100 space-y-5">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
                     Interested Science Wings *
@@ -1189,12 +1507,23 @@ export default function MemberDashboard({
                 </div>
               </div>
 
+              </fieldset>
+
               <button
                 type="submit"
-                disabled={saving}
-                className="w-full py-3.5 rounded-2xl bg-slate-900 hover:bg-black text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                disabled={saving || !isEditAllowed}
+                className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
+                  !isEditAllowed
+                    ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                    : 'bg-slate-900 hover:bg-black text-white shadow-sm cursor-pointer disabled:opacity-50'
+                }`}
               >
-                {saving ? (
+                {!isEditAllowed ? (
+                  <>
+                    <Lock className="w-4 h-4" />
+                    <span>Editing Disabled by Admin</span>
+                  </>
+                ) : saving ? (
                   <>
                     <DotLoader size="sm" color="white" />
                     <span>Saving Changes...</span>
@@ -1213,7 +1542,7 @@ export default function MemberDashboard({
           {activePage === 'password' && (
             <form
               onSubmit={handlePasswordChangeSubmit}
-              className="bg-white/90 backdrop-blur-2xl rounded-3xl border border-slate-200/90 shadow-xl p-6 sm:p-8 space-y-5 text-left animate-in fade-in duration-200"
+              className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-5 text-left animate-in fade-in duration-200"
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-200/80">
                 <div>
@@ -1244,7 +1573,7 @@ export default function MemberDashboard({
                 </div>
               )}
 
-              <div className="p-5 rounded-2xl bg-slate-50/70 border border-slate-200/80 space-y-4">
+              <div className="space-y-4">
                 <div>
                   <label
                     htmlFor="dashboard-current-password"
@@ -1455,7 +1784,7 @@ export default function MemberDashboard({
                       )}
                     </div>
 
-                    <div className="flex-1 space-y-2.5 pt-1">
+                    <div className="flex-1 space-y-2.5 pt-1 min-w-0">
                       <div>
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                           Member Name
@@ -1487,6 +1816,13 @@ export default function MemberDashboard({
                           </span>
                         )}
                       </div>
+                    </div>
+
+                    <div className="shrink-0 flex items-center justify-center">
+                      <MemberQrCode
+                        membershipId={member.membershipId || 'NGDCSC-APPROVED'}
+                        size={96}
+                      />
                     </div>
                   </div>
 

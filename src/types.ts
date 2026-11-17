@@ -112,6 +112,7 @@ export interface MembershipRegistrationSetting {
   headline?: string;
   message?: string;
   skills?: string[];
+  allowMemberEdit?: boolean;
   updatedAt?: string;
   updatedBy?: string;
 }
@@ -127,4 +128,36 @@ export const DEFAULT_SKILL_OPTIONS: string[] = [
   'Photography',
   'Robotics & Electronics'
 ];
+
+export type AttendanceStatus = 'present' | 'absent';
+export type AttendanceMethod = 'qr_scan' | 'manual';
+
+export interface AttendanceRecord {
+  id: string;
+  date: string; // YYYY-MM-DD
+  eventTitle: string;
+  memberId: string;
+  membershipId: string;
+  memberName: string;
+  memberRoll?: string;
+  memberBatch?: string;
+  memberSection?: string;
+  memberUid?: string | null;
+  memberEmail?: string | null;
+  memberEmailLower?: string | null;
+  status: AttendanceStatus;
+  scannedAt: string; // ISO timestamp
+  scannedTimeLabel: string; // e.g. 03:45:12 PM
+  method: AttendanceMethod;
+  note?: string;
+  markedBy?: string;
+  updatedAt?: string;
+}
+
+export interface AttendanceSession {
+  date: string; // YYYY-MM-DD
+  eventTitle: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
 
