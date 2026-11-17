@@ -41,8 +41,7 @@ import {
   LogIn,
   UserCheck,
   Eye,
-  EyeOff,
-  Loader2
+  EyeOff
 } from 'lucide-react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { 
@@ -65,6 +64,7 @@ import NotFoundPage from './NotFoundPage';
 import MemberAuthPage from './MemberAuthPage';
 import MemberDashboard from './MemberDashboard';
 import ImageAdjustModal from './components/ImageAdjustModal';
+import DotLoader from './components/DotLoader';
 import { 
   auth,
   saveMemberToFirebase, 
@@ -72,6 +72,7 @@ import {
   formatAuthError,
   fetchNoticesFromFirebase, 
   subscribeToNotices, 
+  subscribeToActiveMemberCount,
   getNextMembershipId, 
   generateNextMembershipId,
   subscribeRegistrationSetting,
@@ -205,7 +206,8 @@ function HomePage({
   onGoToStatus,
   registrationSetting,
   latestNotice,
-  onOpenNotice
+  onOpenNotice,
+  activeMemberCount
 }: { 
   onGoToForm: () => void;
   onGoToNotices: () => void;
@@ -214,6 +216,7 @@ function HomePage({
   registrationSetting?: MembershipRegistrationSetting;
   latestNotice?: ClubNotice;
   onOpenNotice?: (notice: ClubNotice) => void;
+  activeMemberCount: number | null;
 }) {
   return (
     <div className="w-full max-w-5xl relative z-10 px-4 sm:px-6 pt-24 sm:pt-28 pb-8 formal-page-enter flex-1 flex flex-col items-center">
@@ -312,8 +315,13 @@ function HomePage({
           <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 mx-auto flex items-center justify-center mb-2 border border-emerald-100">
             <Users className="w-4 h-4" />
           </div>
-          <span className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight block">500+</span>
-          <span className="text-xs font-semibold text-slate-700 block mt-0.5">Active Students</span>
+          <span className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight block tabular-nums">
+            {activeMemberCount !== null ? activeMemberCount : '...'}
+          </span>
+          <span className="text-xs font-semibold text-slate-700 mt-0.5 flex items-center justify-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Active Members</span>
+          </span>
           <span className="text-[11px] text-slate-500">HSC 27 &amp; 28 Batches</span>
         </div>
 
@@ -547,8 +555,8 @@ export default function App() {
   const [showRegPassword, setShowRegPassword] = useState(false);
   
   // Auth state for Member Login & My Dashboard
-  const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
-  const [authInitialized, setAuthInitialized] = useState(false);
+  const [authUser, setAuthUser] = useState<FirebaseUser | null>(() => auth.currentUser);
+  const [authInitialized, setAuthInitialized] = useState(() => Boolean(auth.currentUser));
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -564,11 +572,20 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [liveNotices, setLiveNotices] = useState<ClubNotice[]>([]);
   const [selectedNotice, setSelectedNotice] = useState<ClubNotice | null>(null);
+  const [activeMemberCount, setActiveMemberCount] = useState<number | null>(null);
 
   // Real-time listener for notices: guarantees latest notices on banner across all devices without refresh
   useEffect(() => {
     const unsubscribe = subscribeToNotices((data) => {
       setLiveNotices(data);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time listener for active (approved) members count
+  useEffect(() => {
+    const unsubscribe = subscribeToActiveMemberCount((count) => {
+      setActiveMemberCount(count);
     });
     return () => unsubscribe();
   }, []);
@@ -749,19 +766,17 @@ export default function App() {
       setErrorMsg('Please enter your mail address.');
       return;
     }
-    if (!authUser) {
-      if (!accountPassword || accountPassword.length < 6) {
-        setErrorMsg('Please create an account password (at least 6 characters).');
-        const pwEl = document.getElementById('student-password');
-        if (pwEl) pwEl.focus();
-        return;
-      }
-      if (accountPassword !== confirmPassword) {
-        setErrorMsg('Password and Confirm Password do not match.');
-        const cpwEl = document.getElementById('student-confirm-password');
-        if (cpwEl) cpwEl.focus();
-        return;
-      }
+    if (!accountPassword || accountPassword.length < 6) {
+      setErrorMsg('Please create an account password (at least 6 characters).');
+      const pwEl = document.getElementById('student-password');
+      if (pwEl) pwEl.focus();
+      return;
+    }
+    if (accountPassword !== confirmPassword) {
+      setErrorMsg('Password and Confirm Password do not match.');
+      const cpwEl = document.getElementById('student-confirm-password');
+      if (cpwEl) cpwEl.focus();
+      return;
     }
     if (!formData.dob) {
       setErrorMsg('Please enter your date of birth.');
@@ -790,21 +805,19 @@ export default function App() {
 
     setIsSubmitting(true);
 
-    let memberUid = authUser?.uid;
-    if (!authUser) {
-      try {
-        const createdUser = await registerMemberAccount(
-          formData.email,
-          accountPassword,
-          formData.name
-        );
-        memberUid = createdUser.uid;
-      } catch (authErr: any) {
-        setErrorMsg(formatAuthError(authErr));
-        setIsSubmitting(false);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return;
-      }
+    let memberUid: string | undefined;
+    try {
+      const createdUser = await registerMemberAccount(
+        formData.email,
+        accountPassword,
+        formData.name
+      );
+      memberUid = createdUser.uid;
+    } catch (authErr: any) {
+      setErrorMsg(formatAuthError(authErr));
+      setIsSubmitting(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
     }
 
     const newRecord: SubmissionRecord = {
@@ -836,10 +849,8 @@ export default function App() {
       // ignore
     }
 
-    setTimeout(() => {
-      setSubmittedData(newRecord);
-      setIsSubmitting(false);
-    }, 400);
+    setSubmittedData(newRecord);
+    setIsSubmitting(false);
   };
 
   const handleReset = () => {
@@ -1146,7 +1157,7 @@ export default function App() {
       ) : currentView === 'login' ? (
         !authInitialized ? (
           <div className="w-full max-w-md pt-32 pb-16 text-center">
-            <Loader2 className="w-7 h-7 animate-spin text-emerald-600 mx-auto" />
+            <DotLoader size="md" color="emerald" />
           </div>
         ) : authUser ? (
           <MemberDashboard
@@ -1166,7 +1177,7 @@ export default function App() {
       ) : currentView === 'dashboard' ? (
         !authInitialized ? (
           <div className="w-full max-w-md pt-32 pb-16 text-center">
-            <Loader2 className="w-7 h-7 animate-spin text-emerald-600 mx-auto" />
+            <DotLoader size="md" color="emerald" />
           </div>
         ) : authUser ? (
           <MemberDashboard
@@ -1192,6 +1203,7 @@ export default function App() {
           registrationSetting={registrationSetting}
           latestNotice={liveNotices.length > 0 ? liveNotices[0] : undefined}
           onOpenNotice={(notice) => setSelectedNotice(notice)}
+          activeMemberCount={activeMemberCount}
         />
       ) : (
         /* Form Container with macOS layout and top clearance for floating navbar */
@@ -1903,64 +1915,62 @@ export default function App() {
               </div>
 
               {/* Account Password for Member Login & My Dashboard */}
-              {!authUser && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                  <div>
-                    <label htmlFor="student-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Create Password <span className="text-emerald-600 font-bold">*</span>
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                        <Lock className="w-4 h-4" />
-                      </div>
-                      <input
-                        type={showRegPassword ? 'text' : 'password'}
-                        id="student-password"
-                        required
-                        minLength={6}
-                        autoComplete="new-password"
-                        placeholder="At least 6 characters"
-                        value={accountPassword}
-                        onChange={(e) => setAccountPassword(e.target.value)}
-                        className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 focus:bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium shadow-xs"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowRegPassword(!showRegPassword)}
-                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
-                        aria-label={showRegPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                <div>
+                  <label htmlFor="student-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Create Password <span className="text-emerald-600 font-bold">*</span>
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                      <Lock className="w-4 h-4" />
                     </div>
+                    <input
+                      type={showRegPassword ? 'text' : 'password'}
+                      id="student-password"
+                      required
+                      minLength={6}
+                      autoComplete="new-password"
+                      placeholder="At least 6 characters"
+                      value={accountPassword}
+                      onChange={(e) => setAccountPassword(e.target.value)}
+                      className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 focus:bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium shadow-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRegPassword(!showRegPassword)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                      aria-label={showRegPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
-
-                  <div>
-                    <label htmlFor="student-confirm-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Confirm Password <span className="text-emerald-600 font-bold">*</span>
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                        <Lock className="w-4 h-4" />
-                      </div>
-                      <input
-                        type={showRegPassword ? 'text' : 'password'}
-                        id="student-confirm-password"
-                        required
-                        minLength={6}
-                        autoComplete="new-password"
-                        placeholder="Re-enter password"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 focus:bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium shadow-xs"
-                      />
-                    </div>
-                  </div>
-                  <p className="sm:col-span-2 text-[11px] text-slate-500 -mt-1">
-                    Use your email and password later to sign in and edit your profile from My Dashboard.
-                  </p>
                 </div>
-              )}
+
+                <div>
+                  <label htmlFor="student-confirm-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Confirm Password <span className="text-emerald-600 font-bold">*</span>
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <input
+                      type={showRegPassword ? 'text' : 'password'}
+                      id="student-confirm-password"
+                      required
+                      minLength={6}
+                      autoComplete="new-password"
+                      placeholder="Re-enter password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 focus:bg-white text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium shadow-xs"
+                    />
+                  </div>
+                </div>
+                <p className="sm:col-span-2 text-[11px] text-slate-500 -mt-1">
+                  Use your email and password later to sign in and edit your profile from My Dashboard.
+                </p>
+              </div>
             </div>
 
             {/* SECTION 3: ACADEMIC DETAILS & SESSION */}
@@ -2274,7 +2284,7 @@ export default function App() {
               >
                 {isSubmitting ? (
                   <>
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <DotLoader size="sm" color="white" />
                     <span>Submitting Application...</span>
                   </>
                 ) : (

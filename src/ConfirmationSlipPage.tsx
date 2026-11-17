@@ -5,13 +5,13 @@ import {
   CheckCircle2, 
   FileText, 
   User, 
-  Loader2,
   Check
 } from 'lucide-react';
 import { PublicMemberStatus } from './types';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import { searchMemberStatus } from './services/firebase';
+import DotLoader from './components/DotLoader';
 
 interface ConfirmationSlipPageProps {
   member?: PublicMemberStatus | null;
@@ -142,7 +142,7 @@ export default function ConfirmationSlipPage({
   if (loadingMember) {
     return (
       <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 bg-slate-50 text-slate-800">
-        <Loader2 className="w-8 h-8 text-emerald-600 animate-spin mb-2" />
+        <DotLoader size="lg" color="emerald" className="mb-3" />
         <p className="text-sm font-semibold">Loading Confirmation Slip...</p>
       </div>
     );
@@ -197,7 +197,7 @@ export default function ConfirmationSlipPage({
           >
             {downloading ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <DotLoader size="sm" color="white" />
                 <span>Downloading PDF...</span>
               </>
             ) : downloadSuccess ? (

@@ -5,12 +5,12 @@ import {
   X, 
   CheckCircle2, 
   FileText,
-  User,
-  Loader2
+  User
 } from 'lucide-react';
 import { PublicMemberStatus } from '../types';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
+import DotLoader from './DotLoader';
 
 interface ConfirmationSlipModalProps {
   member: PublicMemberStatus;
@@ -186,7 +186,7 @@ export default function ConfirmationSlipModal({
             >
               {downloading ? (
                 <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <DotLoader size="sm" color="white" />
                   <span>Processing...</span>
                 </>
               ) : (

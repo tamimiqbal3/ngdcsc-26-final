@@ -18,7 +18,6 @@ import {
   Lock,
   LogOut,
   Save,
-  Loader2,
   AlertCircle,
   Copy,
   Download,
@@ -36,11 +35,13 @@ import {
   DEFAULT_SKILL_OPTIONS
 } from './types';
 import {
+  getCachedMemberProfileForUser,
   fetchMemberProfileForUser,
   updateOwnMemberProfile,
   logoutMemberAccount
 } from './services/firebase';
 import ImageAdjustModal from './components/ImageAdjustModal';
+import DotLoader from './components/DotLoader';
 
 const CLUB_SEGMENTS = [
   'Science Olympiad (Math, Physics, Bio, Chem)',
@@ -68,23 +69,36 @@ export default function MemberDashboard({
   onGoToRegistration,
   onSignedOut
 }: MemberDashboardProps) {
-  const [loading, setLoading] = useState(true);
-  const [member, setMember] = useState<SubmissionRecord | null>(null);
-  const [activePage, setActivePage] = useState<DashboardPage>('slip');
+  const initialCachedRef = useRef<SubmissionRecord | null | undefined>(undefined);
+  if (initialCachedRef.current === undefined) {
+    initialCachedRef.current = getCachedMemberProfileForUser(user.uid, user.email);
+  }
+  const initialCached = initialCachedRef.current;
 
-  // Editable form state (studentId / Roll is strictly read-only)
-  const [photo, setPhoto] = useState<string | null>(null);
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [whatsapp, setWhatsapp] = useState('');
-  const [sameAsPhone, setSameAsPhone] = useState(true);
-  const [email, setEmail] = useState('');
-  const [dob, setDob] = useState('');
-  const [section, setSection] = useState<SectionType>('A');
-  const [batch, setBatch] = useState<BatchType>('HSC 27');
-  const [interestedSegments, setInterestedSegments] = useState<string[]>([]);
-  const [skills, setSkills] = useState<string[]>([]);
-  const [experienceAchievements, setExperienceAchievements] = useState('');
+  const [loading, setLoading] = useState(!initialCached);
+  const [member, setMember] = useState<SubmissionRecord | null>(initialCached);
+  const [activePage, setActivePage] = useState<DashboardPage>('slip');
+  const isFormDirtyRef = useRef(false);
+
+  // Editable form state (Roll, Phone, and Email are strictly locked)
+  const [photo, setPhoto] = useState<string | null>(initialCached?.photo || null);
+  const [name, setName] = useState(initialCached?.name || '');
+  const [whatsapp, setWhatsapp] = useState(initialCached?.whatsapp || initialCached?.phone || '');
+  const [sameAsPhone, setSameAsPhone] = useState(
+    initialCached ? (initialCached.sameAsPhone ?? (initialCached.whatsapp === initialCached.phone)) : true
+  );
+  const [dob, setDob] = useState(initialCached?.dob || '');
+  const [section, setSection] = useState<SectionType>((initialCached?.section as SectionType) || 'A');
+  const [batch, setBatch] = useState<BatchType>((initialCached?.batch as BatchType) || 'HSC 27');
+  const [interestedSegments, setInterestedSegments] = useState<string[]>(
+    Array.isArray(initialCached?.interestedSegments) ? initialCached.interestedSegments : []
+  );
+  const [skills, setSkills] = useState<string[]>(
+    Array.isArray(initialCached?.skills) ? initialCached.skills : []
+  );
+  const [experienceAchievements, setExperienceAchievements] = useState(
+    initialCached?.experienceAchievements || ''
+  );
 
   const [adjustingPhoto, setAdjustingPhoto] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -101,10 +115,8 @@ export default function MemberDashboard({
   const populateForm = (rec: SubmissionRecord) => {
     setPhoto(rec.photo || null);
     setName(rec.name || '');
-    setPhone(rec.phone || '');
     setWhatsapp(rec.whatsapp || rec.phone || '');
     setSameAsPhone(rec.sameAsPhone ?? (rec.whatsapp === rec.phone));
-    setEmail(rec.email || user.email || '');
     setDob(rec.dob || '');
     setSection((rec.section as SectionType) || 'A');
     setBatch((rec.batch as BatchType) || 'HSC 27');
@@ -115,12 +127,22 @@ export default function MemberDashboard({
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
+    const cached = getCachedMemberProfileForUser(user.uid, user.email);
+    if (cached) {
+      setMember(cached);
+      if (!isFormDirtyRef.current) {
+        populateForm(cached);
+      }
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
     fetchMemberProfileForUser(user.uid, user.email)
       .then((rec) => {
         if (!active) return;
         setMember(rec);
-        if (rec) {
+        if (rec && !isFormDirtyRef.current) {
           populateForm(rec);
         }
       })
@@ -139,27 +161,23 @@ export default function MemberDashboard({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handlePhoneChange = (val: string) => {
-    setPhone(val);
-    if (sameAsPhone) {
-      setWhatsapp(val);
-    }
-  };
-
   const handleSameAsPhoneToggle = (checked: boolean) => {
+    isFormDirtyRef.current = true;
     setSameAsPhone(checked);
-    if (checked) {
-      setWhatsapp(phone);
+    if (checked && member?.phone) {
+      setWhatsapp(member.phone);
     }
   };
 
   const toggleSegment = (seg: string) => {
+    isFormDirtyRef.current = true;
     setInterestedSegments((prev) =>
       prev.includes(seg) ? prev.filter((s) => s !== seg) : [...prev, seg]
     );
   };
 
   const toggleSkill = (sk: string) => {
+    isFormDirtyRef.current = true;
     setSkills((prev) =>
       prev.includes(sk) ? prev.filter((s) => s !== sk) : [...prev, sk]
     );
@@ -204,16 +222,8 @@ export default function MemberDashboard({
       setErrorMsg('Please enter your full name.');
       return;
     }
-    if (!phone.trim()) {
-      setErrorMsg('Please enter your phone number.');
-      return;
-    }
     if (!whatsapp.trim()) {
       setErrorMsg('Please enter your WhatsApp number.');
-      return;
-    }
-    if (!email.trim()) {
-      setErrorMsg('Please enter your email address.');
       return;
     }
     if (!dob) {
@@ -241,10 +251,8 @@ export default function MemberDashboard({
         {
           photo,
           name: name.trim(),
-          phone: phone.trim(),
-          whatsapp: (sameAsPhone ? phone : whatsapp).trim(),
+          whatsapp: (sameAsPhone ? member.phone : whatsapp).trim(),
           sameAsPhone,
-          email: email.trim(),
           dob,
           section,
           batch,
@@ -382,7 +390,7 @@ export default function MemberDashboard({
       {/* Loading State */}
       {loading ? (
         <div className="bg-white/85 backdrop-blur-2xl rounded-3xl border border-slate-200/90 p-12 text-center shadow-lg">
-          <Loader2 className="w-8 h-8 animate-spin text-emerald-600 mx-auto mb-3" />
+          <DotLoader size="lg" color="emerald" className="mx-auto mb-4" />
           <p className="text-sm font-bold text-slate-800">Loading My Dashboard...</p>
           <p className="text-xs text-slate-500 mt-1">Fetching your membership profile</p>
         </div>
@@ -487,7 +495,7 @@ export default function MemberDashboard({
                     >
                       {downloadingSlip ? (
                         <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <DotLoader size="sm" color="white" />
                           <span>Downloading PDF...</span>
                         </>
                       ) : downloadSlipSuccess ? (
@@ -670,6 +678,9 @@ export default function MemberDashboard({
           {activePage === 'edit' && (
             <form
               onSubmit={handleSaveChanges}
+              onChange={() => {
+                isFormDirtyRef.current = true;
+              }}
               className="bg-white/90 backdrop-blur-2xl rounded-3xl border border-slate-200/90 shadow-xl p-6 sm:p-8 space-y-6 text-left animate-in fade-in duration-200"
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-200/80">
@@ -678,12 +689,12 @@ export default function MemberDashboard({
                     Edit Profile
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Update any of your personal, contact, academic, or wing information below. College Roll is locked.
+                    Update your profile details below. College Roll, Phone Number, and Email Address are locked.
                   </p>
                 </div>
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[11px] font-bold self-start sm:self-center">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[11px] font-bold self-start sm:self-center shrink-0">
                   <Lock className="w-3 h-3 text-slate-500" />
-                  <span>Roll Locked</span>
+                  <span>Roll, Phone &amp; Email Locked</span>
                 </span>
               </div>
 
@@ -801,22 +812,35 @@ export default function MemberDashboard({
                 </h3>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* LOCKED PHONE */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Phone Number *
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Phone Number
+                      </label>
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-200/80 px-2 py-0.5 rounded-full">
+                        <Lock className="w-2.5 h-2.5" />
+                        <span>Locked</span>
+                      </span>
+                    </div>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
                         <Phone className="w-4 h-4" />
                       </div>
                       <input
                         type="tel"
-                        required
-                        value={phone}
-                        onChange={(e) => handlePhoneChange(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-mono font-medium"
+                        value={member.phone}
+                        readOnly
+                        disabled
+                        className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 text-sm font-mono font-bold cursor-not-allowed select-none"
                       />
+                      <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-slate-400">
+                        <Lock className="w-3.5 h-3.5" />
+                      </div>
                     </div>
+                    <p className="text-[10.5px] text-slate-500 mt-1">
+                      Phone number cannot be edited after registration.
+                    </p>
                   </div>
 
                   <div>
@@ -848,7 +872,7 @@ export default function MemberDashboard({
                         type="tel"
                         required
                         readOnly={sameAsPhone}
-                        value={whatsapp}
+                        value={sameAsPhone ? member.phone : whatsapp}
                         onChange={(e) => setWhatsapp(e.target.value)}
                         className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm outline-none transition-all font-mono font-medium ${
                           sameAsPhone
@@ -860,22 +884,35 @@ export default function MemberDashboard({
                   </div>
                 </div>
 
+                {/* LOCKED EMAIL */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Email Address *
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Email Address
+                    </label>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-200/80 px-2 py-0.5 rounded-full">
+                      <Lock className="w-2.5 h-2.5" />
+                      <span>Locked</span>
+                    </span>
+                  </div>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
                       <Mail className="w-4 h-4" />
                     </div>
                     <input
                       type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-medium"
+                      value={member.email}
+                      readOnly
+                      disabled
+                      className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 text-sm font-bold cursor-not-allowed select-none"
                     />
+                    <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-slate-400">
+                      <Lock className="w-3.5 h-3.5" />
+                    </div>
                   </div>
+                  <p className="text-[10.5px] text-slate-500 mt-1">
+                    Email address cannot be edited after registration.
+                  </p>
                 </div>
               </div>
 
@@ -1087,7 +1124,7 @@ export default function MemberDashboard({
               >
                 {saving ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <DotLoader size="sm" color="white" />
                     <span>Saving Changes...</span>
                   </>
                 ) : (

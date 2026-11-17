@@ -15,13 +15,13 @@ import {
   Check, 
   CreditCard, 
   Download, 
-  Loader2, 
   Sparkles 
 } from 'lucide-react';
 import { PublicMemberStatus } from './types';
 import { searchMemberStatus } from './services/firebase';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
+import DotLoader from './components/DotLoader';
 
 interface MemberStatusSearchProps {
   onBackToHome: () => void;
@@ -232,7 +232,7 @@ export default function MemberStatusSearch({
             >
               {loading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <DotLoader size="sm" color="white" />
                   <span>Searching...</span>
                 </>
               ) : (
@@ -343,7 +343,7 @@ export default function MemberStatusSearch({
                         >
                           {downloadingSlip ? (
                             <>
-                              <Loader2 className="w-4 h-4 animate-spin text-emerald-100" />
+                              <DotLoader size="sm" color="white" />
                               <span>Downloading PDF...</span>
                             </>
                           ) : downloadSlipSuccess ? (

@@ -1,6 +1,8 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getAuth, 
+  initializeAuth,
+  inMemoryPersistence,
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
@@ -388,6 +390,32 @@ export function subscribeToMembers(
     console.warn('Realtime members listener warning (using cache):', err);
     callback(getCachedMembers());
   });
+}
+
+/**
+ * Real-time listener for Active (Approved) Member Count
+ * Live-updates immediately whenever a member is approved, added, or removed.
+ */
+export function subscribeToActiveMemberCount(
+  callback: (count: number) => void
+): Unsubscribe {
+  const cached = getCachedMembers();
+  if (cached.length > 0) {
+    callback(cached.filter((m) => m.status === 'approved').length);
+  }
+
+  const q = query(collection(db, 'members'), where('status', '==', 'approved'));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      callback(snapshot.size);
+    },
+    (err) => {
+      console.warn('Realtime active member count warning:', err);
+      const fallback = getCachedMembers();
+      callback(fallback.filter((m) => m.status === 'approved').length);
+    }
+  );
 }
 
 /**
@@ -1351,13 +1379,15 @@ export function formatAuthError(err: any): string {
   const code = err?.code || '';
   switch (code) {
     case 'auth/email-already-in-use':
-      return 'An account with this email address already exists. Please sign in instead.';
+      return 'An account with this email address already exists. Please sign in or use Forgot Password.';
     case 'auth/invalid-email':
       return 'Please enter a valid email address.';
     case 'auth/weak-password':
       return 'Password is too weak. Please use at least 6 characters.';
     case 'auth/user-not-found':
       return 'No member account found with this email address.';
+    case 'auth/not-registered-member':
+      return 'This email is not registered as a club member. Only registered members can reset their password.';
     case 'auth/wrong-password':
     case 'auth/invalid-credential':
       return 'Incorrect email or password. Please check and try again.';
@@ -1404,10 +1434,137 @@ export async function loginMemberAccount(email: string, password: string): Promi
 }
 
 /**
- * Send password reset email to a member
+ * Check whether an email belongs to a registered club member
+ */
+export async function checkIsRegisteredMemberEmail(email: string): Promise<boolean> {
+  const cleanEmail = email.trim();
+  const lowerEmail = cleanEmail.toLowerCase();
+  if (!lowerEmail) return false;
+
+  try {
+    const colRef = collection(db, 'members');
+
+    // Fast exact / lowercase queries first
+    const queries = [
+      query(colRef, where('email', '==', cleanEmail), limit(1)),
+      ...(lowerEmail !== cleanEmail ? [query(colRef, where('email', '==', lowerEmail), limit(1))] : [])
+    ];
+
+    for (const q of queries) {
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const data = snap.docs[0].data() as any;
+        if (data && data.status !== 'deleted') {
+          return true;
+        }
+      }
+    }
+
+    // Fallback case-insensitive check across members collection
+    const allSnap = await getDocs(colRef);
+    let found = false;
+    allSnap.forEach((d) => {
+      const data = d.data() as any;
+      if (
+        data &&
+        data.status !== 'deleted' &&
+        typeof data.email === 'string' &&
+        data.email.trim().toLowerCase() === lowerEmail
+      ) {
+        found = true;
+      }
+    });
+    if (found) return true;
+  } catch (err) {
+    console.warn('Registered member email check warning:', err);
+  }
+
+  // Fallback to local cache if offline
+  const cached = getCachedMembers();
+  return cached.some(
+    (m) => m.status !== ('deleted' as any) && (m.email || '').trim().toLowerCase() === lowerEmail
+  );
+}
+
+let secondaryAuthInstance: ReturnType<typeof getAuth> | null = null;
+
+function getSecondaryAuth() {
+  if (secondaryAuthInstance) return secondaryAuthInstance;
+  const existing = getApps().find((a) => a.name === 'ngdcsc-secondary-worker');
+  const secondaryApp = existing || initializeApp(firebaseConfig, 'ngdcsc-secondary-worker');
+  try {
+    secondaryAuthInstance = initializeAuth(secondaryApp, {
+      persistence: inMemoryPersistence
+    });
+  } catch {
+    secondaryAuthInstance = getAuth(secondaryApp);
+  }
+  return secondaryAuthInstance;
+}
+
+function generateSecureTempPassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
+  const bytes = new Uint8Array(24);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+  }
+  return Array.from(bytes, (b) => chars[b % chars.length]).join('');
+}
+
+/**
+ * Ensures an Auth account exists for a manually-added registered member using an isolated
+ * in-memory secondary session so the admin's active session is never disturbed.
+ */
+export async function ensureMemberAuthAccount(
+  email: string,
+  displayName?: string
+): Promise<string | null> {
+  const cleanEmail = email.trim();
+  if (!cleanEmail) return null;
+
+  const secAuth = getSecondaryAuth();
+  try {
+    const cred = await createUserWithEmailAndPassword(
+      secAuth,
+      cleanEmail,
+      generateSecureTempPassword()
+    );
+    if (displayName && cred.user) {
+      await updateProfile(cred.user, { displayName: displayName.trim() }).catch(() => {});
+    }
+    return cred.user.uid;
+  } catch (err: any) {
+    if (err?.code === 'auth/email-already-in-use') {
+      return null;
+    }
+    console.warn('Account setup warning:', err);
+    return null;
+  } finally {
+    await signOut(secAuth).catch(() => {});
+  }
+}
+
+/**
+ * Send password reset email ONLY if the email belongs to a registered club member.
+ * Automatically provisions an Auth account for manually-added members (added without a password)
+ * so they can set their own password directly via the reset link.
  */
 export async function sendMemberPasswordReset(email: string): Promise<void> {
-  await sendPasswordResetEmail(auth, email.trim());
+  const cleanEmail = email.trim();
+  const isRegistered = await checkIsRegisteredMemberEmail(cleanEmail);
+  if (!isRegistered) {
+    const err: any = new Error(
+      'This email is not registered as a club member. Only registered members can reset their password.'
+    );
+    err.code = 'auth/not-registered-member';
+    throw err;
+  }
+  await ensureMemberAuthAccount(cleanEmail);
+  await sendPasswordResetEmail(auth, cleanEmail);
 }
 
 /**
@@ -1418,60 +1575,75 @@ export async function logoutMemberAccount(): Promise<void> {
 }
 
 /**
+ * Synchronously check local cache for the logged-in member's profile (0ms render)
+ */
+export function getCachedMemberProfileForUser(
+  uid?: string | null,
+  email?: string | null
+): SubmissionRecord | null {
+  const cached = getCachedMembers();
+  const normEmail = (email || '').trim().toLowerCase();
+  const match = cached.find(
+    (m) =>
+      (uid && m.uid && m.uid === uid) ||
+      (normEmail && (m.email || '').trim().toLowerCase() === normEmail)
+  );
+  return match || null;
+}
+
+/**
  * Fetch the logged-in member's profile record by UID (or fallback to email)
  */
 export async function fetchMemberProfileForUser(
   uid: string,
   email?: string | null
 ): Promise<SubmissionRecord | null> {
+  const cacheMatch = (record: SubmissionRecord) => {
+    try {
+      const cached = getCachedMembers();
+      const updated = [record, ...cached.filter((m) => m.id !== record.id)];
+      localStorage.setItem(LS_MEMBERS_KEY, JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+  };
+
   try {
     const colRef = collection(db, 'members');
+    const queries: any[] = [query(colRef, where('uid', '==', uid), limit(1))];
 
-    // 1. Primary lookup by Firebase Auth UID
-    const uidSnap = await getDocs(query(colRef, where('uid', '==', uid), limit(1)));
-    if (!uidSnap.empty) {
-      const d = uidSnap.docs[0];
-      return { id: d.id, ...(d.data() as any) } as SubmissionRecord;
-    }
-
-    // 2. Fallback lookup by email (for previously registered members)
     if (email && email.trim()) {
       const cleanEmail = email.trim();
       const lowerEmail = cleanEmail.toLowerCase();
-      const emailQueries = [
-        query(colRef, where('email', '==', cleanEmail), limit(1)),
-        ...(lowerEmail !== cleanEmail ? [query(colRef, where('email', '==', lowerEmail), limit(1))] : [])
-      ];
+      queries.push(query(colRef, where('email', '==', cleanEmail), limit(1)));
+      if (lowerEmail !== cleanEmail) {
+        queries.push(query(colRef, where('email', '==', lowerEmail), limit(1)));
+      }
+    }
 
-      for (const q of emailQueries) {
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const d = snap.docs[0];
-          const data = d.data() as any;
-          // Bind uid silently if missing
-          if (!data.uid) {
-            updateDoc(doc(db, 'members', d.id), { uid }).catch(() => {});
-          }
-          return { id: d.id, ...data, uid: data.uid || uid } as SubmissionRecord;
+    const snaps = await Promise.all(queries.map((q) => getDocs(q).catch(() => null)));
+    for (const snap of snaps) {
+      if (snap && !snap.empty) {
+        const d = snap.docs[0];
+        const data = d.data() as any;
+        if (!data.uid) {
+          updateDoc(doc(db, 'members', d.id), { uid }).catch(() => {});
         }
+        const record = { id: d.id, ...data, uid: data.uid || uid } as SubmissionRecord;
+        cacheMatch(record);
+        return record;
       }
     }
   } catch (err) {
     console.warn('Member profile lookup warning:', err);
   }
 
-  // 3. Local cache fallback
-  const cached = getCachedMembers();
-  const normEmail = (email || '').trim().toLowerCase();
-  const localMatch = cached.find(
-    m => (m.uid && m.uid === uid) || (normEmail && (m.email || '').trim().toLowerCase() === normEmail)
-  );
-  return localMatch || null;
+  return getCachedMemberProfileForUser(uid, email);
 }
 
 /**
  * Self-service profile update from My Dashboard.
- * Strictly strips studentId (Roll), status, membershipId, and rejectionReason so Roll can NEVER be changed.
+ * Strictly strips studentId (Roll), phone, email, status, membershipId, and rejectionReason so locked fields can NEVER be changed.
  */
 export async function updateOwnMemberProfile(
   memberId: string,
@@ -1479,14 +1651,12 @@ export async function updateOwnMemberProfile(
   updates: Partial<MembershipFormData>,
   existingMember?: SubmissionRecord
 ): Promise<SubmissionRecord> {
-  // Explicitly pick ONLY allowed editable fields (excluding studentId / Roll)
+  // Explicitly pick ONLY allowed editable fields (excluding studentId / Roll, phone, and email)
   const safeUpdates: Record<string, any> = cleanFirestoreData({
     photo: updates.photo !== undefined ? updates.photo : existingMember?.photo ?? null,
     name: updates.name !== undefined ? updates.name.trim() : existingMember?.name,
-    phone: updates.phone !== undefined ? updates.phone.trim() : existingMember?.phone,
     whatsapp: updates.whatsapp !== undefined ? updates.whatsapp.trim() : existingMember?.whatsapp,
     sameAsPhone: updates.sameAsPhone !== undefined ? updates.sameAsPhone : existingMember?.sameAsPhone,
-    email: updates.email !== undefined ? updates.email.trim() : existingMember?.email,
     section: updates.section !== undefined ? updates.section : existingMember?.section,
     dob: updates.dob !== undefined ? updates.dob : existingMember?.dob,
     batch: updates.batch !== undefined ? updates.batch : existingMember?.batch,

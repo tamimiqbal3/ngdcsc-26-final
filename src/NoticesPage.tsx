@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { ClubNotice } from './types';
 import { fetchNoticesFromFirebase, subscribeToNotices } from './services/firebase';
+import DotLoader from './components/DotLoader';
 
 interface NoticesPageProps {
   onBack: () => void;
@@ -34,7 +35,7 @@ export default function NoticesPage({ onBack, onOpenAdmin }: NoticesPageProps) {
       return [];
     }
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => notices.length === 0);
   const [activeNoticeModal, setActiveNoticeModal] = useState<ClubNotice | null>(null);
 
   // Real-time listener for notices
@@ -110,7 +111,7 @@ export default function NoticesPage({ onBack, onOpenAdmin }: NoticesPageProps) {
       {/* Notices Feed - Apple Light Cards Grid Layout */}
       {loading ? (
         <div className="py-20 text-center">
-          <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <DotLoader size="lg" color="emerald" className="mx-auto mb-3" />
           <p className="text-xs font-bold text-slate-500">Loading notices...</p>
         </div>
       ) : sortedNotices.length === 0 ? (

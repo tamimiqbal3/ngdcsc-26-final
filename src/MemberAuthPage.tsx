@@ -9,7 +9,6 @@ import {
   KeyRound,
   AlertCircle,
   CheckCircle2,
-  Loader2,
   UserPlus,
   ShieldCheck
 } from 'lucide-react';
@@ -18,6 +17,7 @@ import {
   sendMemberPasswordReset,
   formatAuthError
 } from './services/firebase';
+import DotLoader from './components/DotLoader';
 
 interface MemberAuthPageProps {
   onBackToHome: () => void;
@@ -128,7 +128,7 @@ export default function MemberAuthPage({
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">
             {mode === 'login'
               ? 'Sign in with your registered email and password to view and update your profile.'
-              : 'Enter your registered email address and we will send you a password reset link.'}
+              : 'Only registered club members can reset their password. Enter your registered email below.'}
           </p>
         </div>
 
@@ -223,7 +223,7 @@ export default function MemberAuthPage({
             >
               {submitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <DotLoader size="sm" color="white" />
                   <span>Signing In...</span>
                 </>
               ) : (
@@ -267,7 +267,7 @@ export default function MemberAuthPage({
             >
               {submitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <DotLoader size="sm" color="white" />
                   <span>Sending Reset Link...</span>
                 </>
               ) : (

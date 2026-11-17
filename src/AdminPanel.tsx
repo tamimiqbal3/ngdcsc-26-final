@@ -81,7 +81,8 @@ import {
   updateRegistrationSetting,
   DEFAULT_REGISTRATION_SETTING,
   fetchEmailLogsFromFirebase,
-  subscribeToEmailLogs
+  subscribeToEmailLogs,
+  ensureMemberAuthAccount
 } from './services/firebase';
 import { 
   signInWithPopup, 
@@ -91,6 +92,7 @@ import {
 } from 'firebase/auth';
 import { INITIAL_COMMITTEE } from './ExecutiveCommitteePage';
 import ConfirmationSlipModal from './components/ConfirmationSlipModal';
+import DotLoader from './components/DotLoader';
 
 const CLUB_LOGO_URL = 'https://plain-apac-prod-public.komododecks.com/202609/21/iFpbvbXJaON4rnVidFRy/image.png';
 
@@ -111,8 +113,8 @@ type TabType = 'dashboard' | 'members' | 'email_logs' | 'committee' | 'notices' 
 
 export default function AdminPanel({ onExit }: AdminPanelProps) {
   // Auth state
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<User | null>(() => auth.currentUser);
+  const [authLoading, setAuthLoading] = useState(() => !auth.currentUser);
 
   // Login form state
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -668,6 +670,9 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     setMembers(prev => prev.map(m => m.id === memberId ? updated : m));
     setEditingMember(null);
     try {
+      if (updated.email && updated.email.trim()) {
+        ensureMemberAuthAccount(updated.email, updated.name).catch(() => {});
+      }
       await updateMemberInFirebase(memberId, updated);
     } catch (err) {
       console.warn('Update error:', err);
@@ -676,9 +681,16 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
   const handleAddMemberSubmit = async (e: React.FormEvent, newRecord: SubmissionRecord) => {
     e.preventDefault();
-    const id = await saveMemberToFirebase(newRecord);
+    let recordToSave = { ...newRecord };
+    if (recordToSave.email && recordToSave.email.trim()) {
+      const provisionedUid = await ensureMemberAuthAccount(recordToSave.email, recordToSave.name);
+      if (provisionedUid && !recordToSave.uid) {
+        recordToSave.uid = provisionedUid;
+      }
+    }
+    const id = await saveMemberToFirebase(recordToSave);
     const cached = JSON.parse(localStorage.getItem('ngdc_sc_firebase_members_v1') || '[]');
-    const saved = cached.find((m: SubmissionRecord) => m.id === id) || { ...newRecord, id };
+    const saved = cached.find((m: SubmissionRecord) => m.id === id) || { ...recordToSave, id };
     setMembers(prev => [saved, ...prev.filter(m => m.id !== id)]);
     setShowAddMemberModal(false);
   };
@@ -823,7 +835,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+          <DotLoader size="lg" color="emerald" />
           <p className="text-xs font-bold text-slate-600">Verifying Club Admin Permissions...</p>
         </div>
       </div>
@@ -937,7 +949,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
             >
               {loginSubmitting ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
+                  <DotLoader size="sm" color="slate" />
                   <span>Authenticating session...</span>
                 </>
               ) : (
@@ -3084,6 +3096,9 @@ function AddMemberManualModal({
                 placeholder="student@gmail.com" 
                 className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white" 
               />
+              <span className="text-[10px] text-slate-500 mt-1 block">
+                No password required — member can use Forgot Password on Sign In with this email.
+              </span>
             </div>
           </div>
 
@@ -3678,7 +3693,7 @@ function NoticeModal({
 
             {uploadingFile ? (
               <div className="p-4 rounded-xl bg-slate-100 flex items-center justify-center gap-2 text-slate-600 font-semibold">
-                <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                <DotLoader size="sm" color="emerald" />
                 <span>Processing &amp; optimizing file...</span>
               </div>
             ) : fileUrl ? (
@@ -3760,7 +3775,7 @@ function NoticeModal({
             >
               {submitting ? (
                 <>
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <DotLoader size="sm" color="white" />
                   <span>Saving...</span>
                 </>
               ) : (

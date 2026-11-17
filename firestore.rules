@@ -31,12 +31,14 @@ service cloud.firestore {
     }
 
     // 3. Member Registrations: Anyone can submit registration (create) and check status (read);
-    // authorized admin can update/delete; signed-in owner can update profile except Roll (studentId) & review fields
+    // authorized admin can update/delete; signed-in owner can update profile except Roll (studentId), phone, email & review fields
     match /members/{memberId} {
       allow create, read: if true;
       allow update: if isSuperAdmin() || (
         isMemberOwner() &&
         request.resource.data.get('studentId', null) == resource.data.get('studentId', null) &&
+        request.resource.data.get('phone', null) == resource.data.get('phone', null) &&
+        request.resource.data.get('email', null) == resource.data.get('email', null) &&
         request.resource.data.get('status', 'pending') == resource.data.get('status', 'pending') &&
         request.resource.data.get('membershipId', null) == resource.data.get('membershipId', null) &&
         request.resource.data.get('rejectionReason', null) == resource.data.get('rejectionReason', null)
