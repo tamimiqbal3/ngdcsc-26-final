@@ -280,15 +280,15 @@ function HomePage({
 
         {/* Live Notice Banner */}
         {latestNotice && (
-          <div className="pt-2">
+          <div className="pt-2 px-1">
             <button
               type="button"
               onClick={() => onOpenNotice && onOpenNotice(latestNotice)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white hover:bg-emerald-50/40 border border-emerald-200 text-xs text-slate-700 transition-all cursor-pointer group max-w-xl text-left shadow-2xs"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white hover:bg-emerald-50/40 border border-emerald-200 text-xs text-slate-700 transition-all cursor-pointer group max-w-full sm:max-w-xl text-left shadow-2xs"
             >
               <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
               <span className="font-semibold text-emerald-800 shrink-0">Announcement:</span>
-              <span className="truncate text-slate-800 group-hover:text-emerald-700 transition-colors">
+              <span className="truncate text-slate-800 group-hover:text-emerald-700 transition-colors min-w-0">
                 {latestNotice.title}
               </span>
               <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
@@ -854,12 +854,12 @@ export default function App() {
             </div>
           </button>
 
-          {/* Desktop macOS Segmented Navigation Tabs */}
+          {/* Desktop Segmented Navigation Tabs (Including Login / Sign Up tab) */}
           <nav className="hidden md:flex items-center gap-1 bg-black/[0.03] p-1 rounded-full border border-black/[0.04]">
             <button
               type="button"
               onClick={() => navigateTo('home')}
-              className={`px-3.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
                 currentView === 'home'
                   ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)] font-semibold'
                   : 'text-slate-600 hover:text-slate-950 hover:bg-white/50'
@@ -871,7 +871,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => navigateTo('notices')}
-              className={`px-3.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                 currentView === 'notices'
                   ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)] font-semibold'
                   : 'text-slate-600 hover:text-slate-950 hover:bg-white/50'
@@ -886,7 +886,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => navigateTo('committee')}
-              className={`px-3.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
                 currentView === 'committee'
                   ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)] font-semibold'
                   : 'text-slate-600 hover:text-slate-950 hover:bg-white/50'
@@ -898,7 +898,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => navigateTo('status')}
-              className={`px-3.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
                 currentView === 'status'
                   ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)] font-semibold'
                   : 'text-slate-600 hover:text-slate-950 hover:bg-white/50'
@@ -906,32 +906,63 @@ export default function App() {
             >
               Check Status
             </button>
-          </nav>
 
-          {/* Right Action Buttons */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* Icon-only Login / My Dashboard Button */}
             <button
               type="button"
               onClick={() => navigateTo(authUser ? 'dashboard' : 'login')}
-              className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all cursor-pointer shadow-2xs ${
+              className={`px-3.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap ${
+                currentView === 'login' || currentView === 'dashboard'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : authUser
+                  ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                  : 'bg-white/80 text-slate-800 hover:bg-white hover:text-emerald-700 shadow-[0_1px_2px_rgba(0,0,0,0.05)]'
+              }`}
+            >
+              {authUser ? (
+                <>
+                  <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span>My Dashboard</span>
+                </>
+              ) : (
+                <>
+                  <LogIn className="w-3.5 h-3.5 shrink-0" />
+                  <span>Login / Sign Up</span>
+                </>
+              )}
+            </button>
+          </nav>
+
+          {/* Right Action Buttons (Visible on Mobile + Compact Hamburger) */}
+          <div className="flex md:hidden items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => navigateTo(authUser ? 'dashboard' : 'login')}
+              className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 border text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
                 currentView === 'login' || currentView === 'dashboard'
                   ? 'bg-emerald-600 border-emerald-600 text-white'
                   : authUser
-                  ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
-                  : 'bg-white/90 hover:bg-slate-100 border-slate-200/90 text-slate-700'
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'
+                  : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
               }`}
-              title={authUser ? 'My Dashboard' : 'Sign In'}
-              aria-label={authUser ? 'My Dashboard' : 'Sign In'}
             >
-              {authUser ? <UserCheck className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
+              {authUser ? (
+                <>
+                  <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span>Dashboard</span>
+                </>
+              ) : (
+                <>
+                  <LogIn className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                  <span>Login / Sign Up</span>
+                </>
+              )}
             </button>
 
             {/* Mobile Menu Hamburger */}
             <button
               type="button"
               onClick={() => setMenuOpen(!menuOpen)}
-              className="md:hidden w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/[0.04] hover:bg-black/[0.08] text-slate-700 flex items-center justify-center transition-all cursor-pointer"
+              className="w-8 h-8 rounded-full bg-black/[0.04] hover:bg-black/[0.08] text-slate-700 flex items-center justify-center transition-all cursor-pointer shrink-0"
               aria-label="Toggle Navigation Menu"
             >
               {menuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
@@ -958,13 +989,19 @@ export default function App() {
 
             <button
               type="button"
-              onClick={() => navigateTo('form')}
-              className={`w-full px-4 py-2.5 rounded-2xl text-left text-xs font-medium flex items-center justify-between cursor-pointer ${
-                currentView === 'form' ? 'bg-slate-100 font-semibold text-slate-950' : 'text-slate-700 hover:bg-slate-50'
+              onClick={() => navigateTo(authUser ? 'dashboard' : 'login')}
+              className={`w-full px-4 py-2.5 rounded-2xl text-left text-xs font-semibold flex items-center justify-between cursor-pointer ${
+                currentView === 'login' || currentView === 'dashboard'
+                  ? 'bg-emerald-50 text-emerald-800'
+                  : 'text-slate-800 hover:bg-slate-50'
               }`}
             >
-              <span>Membership Registration</span>
-              <FileText className="w-4 h-4 text-slate-500" />
+              <span>{authUser ? 'My Dashboard' : 'Login / Sign Up'}</span>
+              {authUser ? (
+                <UserCheck className="w-4 h-4 text-emerald-600" />
+              ) : (
+                <LogIn className="w-4 h-4 text-emerald-600" />
+              )}
             </button>
 
             <button
@@ -1003,58 +1040,80 @@ export default function App() {
         )}
       </header>
 
-      {/* Selected Notice Modal (When clicking homepage announcement) */}
+      {/* Selected Notice Modal (When clicking homepage announcement - strictly fits viewport) */}
       {selectedNotice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 text-slate-800 relative">
-            <button 
-              type="button"
-              onClick={() => setSelectedNotice(null)}
-              className="absolute top-4 right-4 p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700 cursor-pointer transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+        <div
+          onClick={() => setSelectedNotice(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/45 backdrop-blur-sm animate-in fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full max-h-[88vh] flex flex-col overflow-hidden text-slate-800 relative"
+          >
+            {/* Fixed Modal Header */}
+            <div className="px-5 sm:px-6 pt-5 pb-3.5 border-b border-slate-100 shrink-0 relative">
+              <button 
+                type="button"
+                onClick={() => setSelectedNotice(null)}
+                aria-label="Close notice"
+                className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700 cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
 
-            <div className="flex items-center gap-2 mb-2">
-              <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-50 text-emerald-800 border border-emerald-200">
-                {selectedNotice.category || 'Official Notice'}
-              </span>
-              <span className="text-xs font-mono text-slate-500">{selectedNotice.date}</span>
+              <div className="flex items-center gap-2 mb-2 pr-8">
+                <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  {selectedNotice.category || 'Official Notice'}
+                </span>
+                <span className="text-xs font-mono text-slate-500">{selectedNotice.date}</span>
+              </div>
+
+              <h3 className="text-lg font-black text-slate-900 leading-snug break-words pr-8">
+                {selectedNotice.title}
+              </h3>
             </div>
 
-            <h3 className="text-lg font-black text-slate-900 mb-3">{selectedNotice.title}</h3>
+            {/* Scrollable Modal Body */}
+            <div className="px-5 sm:px-6 py-4 overflow-y-auto flex-1 min-h-0 space-y-4">
+              {selectedNotice.content && (
+                <p className="text-xs sm:text-sm text-slate-700 whitespace-pre-line break-words leading-relaxed">
+                  {selectedNotice.content}
+                </p>
+              )}
 
-            {selectedNotice.content && (
-              <p className="text-xs text-slate-700 mb-4 whitespace-pre-line leading-relaxed">{selectedNotice.content}</p>
-            )}
-
-            {selectedNotice.fileUrl && (
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-emerald-600" />
-                    <span>Attached Notice Document</span>
-                  </p>
-                  <a
-                    href={selectedNotice.fileUrl}
-                    download={selectedNotice.fileName || 'NGDCSC_Notice'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-xs transition-colors cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download</span>
-                  </a>
-                </div>
-                {(selectedNotice.fileType === 'image' || selectedNotice.fileUrl.startsWith('data:image')) && (
-                  <div className="rounded-xl overflow-hidden border border-slate-200 mb-3 max-h-[65vh] bg-slate-100 flex items-center justify-center p-1.5">
-                    <img src={selectedNotice.fileUrl} alt="Notice document" className="w-full h-auto max-h-[65vh] object-contain rounded-lg" />
+              {selectedNotice.fileUrl && (
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5 min-w-0">
+                      <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="truncate">{selectedNotice.fileName || 'Attached Notice Document'}</span>
+                    </p>
+                    <a
+                      href={selectedNotice.fileUrl}
+                      download={selectedNotice.fileName || 'NGDCSC_Notice'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download</span>
+                    </a>
                   </div>
-                )}
-              </div>
-            )}
+                  {(selectedNotice.fileType === 'image' || selectedNotice.fileUrl.startsWith('data:image')) && (
+                    <div className="rounded-xl overflow-hidden border border-slate-200 bg-white flex items-center justify-center p-1.5">
+                      <img
+                        src={selectedNotice.fileUrl}
+                        alt="Notice document"
+                        className="max-w-full w-auto max-h-[48vh] object-contain rounded-lg"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
-            <div className="flex items-center justify-between gap-2 pt-2">
+            {/* Fixed Modal Footer */}
+            <div className="px-5 sm:px-6 py-3.5 border-t border-slate-100 bg-slate-50/70 flex items-center justify-between gap-2 shrink-0">
               <button
                 type="button"
                 onClick={async () => {
@@ -1070,7 +1129,7 @@ export default function App() {
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors inline-flex items-center gap-1.5 border ${
                   copiedHomeNoticeLink
                     ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                    : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
+                    : 'bg-white border-slate-200 hover:bg-slate-100 text-slate-700'
                 }`}
               >
                 {copiedHomeNoticeLink ? (
@@ -1089,7 +1148,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setSelectedNotice(null)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer transition-colors"
+                className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold cursor-pointer transition-colors"
               >
                 Close
               </button>
