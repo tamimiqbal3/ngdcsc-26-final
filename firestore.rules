@@ -88,22 +88,68 @@ service cloud.firestore {
       allow create, update, delete: if isSuperAdmin();
     }
 
-    // 9. Admin-Provisioned Member Credentials:
-    // Strictly readable and deletable ONLY by authorized super admins.
-    // A signed-in member can only mark their own credential doc as passwordChangedByMember=true (clearing loginPassword).
-    match /member_credentials/{memberId} {
-      allow read, delete: if isSuperAdmin();
-      allow create, update: if isSuperAdmin() || (
-        request.auth != null &&
-        request.resource.data.uid == request.auth.uid &&
-        request.resource.data.passwordChangedByMember == true &&
-        request.resource.data.loginPassword == null
+    // Helper: strictly matches President account (Tamim Iqbal)
+    function isPresident() {
+      return request.auth != null &&
+        request.auth.token.email != null &&
+        request.auth.token.email.lower() == 'info.tamimiq@gmail.com';
+    }
+
+    // Helper: matches the specific member who owns a given Inbox thread
+    function isThreadMemberOwner(threadData) {
+      return request.auth != null && (
+        (threadData.memberUid != null && threadData.memberUid == request.auth.uid) ||
+        (threadData.memberEmailLower != null &&
+         request.auth.token.email != null &&
+         threadData.memberEmailLower == request.auth.token.email.lower())
       );
+    }
+
+    // 9. President <-> Individual Member Private Inbox Threads & Chat History
+    // Only President (info.tamimiq@gmail.com / Tamim Iqbal) can message any member individually;
+    // every other member can ONLY read and write their own direct thread with Tamim Iqbal.
+    match /inbox_threads/{threadId} {
+      allow read: if isPresident() || isThreadMemberOwner(resource.data);
+      allow create: if isPresident() || (
+        request.auth != null &&
+        request.auth.token.email != null &&
+        request.resource.data.memberEmailLower == request.auth.token.email.lower() &&
+        request.resource.data.lastSenderRole == 'member'
+      );
+      allow update: if isPresident() || (
+        isThreadMemberOwner(resource.data) &&
+        request.resource.data.memberEmailLower == resource.data.memberEmailLower &&
+        request.resource.data.memberId == resource.data.memberId
+      );
+      allow delete: if isPresident();
+
+      match /messages/{messageId} {
+        allow read: if isPresident() || (
+          exists(/databases/$(database)/documents/inbox_threads/$(threadId)) &&
+          isThreadMemberOwner(get(/databases/$(database)/documents/inbox_threads/$(threadId)).data)
+        );
+        allow create: if request.auth != null &&
+          request.auth.token.email != null &&
+          request.resource.data.senderEmailLower == request.auth.token.email.lower() &&
+          (
+            (isPresident() && request.resource.data.senderRole == 'president') ||
+            (!isPresident() &&
+             request.resource.data.senderRole == 'member' &&
+             exists(/databases/$(database)/documents/inbox_threads/$(threadId)) &&
+             isThreadMemberOwner(get(/databases/$(database)/documents/inbox_threads/$(threadId)).data))
+          );
+        allow update, delete: if isPresident();
+      }
+    }
+
+    // 10. System metadata (serial counters)
+    match /system_meta/{docId} {
+      allow read, write: if isSuperAdmin();
     }
 
     // Fallback: Default deny for any other collections
     match /{document=**} {
-      allow read, write: if isSuperAdmin();
+      allow read, write: if false;
     }
   }
 }

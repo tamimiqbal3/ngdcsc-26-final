@@ -39,11 +39,12 @@ import {
   Lock,
   Sparkles,
   QrCode,
-  KeyRound
+  Inbox
 } from 'lucide-react';
 import ImageAdjustModal from './components/ImageAdjustModal';
 import EmailLogsPanel from './components/EmailLogsPanel';
 import AdminAttendancePanel from './components/AdminAttendancePanel';
+import InboxPanel from './components/InboxPanel';
 import { 
   SubmissionRecord, 
   ExecutiveMember, 
@@ -56,8 +57,7 @@ import {
   DEFAULT_SKILL_OPTIONS,
   EmailLogRecord,
   AttendanceRecord,
-  AttendanceSession,
-  MemberCredentialRecord
+  AttendanceSession
 } from './types';
 import AdminDashboardView from './AdminDashboardView';
 import { 
@@ -89,17 +89,13 @@ import {
   fetchEmailLogsFromFirebase,
   subscribeToEmailLogs,
   ensureMemberAuthAccount,
-  provisionMemberAuthAccount,
-  generateRollAutoPassword,
-  saveMemberCredentialForAdmin,
-  subscribeToMemberCredentials,
-  getCachedMemberCredentials,
-  clearCachedMemberCredentials,
   subscribeToAllAttendance,
   subscribeToAttendanceSessions,
   getCachedAttendance,
   getCachedAttendanceSessions,
-  getTodayLocalDateStr
+  getTodayLocalDateStr,
+  isPresidentEmail,
+  subscribeToPresidentInboxThreads
 } from './services/firebase';
 import { 
   signInWithPopup, 
@@ -126,12 +122,14 @@ interface AdminPanelProps {
   onExit: () => void;
 }
 
-type TabType = 'dashboard' | 'members' | 'attendance' | 'email_logs' | 'committee' | 'notices' | 'settings';
+type TabType = 'dashboard' | 'members' | 'attendance' | 'inbox' | 'email_logs' | 'committee' | 'notices' | 'settings';
 
 export default function AdminPanel({ onExit }: AdminPanelProps) {
   // Auth state
   const [currentUser, setCurrentUser] = useState<User | null>(() => auth.currentUser);
   const [authLoading, setAuthLoading] = useState(() => !auth.currentUser);
+  const isPresident = isPresidentEmail(currentUser?.email);
+  const [presidentUnreadCount, setPresidentUnreadCount] = useState(0);
 
   // Login form state
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -139,6 +137,17 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
   // Active Tab: Default is 'dashboard' with rich graphs
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+
+  useEffect(() => {
+    if (!isPresident) {
+      setPresidentUnreadCount(0);
+      return;
+    }
+    return subscribeToPresidentInboxThreads((list) => {
+      const total = list.reduce((sum, t) => sum + (t.unreadByPresident || 0), 0);
+      setPresidentUnreadCount(total);
+    });
+  }, [isPresident]);
 
   // Data states: initialized instantly from localStorage cache so there is ZERO lag on open/refresh
   const [members, setMembers] = useState<SubmissionRecord[]>(() => {
@@ -175,15 +184,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   });
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => getCachedAttendance());
   const [attendanceSessions, setAttendanceSessions] = useState<AttendanceSession[]>(() => getCachedAttendanceSessions());
-  const [memberCredentials, setMemberCredentials] = useState<Record<string, MemberCredentialRecord>>(() => getCachedMemberCredentials());
-  const [lastSavedCredential, setLastSavedCredential] = useState<{
-    memberName: string;
-    membershipId?: string;
-    email?: string;
-    password?: string;
-    alreadyExists?: boolean;
-    noEmail?: boolean;
-  } | null>(null);
   const [loadingData, setLoadingData] = useState(false);
 
   // Photo Adjust Modal State
@@ -552,11 +552,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       setAttendanceSessions(sessions);
     });
 
-    // 7. Admin-only saved member credentials real-time stream
-    const unsubCredentials = subscribeToMemberCredentials((creds) => {
-      setMemberCredentials(creds);
-    });
-
     return () => {
       unsubMembers();
       unsubCommittee();
@@ -565,7 +560,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       unsubEmailLogs();
       unsubAttendance();
       unsubAttendanceSessions();
-      unsubCredentials();
     };
   }, [isAuthenticated]);
 
@@ -618,9 +612,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     } catch {
       // ignore
     }
-    clearCachedMemberCredentials();
-    setMemberCredentials({});
-    setLastSavedCredential(null);
     setCurrentUser(null);
     setLoginError(null);
   };
@@ -741,48 +732,12 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     if (!editingMember || !editingMember.id) return;
     const memberId = editingMember.id;
     const updated = { ...editingMember, id: memberId };
-    const existingCred = memberCredentials[memberId];
     // Optimistic save
     setMembers(prev => prev.map(m => m.id === memberId ? updated : m));
     setEditingMember(null);
     try {
-      const cleanEmail = (updated.email || '').trim();
-      if (cleanEmail && !existingCred?.loginPassword && !existingCred?.passwordChangedByMember) {
-        const editAutoPassword = generateRollAutoPassword(updated.studentId);
-        const provRes = await provisionMemberAuthAccount(cleanEmail, updated.name, editAutoPassword);
-        if (provRes.created && provRes.uid) {
-          updated.uid = provRes.uid;
-          setMembers(prev => prev.map(m => m.id === memberId ? { ...m, uid: provRes.uid! } : m));
-          await saveMemberCredentialForAdmin(memberId, {
-            uid: provRes.uid,
-            email: cleanEmail,
-            loginPassword: editAutoPassword,
-            createdByAdmin: true,
-            passwordChangedByMember: false,
-            updatedBy: currentUser?.email || 'Admin'
-          });
-          setMemberCredentials(prev => ({
-            ...prev,
-            [memberId]: {
-              memberId,
-              uid: provRes.uid,
-              email: cleanEmail,
-              loginPassword: editAutoPassword,
-              createdByAdmin: true,
-              passwordChangedByMember: false,
-              updatedAt: new Date().toISOString(),
-              updatedBy: currentUser?.email || 'Admin'
-            }
-          }));
-          setLastSavedCredential({
-            memberName: updated.name,
-            membershipId: updated.membershipId,
-            email: cleanEmail,
-            password: editAutoPassword
-          });
-        }
-      } else if (cleanEmail) {
-        ensureMemberAuthAccount(cleanEmail, updated.name).catch(() => {});
+      if (updated.email && updated.email.trim()) {
+        ensureMemberAuthAccount(updated.email, updated.name).catch(() => {});
       }
       await updateMemberInFirebase(memberId, updated);
     } catch (err) {
@@ -798,77 +753,28 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     e.preventDefault();
     let recordToSave = { ...newRecord };
     let provisionedUid: string | null = null;
-    let authCreated = false;
-    let authAlreadyExists = false;
-    const cleanEmail = (recordToSave.email || '').trim();
-
-    if (cleanEmail) {
-      const provRes = await provisionMemberAuthAccount(
-        cleanEmail,
+    if (recordToSave.email && recordToSave.email.trim()) {
+      provisionedUid = await ensureMemberAuthAccount(
+        recordToSave.email,
         recordToSave.name,
         autoPassword
       );
-      provisionedUid = provRes.uid;
-      authCreated = provRes.created;
-      authAlreadyExists = provRes.alreadyExists;
       if (provisionedUid && !recordToSave.uid) {
         recordToSave.uid = provisionedUid;
       }
     }
-
     const id = await saveMemberToFirebase(recordToSave);
     const cached = JSON.parse(localStorage.getItem('ngdc_sc_firebase_members_v1') || '[]');
     const saved = cached.find((m: SubmissionRecord) => m.id === id) || { ...recordToSave, id };
     setMembers(prev => [saved, ...prev.filter(m => m.id !== id)]);
     setShowAddMemberModal(false);
-
-    if (cleanEmail && autoPassword && authCreated) {
-      await saveMemberCredentialForAdmin(id, {
-        uid: provisionedUid,
-        email: cleanEmail,
-        loginPassword: autoPassword,
-        createdByAdmin: true,
-        passwordChangedByMember: false,
-        updatedBy: currentUser?.email || 'Admin'
-      });
-      setMemberCredentials(prev => ({
-        ...prev,
-        [id]: {
-          memberId: id,
-          uid: provisionedUid,
-          email: cleanEmail,
-          loginPassword: autoPassword,
-          createdByAdmin: true,
-          passwordChangedByMember: false,
-          updatedAt: new Date().toISOString(),
-          updatedBy: currentUser?.email || 'Admin'
-        }
-      }));
-      setLastSavedCredential({
-        memberName: saved.name || recordToSave.name,
-        membershipId: saved.membershipId || recordToSave.membershipId,
-        email: cleanEmail,
-        password: autoPassword
-      });
-      setCopiedToast(`Member saved! Login password: ${autoPassword}`);
+    if (recordToSave.email && recordToSave.email.trim() && autoPassword) {
+      setCopiedToast(
+        provisionedUid
+          ? `Member added! Login password: ${autoPassword}`
+          : `Member added! Existing account kept (use Forgot Password if needed).`
+      );
       setTimeout(() => setCopiedToast(null), 6000);
-    } else if (cleanEmail && authAlreadyExists) {
-      setLastSavedCredential({
-        memberName: saved.name || recordToSave.name,
-        membershipId: saved.membershipId || recordToSave.membershipId,
-        email: cleanEmail,
-        alreadyExists: true
-      });
-      setCopiedToast('Member saved! Existing account kept (use Forgot Password if needed).');
-      setTimeout(() => setCopiedToast(null), 5000);
-    } else if (!cleanEmail) {
-      setLastSavedCredential({
-        memberName: saved.name || recordToSave.name,
-        membershipId: saved.membershipId || recordToSave.membershipId,
-        noEmail: true
-      });
-      setCopiedToast('Member saved without email (add email in Edit to activate login password).');
-      setTimeout(() => setCopiedToast(null), 5000);
     }
   };
 
@@ -1296,6 +1202,29 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
             </span>
           </button>
 
+          {/* 3.5. President Inbox Tab (Strictly visible only for info.tamimiq@gmail.com / Tamim Iqbal) */}
+          {isPresident && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('inbox')}
+              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                activeTab === 'inbox'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Inbox className="w-4 h-4 shrink-0" />
+              <span>President Inbox</span>
+              {presidentUnreadCount > 0 && (
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                  activeTab === 'inbox' ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white'
+                }`}>
+                  {presidentUnreadCount}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* 4. Email Logs Tab (ইমেইল লগস) */}
           <button
             type="button"
@@ -1408,96 +1337,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
         {/* ===================== TAB 1: MEMBERS ===================== */}
         {activeTab === 'members' && (
           <div className="space-y-5 animate-in fade-in duration-200">
-            {/* Persistent Post-Save Credential Banner */}
-            {lastSavedCredential && (
-              <div className={`p-4 sm:p-5 rounded-2xl border shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                lastSavedCredential.password
-                  ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                  : 'bg-amber-50 border-amber-300 text-amber-950'
-              }`}>
-                <div className="flex items-start gap-3 min-w-0">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                    lastSavedCredential.password
-                      ? 'bg-emerald-600 text-white border-emerald-700'
-                      : 'bg-amber-100 text-amber-800 border-amber-300'
-                  }`}>
-                    <KeyRound className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs sm:text-sm font-black">
-                        Saved: {lastSavedCredential.memberName}
-                      </span>
-                      {lastSavedCredential.membershipId && (
-                        <span className="px-2 py-0.5 rounded bg-white border border-emerald-200 font-mono font-bold text-[10px] text-emerald-800">
-                          {lastSavedCredential.membershipId}
-                        </span>
-                      )}
-                    </div>
-                    {lastSavedCredential.password ? (
-                      <div className="flex flex-wrap items-center gap-2 text-xs">
-                        {lastSavedCredential.email && (
-                          <span className="text-emerald-900 font-medium">
-                            Email: <strong className="font-mono">{lastSavedCredential.email}</strong>
-                          </span>
-                        )}
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-emerald-300 font-mono font-black text-xs sm:text-sm text-slate-900 select-all">
-                          <Lock className="w-3 h-3 text-emerald-600" />
-                          <span>Password: {lastSavedCredential.password}</span>
-                        </span>
-                      </div>
-                    ) : lastSavedCredential.alreadyExists ? (
-                      <p className="text-xs text-amber-900">
-                        Account with <strong className="font-mono">{lastSavedCredential.email}</strong> already existed, so the previous password was kept.
-                      </p>
-                    ) : (
-                      <p className="text-xs text-amber-900">
-                        Saved without an email address. Edit this member to add an email and generate a login password.
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                  {lastSavedCredential.password && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(lastSavedCredential.password!, 'Password')}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy Password</span>
-                      </button>
-                      {lastSavedCredential.email && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            copyToClipboard(
-                              `Email: ${lastSavedCredential.email}\nPassword: ${lastSavedCredential.password}`,
-                              'Login Info'
-                            )
-                          }
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-bold transition-colors cursor-pointer"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Copy All</span>
-                        </button>
-                      )}
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setLastSavedCredential(null)}
-                    className="p-1.5 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-white/70 transition-colors cursor-pointer"
-                    title="Dismiss"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* Filter & Action Bar */}
             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
               <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
@@ -1748,36 +1587,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                       </div>
                     </div>
 
-                    {/* Saved Login Password (Mobile Card) */}
-                    {member.id && memberCredentials[member.id] && (
-                      <div className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <KeyRound className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                          <span className="text-[11px] font-bold text-emerald-900 shrink-0">Pass:</span>
-                          {memberCredentials[member.id].loginPassword ? (
-                            <span className="font-mono font-black text-xs text-slate-900 truncate select-all">
-                              {memberCredentials[member.id].loginPassword}
-                            </span>
-                          ) : memberCredentials[member.id].passwordChangedByMember ? (
-                            <span className="text-[11px] font-semibold text-slate-600 italic">Changed by member</span>
-                          ) : (
-                            <span className="text-[11px] text-slate-400">—</span>
-                          )}
-                        </div>
-                        {memberCredentials[member.id].loginPassword && (
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(memberCredentials[member.id!].loginPassword!, 'Password')}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-[10px] font-bold cursor-pointer shrink-0"
-                            title="Copy Password"
-                          >
-                            <Copy className="w-3 h-3" />
-                            <span>Copy</span>
-                          </button>
-                        )}
-                      </div>
-                    )}
-
                     {/* Actions */}
                     <div className="flex items-center justify-between pt-2 border-t border-slate-100 gap-2">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -1871,7 +1680,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                       <th className="py-3 px-3 w-14 text-center">SL</th>
                       <th className="py-3 px-4">Photo &amp; Name</th>
                       <th className="py-3 px-4">Roll / ID</th>
-                      <th className="py-3 px-4">Login Password</th>
                       <th className="py-3 px-4">Batch &amp; Sec</th>
                       <th className="py-3 px-4">Phone &amp; WhatsApp</th>
                       <th className="py-3 px-4">Submission Time</th>
@@ -1882,7 +1690,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                   <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                     {filteredMembers.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="text-center py-12 text-slate-500 font-semibold">
+                        <td colSpan={8} className="text-center py-12 text-slate-500 font-semibold">
                           No registered members found matching the filter criteria.
                         </td>
                       </tr>
@@ -1946,30 +1754,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
                           <td className="py-3 px-4 font-mono font-bold text-slate-900">
                             {member.studentId || '—'}
-                          </td>
-
-                          <td className="py-3 px-4">
-                            {member.id && memberCredentials[member.id]?.loginPassword ? (
-                              <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-200">
-                                <span className="font-mono font-black text-[11px] text-slate-900 select-all">
-                                  {memberCredentials[member.id].loginPassword}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => copyToClipboard(memberCredentials[member.id!].loginPassword!, 'Password')}
-                                  title="Copy saved password"
-                                  className="p-0.5 rounded hover:bg-emerald-200/70 text-emerald-700 cursor-pointer"
-                                >
-                                  <Copy className="w-3 h-3" />
-                                </button>
-                              </div>
-                            ) : member.id && memberCredentials[member.id]?.passwordChangedByMember ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[10px] font-semibold text-slate-600">
-                                Changed by member
-                              </span>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
                           </td>
 
                           <td className="py-3 px-4 font-bold">
@@ -2115,6 +1899,16 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
               setCopiedToast(msg);
               setTimeout(() => setCopiedToast(null), 2800);
             }}
+          />
+        )}
+
+        {/* ===================== TAB: PRESIDENT INBOX ===================== */}
+        {activeTab === 'inbox' && isPresident && (
+          <InboxPanel
+            currentUserEmail={currentUser?.email || ''}
+            currentUserUid={currentUser?.uid || null}
+            allMembers={members}
+            onUnreadCountChange={setPresidentUnreadCount}
           />
         )}
 
@@ -2843,38 +2637,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                   )}
                 </div>
 
-                {selectedMember.id && memberCredentials[selectedMember.id] && (
-                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 sm:col-span-2 flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <span className="text-[10px] text-emerald-800 block font-bold uppercase flex items-center gap-1">
-                        <KeyRound className="w-3 h-3" />
-                        <span>Saved Login Password</span>
-                      </span>
-                      {memberCredentials[selectedMember.id].loginPassword ? (
-                        <span className="font-mono font-black text-sm text-slate-900 select-all">
-                          {memberCredentials[selectedMember.id].loginPassword}
-                        </span>
-                      ) : memberCredentials[selectedMember.id].passwordChangedByMember ? (
-                        <span className="text-xs font-semibold text-slate-600">
-                          Password changed by member via Member Dashboard
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-500">Not recorded</span>
-                      )}
-                    </div>
-                    {memberCredentials[selectedMember.id].loginPassword && (
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(memberCredentials[selectedMember.id!].loginPassword!, 'Password')}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white text-emerald-800 hover:bg-emerald-100 border border-emerald-300 shadow-2xs text-xs font-bold cursor-pointer shrink-0"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-
                 <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
                   <span className="text-[10px] text-slate-400 block font-bold uppercase">Date of Birth</span>
                   <span className="font-semibold text-slate-700">{selectedMember.dob || '—'}</span>
@@ -3187,33 +2949,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                   onChange={(e) => setEditingMember({ ...editingMember, email: e.target.value })}
                   className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white"
                 />
-                {editingMember.id && memberCredentials[editingMember.id]?.loginPassword ? (
-                  <div className="mt-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <KeyRound className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                      <span className="text-[11px] font-bold text-emerald-900">Saved Password:</span>
-                      <span className="font-mono font-black text-xs text-slate-900 select-all truncate">
-                        {memberCredentials[editingMember.id].loginPassword}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(memberCredentials[editingMember.id!].loginPassword!, 'Password')}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-[10px] font-bold cursor-pointer shrink-0"
-                    >
-                      <Copy className="w-3 h-3" />
-                      <span>Copy</span>
-                    </button>
-                  </div>
-                ) : editingMember.id && memberCredentials[editingMember.id]?.passwordChangedByMember ? (
-                  <p className="mt-1.5 text-[11px] text-slate-500 font-medium">
-                    Login password was updated directly by this member.
-                  </p>
-                ) : !editingMember.email?.trim() ? (
-                  <p className="mt-1.5 text-[11px] text-slate-500">
-                    Adding an email and saving will automatically create a Roll + 3-digit login password and show it here.
-                  </p>
-                ) : null}
               </div>
 
               {/* Skills & Technical Talents */}
@@ -3381,7 +3116,9 @@ function AddMemberManualModal({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const cleanRoll = studentId.trim().replace(/\s+/g, '');
-  const autoPassword = generateRollAutoPassword(studentId, suffixDigits);
+  const autoPassword = cleanRoll
+    ? (cleanRoll.length + 3 >= 6 ? `${cleanRoll}${suffixDigits}` : `${cleanRoll.padStart(3, '0')}${suffixDigits}`)
+    : `NGDC${suffixDigits}`;
 
   const regenerateSuffix = () => {
     setSuffixDigits(String(Math.floor(100 + Math.random() * 900)));

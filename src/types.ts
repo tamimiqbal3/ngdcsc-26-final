@@ -161,13 +161,43 @@ export interface AttendanceSession {
   updatedBy?: string;
 }
 
-export interface MemberCredentialRecord {
+export const PRESIDENT_EMAIL = 'info.tamimiq@gmail.com';
+export const PRESIDENT_DISPLAY_NAME = 'Tamim Iqbal';
+export const PRESIDENT_ROLE_LABEL = 'President';
+
+export type InboxSenderRole = 'president' | 'member';
+
+export interface InboxThread {
+  id: string;
   memberId: string;
-  uid?: string | null;
-  email?: string | null;
-  loginPassword?: string | null;
-  passwordChangedByMember?: boolean;
-  createdByAdmin?: boolean;
+  memberUid?: string | null;
+  memberEmail: string;
+  memberEmailLower: string;
+  memberName: string;
+  memberRoll?: string;
+  memberMembershipId?: string;
+  memberBatch?: string;
+  memberSection?: string;
+  memberPhoto?: string | null;
+  lastMessage: string;
+  lastSenderEmail: string;
+  lastSenderName: string;
+  lastSenderRole: InboxSenderRole;
+  lastMessageAt: string;
+  unreadByPresident: number;
+  unreadByMember: number;
   updatedAt?: string;
-  updatedBy?: string;
 }
+
+export interface InboxMessage {
+  id: string;
+  threadId: string;
+  senderEmail: string;
+  senderEmailLower: string;
+  senderUid?: string | null;
+  senderName: string;
+  senderRole: InboxSenderRole;
+  text: string;
+  createdAt: string;
+}
+

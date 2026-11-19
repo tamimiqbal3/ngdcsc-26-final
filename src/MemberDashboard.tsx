@@ -28,7 +28,8 @@ import {
   Eye,
   EyeOff,
   ClipboardCheck,
-  QrCode
+  QrCode,
+  Inbox
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
@@ -39,7 +40,9 @@ import {
   MembershipRegistrationSetting,
   DEFAULT_SKILL_OPTIONS,
   AttendanceRecord,
-  AttendanceSession
+  AttendanceSession,
+  PRESIDENT_DISPLAY_NAME,
+  PRESIDENT_ROLE_LABEL
 } from './types';
 import {
   getCachedMemberProfileForUser,
@@ -53,11 +56,15 @@ import {
   getCachedMyAttendance,
   getCachedAttendanceSessions,
   getTodayLocalDateStr,
-  markMemberPasswordChangedByMember
+  isPresidentEmail,
+  subscribeToMembers,
+  subscribeToPresidentInboxThreads,
+  subscribeToMemberInboxThread
 } from './services/firebase';
 import ImageAdjustModal from './components/ImageAdjustModal';
 import DotLoader from './components/DotLoader';
 import MemberQrCode from './components/MemberQrCode';
+import InboxPanel from './components/InboxPanel';
 
 const CLUB_SEGMENTS = [
   'Science Olympiad (Math, Physics, Bio, Chem)',
@@ -68,7 +75,7 @@ const CLUB_SEGMENTS = [
   'Scientific Wall Magazine & Publication'
 ];
 
-type DashboardPage = 'slip' | 'attendance' | 'edit' | 'password';
+type DashboardPage = 'slip' | 'attendance' | 'inbox' | 'edit' | 'password';
 
 interface MemberDashboardProps {
   user: FirebaseUser;
@@ -91,11 +98,16 @@ export default function MemberDashboard({
   }
   const initialCached = initialCachedRef.current;
 
+  const isPresident = isPresidentEmail(user.email);
   const isEditAllowed = registrationSetting.allowMemberEdit !== false;
 
-  const [loading, setLoading] = useState(!initialCached);
+  const [loading, setLoading] = useState(!initialCached && !isPresident);
   const [member, setMember] = useState<SubmissionRecord | null>(initialCached);
-  const [activePage, setActivePage] = useState<DashboardPage>('slip');
+  const [activePage, setActivePage] = useState<DashboardPage>(
+    isPresident && !initialCached ? 'inbox' : 'slip'
+  );
+  const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
+  const [presidentMembersDirectory, setPresidentMembersDirectory] = useState<SubmissionRecord[]>([]);
   const isFormDirtyRef = useRef(false);
 
   // Editable form state (Roll, Phone, and Email are strictly locked)
@@ -204,6 +216,32 @@ export default function MemberDashboard({
       unsubSessions();
     };
   }, [user.uid, user.email, member?.email]);
+
+  // Real-time Inbox unread badge & President's member directory
+  useEffect(() => {
+    if (isPresident) {
+      const unsubMembers = subscribeToMembers((list) => {
+        setPresidentMembersDirectory(list);
+      });
+      const unsubThreads = subscribeToPresidentInboxThreads((list) => {
+        const unread = list.reduce((sum, t) => sum + (t.unreadByPresident || 0), 0);
+        setInboxUnreadCount(unread);
+      });
+      return () => {
+        unsubMembers();
+        unsubThreads();
+      };
+    }
+
+    const unsubMyThread = subscribeToMemberInboxThread(
+      user.uid,
+      member?.email || user.email,
+      (thread) => {
+        setInboxUnreadCount(thread?.unreadByMember || 0);
+      }
+    );
+    return () => unsubMyThread();
+  }, [isPresident, user.uid, user.email, member?.email]);
 
   const todayDateStr = getTodayLocalDateStr();
 
@@ -432,9 +470,6 @@ export default function MemberDashboard({
     setChangingPassword(true);
     try {
       await changeMemberPassword(currentPassword, newPassword);
-      if (member?.id && user?.uid) {
-        markMemberPasswordChangedByMember(member.id, user.uid, user.email).catch(() => {});
-      }
       setCurrentPassword('');
       setNewPassword('');
       setConfirmNewPassword('');
@@ -520,7 +555,11 @@ export default function MemberDashboard({
   const displayedSkills = Array.from(new Set([...activeSkillList, ...skills]));
 
   return (
-    <div className="w-full max-w-3xl relative z-10 px-4 sm:px-6 pt-24 sm:pt-28 pb-12 formal-page-enter">
+    <div
+      className={`w-full ${
+        activePage === 'inbox' && isPresident ? 'max-w-5xl' : 'max-w-3xl'
+      } relative z-10 px-4 sm:px-6 pt-24 sm:pt-28 pb-12 formal-page-enter transition-all`}
+    >
       {/* Photo Adjust Modal */}
       {adjustingPhoto && (
         <ImageAdjustModal
@@ -562,7 +601,7 @@ export default function MemberDashboard({
           <p className="text-sm font-bold text-slate-800">Loading My Dashboard...</p>
           <p className="text-xs text-slate-500 mt-1">Fetching your membership profile</p>
         </div>
-      ) : !member ? (
+      ) : !member && !isPresident ? (
         /* No Member Profile Found for Account */
         <div className="bg-white rounded-2xl border border-slate-200/90 p-8 sm:p-10 text-center shadow-sm space-y-4">
           <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500">
@@ -599,74 +638,119 @@ export default function MemberDashboard({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200/90 rounded-2xl p-4 sm:px-6 shadow-xs">
             <div>
               <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
-                My Dashboard
+                {isPresident ? `${PRESIDENT_DISPLAY_NAME} • Dashboard` : 'My Dashboard'}
               </h1>
               <p className="text-xs text-slate-500">
-                {member.name} • Roll <span className="font-mono font-semibold text-slate-700">{member.studentId}</span>
+                {isPresident ? (
+                  <>
+                    <span className="font-bold text-emerald-700">{PRESIDENT_ROLE_LABEL}</span> • {user.email}
+                  </>
+                ) : (
+                  <>
+                    {member?.name} • Roll <span className="font-mono font-semibold text-slate-700">{member?.studentId}</span>
+                  </>
+                )}
               </p>
             </div>
 
             <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/80 self-start sm:self-auto">
-              <button
-                type="button"
-                onClick={() => switchPage('slip')}
-                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  activePage === 'slip'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <FileText className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Confirmation Slip</span>
-              </button>
+              {member && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => switchPage('slip')}
+                    className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      activePage === 'slip'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Confirmation Slip</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => switchPage('attendance')}
+                    className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      activePage === 'attendance'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <ClipboardCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Attendance</span>
+                  </button>
+                </>
+              )}
 
               <button
                 type="button"
-                onClick={() => switchPage('attendance')}
+                onClick={() => switchPage('inbox')}
                 className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  activePage === 'attendance'
+                  activePage === 'inbox'
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <ClipboardCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Attendance</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => switchPage('edit')}
-                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  activePage === 'edit'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {isEditAllowed ? (
-                  <Edit3 className="w-3.5 h-3.5 text-emerald-600" />
-                ) : (
-                  <Lock className="w-3.5 h-3.5 text-rose-500" />
+                <Inbox className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Inbox</span>
+                {inboxUnreadCount > 0 && (
+                  <span className="px-1.5 py-0.5 min-w-[18px] text-center rounded-full bg-emerald-600 text-white text-[10px] font-black leading-none">
+                    {inboxUnreadCount}
+                  </span>
                 )}
-                <span>Edit Profile</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => switchPage('password')}
-                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  activePage === 'password'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <KeyRound className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Change Password</span>
-              </button>
+              {member && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => switchPage('edit')}
+                    className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      activePage === 'edit'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {isEditAllowed ? (
+                      <Edit3 className="w-3.5 h-3.5 text-emerald-600" />
+                    ) : (
+                      <Lock className="w-3.5 h-3.5 text-rose-500" />
+                    )}
+                    <span>Edit Profile</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => switchPage('password')}
+                    className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      activePage === 'password'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Change Password</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
+          {/* INBOX PAGE: Available to every dashboard (President <-> Member individual chat, Member -> Tamim Iqbal only) */}
+          {activePage === 'inbox' && (
+            <InboxPanel
+              currentUserEmail={user.email || member?.email || ''}
+              currentUserUid={user.uid}
+              currentMember={member}
+              allMembers={isPresident ? presidentMembersDirectory : []}
+              onUnreadCountChange={setInboxUnreadCount}
+            />
+          )}
+
           {/* PAGE 1: CONFIRMATION SLIP PAGE */}
-          {activePage === 'slip' && (
+          {member && activePage === 'slip' && (
             <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-6 animate-in fade-in duration-200">
               {member.status === 'approved' ? (
                 <>
@@ -885,7 +969,7 @@ export default function MemberDashboard({
           )}
 
           {/* PAGE 2: MY ATTENDANCE PAGE (STRICTLY PERSONAL) */}
-          {activePage === 'attendance' && (
+          {member && activePage === 'attendance' && (
             <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-6 text-left animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200/80">
                 <div>
@@ -1039,7 +1123,7 @@ export default function MemberDashboard({
           )}
 
           {/* PAGE 3: EDIT PROFILE PAGE */}
-          {activePage === 'edit' && (
+          {member && activePage === 'edit' && (
             <form
               onSubmit={handleSaveChanges}
               onChange={() => {
@@ -1543,7 +1627,7 @@ export default function MemberDashboard({
           )}
 
           {/* PAGE 3: CHANGE PASSWORD PAGE */}
-          {activePage === 'password' && (
+          {member && activePage === 'password' && (
             <form
               onSubmit={handlePasswordChangeSubmit}
               className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-5 text-left animate-in fade-in duration-200"

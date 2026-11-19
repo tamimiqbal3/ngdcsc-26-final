@@ -34,6 +34,7 @@ import {
   onSnapshot,
   limit,
   getCountFromServer,
+  increment,
   Unsubscribe
 } from 'firebase/firestore';
 import { 
@@ -52,7 +53,11 @@ import {
   AttendanceSession,
   AttendanceStatus,
   AttendanceMethod,
-  MemberCredentialRecord
+  PRESIDENT_EMAIL,
+  PRESIDENT_DISPLAY_NAME,
+  InboxSenderRole,
+  InboxThread,
+  InboxMessage
 } from '../types';
 
 import { getAnalytics, isSupported } from 'firebase/analytics';
@@ -130,7 +135,6 @@ const LS_MEMBERS_KEY = 'ngdcsc_firebase_members_cache';
 const LS_COMMITTEE_KEY = 'ngdcsc_firebase_committee_cache';
 const LS_NOTICES_KEY = 'ngdcsc_firebase_notices_cache';
 const LS_ACTIVE_MEMBER_COUNT_KEY = 'ngdcsc_active_member_count_cache';
-const LS_MEMBER_CREDENTIALS_KEY = 'ngdcsc_firebase_member_credentials_cache';
 
 export function getCachedActiveMemberCount(): number | null {
   try {
@@ -665,10 +669,7 @@ export async function deleteMemberFromFirebase(id: string, memberData?: Submissi
   const deletePromises = Array.from(keysToDelete).map(k => 
     deleteDoc(doc(db, 'member_status', k)).catch(() => {})
   );
-  await Promise.allSettled([
-    ...deletePromises,
-    deleteMemberCredentialForAdmin(id).catch(() => {})
-  ]);
+  await Promise.allSettled(deletePromises);
 }
 
 /**
@@ -1618,34 +1619,17 @@ function generateSecureTempPassword(): string {
   return Array.from(bytes, (b) => chars[b % chars.length]).join('');
 }
 
-export function generateRollAutoPassword(studentId?: string, suffixDigits?: string): string {
-  const digits = suffixDigits || String(Math.floor(100 + Math.random() * 900));
-  const cleanRoll = (studentId || '').trim().replace(/\s+/g, '');
-  if (!cleanRoll || cleanRoll.toUpperCase() === 'N/A') {
-    return `NGDC${digits}`;
-  }
-  return cleanRoll.length + 3 >= 6
-    ? `${cleanRoll}${digits}`
-    : `${cleanRoll.padStart(3, '0')}${digits}`;
-}
-
-export interface ProvisionAuthResult {
-  uid: string | null;
-  created: boolean;
-  alreadyExists: boolean;
-}
-
 /**
  * Ensures an Auth account exists for a manually-added registered member using an isolated
  * in-memory secondary session so the admin's active session is never disturbed.
  */
-export async function provisionMemberAuthAccount(
+export async function ensureMemberAuthAccount(
   email: string,
   displayName?: string,
   customPassword?: string
-): Promise<ProvisionAuthResult> {
+): Promise<string | null> {
   const cleanEmail = email.trim();
-  if (!cleanEmail) return { uid: null, created: false, alreadyExists: false };
+  if (!cleanEmail) return null;
 
   const passwordToUse =
     customPassword && customPassword.length >= 6
@@ -1662,28 +1646,16 @@ export async function provisionMemberAuthAccount(
     if (displayName && cred.user) {
       await updateProfile(cred.user, { displayName: displayName.trim() }).catch(() => {});
     }
-    return { uid: cred.user.uid, created: true, alreadyExists: false };
+    return cred.user.uid;
   } catch (err: any) {
     if (err?.code === 'auth/email-already-in-use') {
-      return { uid: null, created: false, alreadyExists: true };
+      return null;
     }
     console.warn('Account setup warning:', err);
-    return { uid: null, created: false, alreadyExists: false };
+    return null;
   } finally {
     await signOut(secAuth).catch(() => {});
   }
-}
-
-/**
- * Legacy wrapper returning just the newly created UID or null.
- */
-export async function ensureMemberAuthAccount(
-  email: string,
-  displayName?: string,
-  customPassword?: string
-): Promise<string | null> {
-  const res = await provisionMemberAuthAccount(email, displayName, customPassword);
-  return res.uid;
 }
 
 /**
@@ -2339,140 +2311,371 @@ export function subscribeToMyAttendance(
   };
 }
 
-// ============================================================================
-// ADMIN-ONLY SAVED MEMBER CREDENTIALS (/member_credentials/{memberId})
-// ============================================================================
+// ==================== PRESIDENT <-> MEMBER INBOX OPERATIONS ====================
 
-export function getCachedMemberCredentials(): Record<string, MemberCredentialRecord> {
+const LS_PRESIDENT_INBOX_KEY = 'ngdcsc_president_inbox_threads_cache';
+
+export function isPresidentEmail(email?: string | null): boolean {
+  return (email || '').trim().toLowerCase() === PRESIDENT_EMAIL;
+}
+
+export async function loginWithGoogleAccount(): Promise<User> {
+  const cred = await signInWithPopup(auth, googleProvider);
+  return cred.user;
+}
+
+function sanitizeInboxKey(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '_');
+}
+
+export function getMemberInboxThreadId(member: {
+  id?: string | null;
+  email?: string | null;
+  studentId?: string | null;
+  phone?: string | null;
+}): string {
+  if (member.id && member.id.trim()) {
+    return member.id.trim();
+  }
+  if (member.email && member.email.trim()) {
+    return `email_${sanitizeInboxKey(member.email)}`;
+  }
+  if (member.studentId && member.studentId.trim()) {
+    return `roll_${sanitizeInboxKey(member.studentId)}`;
+  }
+  if (member.phone && member.phone.trim()) {
+    return `phone_${sanitizeInboxKey(member.phone)}`;
+  }
+  return `thread_${Date.now()}`;
+}
+
+export function getCachedPresidentInboxThreads(): InboxThread[] {
   try {
-    const raw = localStorage.getItem(LS_MEMBER_CREDENTIALS_KEY);
+    const raw = localStorage.getItem(LS_PRESIDENT_INBOX_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed;
-      }
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch {
     // ignore
   }
-  return {};
+  return [];
 }
 
-export function clearCachedMemberCredentials(): void {
-  try {
-    localStorage.removeItem(LS_MEMBER_CREDENTIALS_KEY);
-  } catch {
-    // ignore
-  }
+function getMemberInboxThreadCacheKey(uid: string): string {
+  return `ngdcsc_my_inbox_thread_${uid}`;
 }
 
-export async function saveMemberCredentialForAdmin(
-  memberId: string,
-  data: Omit<MemberCredentialRecord, 'memberId'>
-): Promise<void> {
-  if (!memberId) return;
-  const record: MemberCredentialRecord = {
-    memberId,
-    uid: data.uid ?? null,
-    email: data.email ?? null,
-    loginPassword: data.loginPassword ?? null,
-    passwordChangedByMember: Boolean(data.passwordChangedByMember),
-    createdByAdmin: data.createdByAdmin !== false,
-    updatedAt: data.updatedAt || new Date().toISOString(),
-    updatedBy: data.updatedBy || 'Admin'
-  };
-
+export function getCachedMemberInboxThread(uid: string): InboxThread | null {
   try {
-    const cached = getCachedMemberCredentials();
-    cached[memberId] = record;
-    localStorage.setItem(LS_MEMBER_CREDENTIALS_KEY, JSON.stringify(cached));
-  } catch {
-    // ignore
-  }
-
-  try {
-    await setDoc(doc(db, 'member_credentials', memberId), cleanFirestoreData(record), { merge: true });
-  } catch (err) {
-    console.warn('Member credential save warning:', err);
-  }
-}
-
-export async function markMemberPasswordChangedByMember(
-  memberId: string,
-  uid: string,
-  email?: string | null
-): Promise<void> {
-  if (!memberId || !uid) return;
-  const payload = {
-    memberId,
-    uid,
-    email: email || null,
-    loginPassword: null,
-    passwordChangedByMember: true,
-    updatedAt: new Date().toISOString()
-  };
-
-  try {
-    const cached = getCachedMemberCredentials();
-    if (cached[memberId]) {
-      cached[memberId] = { ...cached[memberId], ...payload };
-      localStorage.setItem(LS_MEMBER_CREDENTIALS_KEY, JSON.stringify(cached));
+    const raw = localStorage.getItem(getMemberInboxThreadCacheKey(uid));
+    if (raw) {
+      return JSON.parse(raw) as InboxThread;
     }
   } catch {
     // ignore
   }
-
-  try {
-    await setDoc(doc(db, 'member_credentials', memberId), payload, { merge: true });
-  } catch {
-    // non-critical if rule rejects or offline
-  }
+  return null;
 }
 
-export async function deleteMemberCredentialForAdmin(memberId: string): Promise<void> {
-  if (!memberId) return;
+function getInboxMessagesCacheKey(threadId: string): string {
+  return `ngdcsc_inbox_msgs_${threadId}`;
+}
+
+export function getCachedInboxMessages(threadId: string): InboxMessage[] {
   try {
-    const cached = getCachedMemberCredentials();
-    if (cached[memberId]) {
-      delete cached[memberId];
-      localStorage.setItem(LS_MEMBER_CREDENTIALS_KEY, JSON.stringify(cached));
+    const raw = localStorage.getItem(getInboxMessagesCacheKey(threadId));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch {
     // ignore
   }
-  try {
-    await deleteDoc(doc(db, 'member_credentials', memberId));
-  } catch {
-    // ignore
-  }
+  return [];
 }
 
-export function subscribeToMemberCredentials(
-  callback: (creds: Record<string, MemberCredentialRecord>) => void
+function sortThreadsNewestFirst(list: InboxThread[]): InboxThread[] {
+  return [...list].sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''));
+}
+
+function sortMessagesChronological(list: InboxMessage[]): InboxMessage[] {
+  return [...list].sort((a, b) => {
+    const cmp = (a.createdAt || '').localeCompare(b.createdAt || '');
+    if (cmp !== 0) return cmp;
+    return (a.id || '').localeCompare(b.id || '');
+  });
+}
+
+/**
+ * President-only real-time subscription to ALL member inbox threads, newest activity first.
+ */
+export function subscribeToPresidentInboxThreads(
+  callback: (threads: InboxThread[]) => void
 ): Unsubscribe {
-  const cached = getCachedMemberCredentials();
-  if (Object.keys(cached).length > 0) {
-    callback(cached);
+  const cached = getCachedPresidentInboxThreads();
+  if (cached.length > 0) {
+    callback(sortThreadsNewestFirst(cached));
   }
 
-  const colRef = collection(db, 'member_credentials');
+  const colRef = collection(db, 'inbox_threads');
   return onSnapshot(
     colRef,
-    (snapshot) => {
-      const map: Record<string, MemberCredentialRecord> = {};
-      snapshot.forEach((d) => {
-        map[d.id] = { memberId: d.id, ...(d.data() as any) } as MemberCredentialRecord;
+    (snap) => {
+      const threads: InboxThread[] = [];
+      snap.forEach((d) => {
+        threads.push({ id: d.id, ...(d.data() as any) } as InboxThread);
       });
+      const sorted = sortThreadsNewestFirst(threads);
       try {
-        localStorage.setItem(LS_MEMBER_CREDENTIALS_KEY, JSON.stringify(map));
+        localStorage.setItem(LS_PRESIDENT_INBOX_KEY, JSON.stringify(sorted));
       } catch {
         // ignore
       }
-      callback(map);
+      callback(sorted);
     },
     (err) => {
-      console.warn('Member credentials listener warning:', err);
-      callback(getCachedMemberCredentials());
+      console.warn('President inbox threads subscription error:', err);
     }
   );
 }
+
+/**
+ * Member-only real-time subscription to their SINGLE thread with Tamim Iqbal (President).
+ * Uses equality filters matching Firestore security rules cleanly.
+ */
+export function subscribeToMemberInboxThread(
+  uid: string,
+  email: string | null | undefined,
+  callback: (thread: InboxThread | null) => void
+): Unsubscribe {
+  const cached = getCachedMemberInboxThread(uid);
+  if (cached) {
+    callback(cached);
+  }
+
+  const colRef = collection(db, 'inbox_threads');
+  const cleanEmailLower = (email || '').trim().toLowerCase();
+
+  const uidMap = new Map<string, InboxThread>();
+  const emailMap = new Map<string, InboxThread>();
+
+  const emitBest = () => {
+    const merged = new Map<string, InboxThread>();
+    uidMap.forEach((v, k) => merged.set(k, v));
+    emailMap.forEach((v, k) => merged.set(k, v));
+    const list = sortThreadsNewestFirst(Array.from(merged.values()));
+    const best = list[0] || null;
+    try {
+      if (best) {
+        localStorage.setItem(getMemberInboxThreadCacheKey(uid), JSON.stringify(best));
+      }
+    } catch {
+      // ignore
+    }
+    callback(best);
+  };
+
+  const unsubs: Unsubscribe[] = [];
+
+  unsubs.push(
+    onSnapshot(
+      query(colRef, where('memberUid', '==', uid)),
+      (snap) => {
+        uidMap.clear();
+        snap.forEach((d) => {
+          uidMap.set(d.id, { id: d.id, ...(d.data() as any) } as InboxThread);
+        });
+        emitBest();
+      },
+      (err) => {
+        console.warn('Member inbox thread UID query warning:', err);
+      }
+    )
+  );
+
+  if (cleanEmailLower) {
+    unsubs.push(
+      onSnapshot(
+        query(colRef, where('memberEmailLower', '==', cleanEmailLower)),
+        (snap) => {
+          emailMap.clear();
+          snap.forEach((d) => {
+            emailMap.set(d.id, { id: d.id, ...(d.data() as any) } as InboxThread);
+          });
+          emitBest();
+        },
+        (err) => {
+          console.warn('Member inbox thread email query warning:', err);
+        }
+      )
+    );
+  }
+
+  return () => {
+    unsubs.forEach((u) => u());
+  };
+}
+
+/**
+ * Real-time subscription to chronological chat history messages inside a specific thread.
+ */
+export function subscribeToInboxMessages(
+  threadId: string,
+  callback: (messages: InboxMessage[]) => void
+): Unsubscribe {
+  const cached = getCachedInboxMessages(threadId);
+  if (cached.length > 0) {
+    callback(sortMessagesChronological(cached));
+  }
+
+  const msgsRef = collection(db, 'inbox_threads', threadId, 'messages');
+  return onSnapshot(
+    msgsRef,
+    (snap) => {
+      const msgs: InboxMessage[] = [];
+      snap.forEach((d) => {
+        msgs.push({ id: d.id, ...(d.data() as any) } as InboxMessage);
+      });
+      const sorted = sortMessagesChronological(msgs);
+      try {
+        localStorage.setItem(getInboxMessagesCacheKey(threadId), JSON.stringify(sorted));
+      } catch {
+        // ignore
+      }
+      callback(sorted);
+    },
+    (err) => {
+      console.warn('Inbox messages subscription warning:', err);
+    }
+  );
+}
+
+/**
+ * Sends a persistent chat message inside the 1-on-1 thread between Tamim Iqbal (President) and a member.
+ * Updates/creates the thread metadata document first so security rules verify thread ownership immediately.
+ */
+export async function sendInboxMessage(params: {
+  threadId: string;
+  memberInfo: {
+    id?: string;
+    uid?: string | null;
+    email: string;
+    name: string;
+    studentId?: string;
+    membershipId?: string;
+    batch?: string;
+    section?: string;
+    photo?: string | null;
+  };
+  senderEmail: string;
+  senderUid?: string | null;
+  text: string;
+}): Promise<InboxMessage> {
+  const trimmedText = params.text.trim();
+  if (!trimmedText) {
+    throw new Error('Message cannot be empty.');
+  }
+
+  const senderEmailClean = params.senderEmail.trim();
+  const senderEmailLower = senderEmailClean.toLowerCase();
+  const senderIsPresident = isPresidentEmail(senderEmailLower);
+  const senderRole: InboxSenderRole = senderIsPresident ? 'president' : 'member';
+  const senderName = senderIsPresident
+    ? PRESIDENT_DISPLAY_NAME
+    : (params.memberInfo.name || senderEmailClean).trim();
+
+  const memberEmailClean = (params.memberInfo.email || '').trim();
+  const memberEmailLower = memberEmailClean.toLowerCase();
+  const nowIso = new Date().toISOString();
+  const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  const threadRef = doc(db, 'inbox_threads', params.threadId);
+  const existingSnap = await getDoc(threadRef).catch(() => null);
+
+  const memberUidToStore = !senderIsPresident && params.senderUid
+    ? params.senderUid
+    : (params.memberInfo.uid || (existingSnap?.exists() ? (existingSnap.data() as any)?.memberUid : null) || null);
+
+  const threadBasePayload = cleanFirestoreData({
+    id: params.threadId,
+    memberId: params.memberInfo.id || params.threadId,
+    memberUid: memberUidToStore,
+    memberEmail: memberEmailClean,
+    memberEmailLower,
+    memberName: (params.memberInfo.name || 'Club Member').trim(),
+    memberRoll: params.memberInfo.studentId || '',
+    memberMembershipId: params.memberInfo.membershipId || '',
+    memberBatch: params.memberInfo.batch || '',
+    memberSection: params.memberInfo.section || '',
+    memberPhoto: params.memberInfo.photo || null,
+    lastMessage: trimmedText,
+    lastSenderEmail: senderEmailClean,
+    lastSenderName: senderName,
+    lastSenderRole: senderRole,
+    lastMessageAt: nowIso,
+    updatedAt: nowIso
+  });
+
+  if (existingSnap && existingSnap.exists()) {
+    await updateDoc(threadRef, {
+      ...threadBasePayload,
+      ...(senderIsPresident
+        ? { unreadByMember: increment(1), unreadByPresident: 0 }
+        : { unreadByPresident: increment(1), unreadByMember: 0 })
+    });
+  } else {
+    await setDoc(threadRef, {
+      ...threadBasePayload,
+      unreadByPresident: senderIsPresident ? 0 : 1,
+      unreadByMember: senderIsPresident ? 1 : 0
+    });
+  }
+
+  const messagePayload: InboxMessage = {
+    id: msgId,
+    threadId: params.threadId,
+    senderEmail: senderEmailClean,
+    senderEmailLower,
+    senderUid: params.senderUid || null,
+    senderName,
+    senderRole,
+    text: trimmedText,
+    createdAt: nowIso
+  };
+
+  await setDoc(
+    doc(db, 'inbox_threads', params.threadId, 'messages', msgId),
+    cleanFirestoreData(messagePayload)
+  );
+
+  return messagePayload;
+}
+
+/**
+ * Resets the unread badge counter when President or Member opens/reads a thread.
+ */
+export async function markInboxThreadRead(
+  threadId: string,
+  viewerRole: InboxSenderRole
+): Promise<void> {
+  if (!threadId) return;
+  try {
+    const threadRef = doc(db, 'inbox_threads', threadId);
+    const snap = await getDoc(threadRef);
+    if (!snap.exists()) return;
+    const data = snap.data() as any;
+    if (viewerRole === 'president' && (data.unreadByPresident || 0) > 0) {
+      await updateDoc(threadRef, { unreadByPresident: 0 });
+    } else if (viewerRole === 'member' && (data.unreadByMember || 0) > 0) {
+      await updateDoc(threadRef, { unreadByMember: 0 });
+    }
+  } catch (err) {
+    console.warn('Mark inbox thread read warning:', err);
+  }
+}
+
+
