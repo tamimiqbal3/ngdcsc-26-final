@@ -68,6 +68,8 @@ import MemberAuthPage from './MemberAuthPage';
 import MemberDashboard from './MemberDashboard';
 import ImageAdjustModal from './components/ImageAdjustModal';
 import DotLoader from './components/DotLoader';
+import InboxToastNotification from './components/InboxToastNotification';
+import NotificationPermissionBanner from './components/NotificationPermissionBanner';
 import { 
   auth,
   saveMemberToFirebase, 
@@ -508,6 +510,16 @@ export default function App() {
   const [authUser, setAuthUser] = useState<FirebaseUser | null>(() => auth.currentUser);
   const [authInitialized, setAuthInitialized] = useState(() => Boolean(auth.currentUser));
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
+  const [inboxAlertMeta, setInboxAlertMeta] = useState<{
+    unreadCount: number;
+    latestEventKey: string;
+    senderHint?: string;
+  }>({ unreadCount: 0, latestEventKey: '' });
+  const [activeDashboardPage, setActiveDashboardPage] = useState<'slip' | 'attendance' | 'inbox' | 'edit' | 'password'>('slip');
+  const [requestedDashboardPage, setRequestedDashboardPage] = useState<{
+    page: 'slip' | 'attendance' | 'inbox' | 'edit' | 'password';
+    nonce: number;
+  } | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -520,16 +532,42 @@ export default function App() {
   useEffect(() => {
     if (!authUser) {
       setInboxUnreadCount(0);
+      setInboxAlertMeta({ unreadCount: 0, latestEventKey: '' });
       return;
     }
     if (isPresidentEmail(authUser.email)) {
       return subscribeToPresidentInboxThreads((list) => {
-        const unread = list.reduce((sum, t) => sum + (t.unreadByPresident || 0), 0);
+        const unreadThreads = list.filter((t) => (t.unreadByPresident || 0) > 0);
+        const unread = unreadThreads.reduce((sum, t) => sum + (t.unreadByPresident || 0), 0);
         setInboxUnreadCount(unread);
+        if (unread > 0) {
+          const latest = unreadThreads[0];
+          const senderHint =
+            unreadThreads.length === 1
+              ? `From ${latest?.memberName || 'Club Member'}`
+              : `From ${unreadThreads.length} members`;
+          setInboxAlertMeta({
+            unreadCount: unread,
+            latestEventKey: `pres:${unread}:${latest?.id || ''}:${latest?.lastMessageAt || ''}`,
+            senderHint
+          });
+        } else {
+          setInboxAlertMeta({ unreadCount: 0, latestEventKey: '' });
+        }
       });
     }
     return subscribeToMemberInboxThread(authUser.uid, authUser.email, (thread) => {
-      setInboxUnreadCount(thread?.unreadByMember || 0);
+      const unread = thread?.unreadByMember || 0;
+      setInboxUnreadCount(unread);
+      if (unread > 0) {
+        setInboxAlertMeta({
+          unreadCount: unread,
+          latestEventKey: `member:${authUser.uid}:${unread}:${thread?.id || ''}:${thread?.lastMessageAt || ''}`,
+          senderHint: 'From Tamim Iqbal (President)'
+        });
+      } else {
+        setInboxAlertMeta({ unreadCount: 0, latestEventKey: '' });
+      }
     });
   }, [authUser]);
 
@@ -841,7 +879,26 @@ export default function App() {
 
   // If in Slip View, show full Confirmation Slip Page
   if (currentView === 'slip') {
-    return <ConfirmationSlipPage onBack={() => navigateTo('status')} />;
+    return (
+      <>
+        <ConfirmationSlipPage onBack={() => navigateTo('status')} />
+        <NotificationPermissionBanner
+          suppressWhenToastVisible={Boolean(authUser && inboxAlertMeta.unreadCount > 0)}
+        />
+        {authUser && (
+          <InboxToastNotification
+            unreadCount={inboxAlertMeta.unreadCount}
+            latestEventKey={inboxAlertMeta.latestEventKey}
+            senderHint={inboxAlertMeta.senderHint}
+            isCurrentlyViewingInbox={false}
+            onOpenInbox={() => {
+              setRequestedDashboardPage({ page: 'inbox', nonce: Date.now() });
+              navigateTo('dashboard');
+            }}
+          />
+        )}
+      </>
+    );
   }
 
   return (
@@ -1242,6 +1299,8 @@ export default function App() {
             onBackToHome={() => navigateTo('home')}
             onGoToRegistration={() => navigateTo('form')}
             onSignedOut={() => navigateTo('login')}
+            requestedPage={requestedDashboardPage}
+            onActivePageChange={setActiveDashboardPage}
           />
         ) : (
           <MemberAuthPage
@@ -1262,6 +1321,8 @@ export default function App() {
             onBackToHome={() => navigateTo('home')}
             onGoToRegistration={() => navigateTo('form')}
             onSignedOut={() => navigateTo('login')}
+            requestedPage={requestedDashboardPage}
+            onActivePageChange={setActiveDashboardPage}
           />
         ) : (
           <MemberAuthPage
@@ -2258,6 +2319,35 @@ export default function App() {
       </div>
       )}
       </main>
+
+      {/* First-entry browser notification permission prompt */}
+      <NotificationPermissionBanner
+        suppressWhenToastVisible={Boolean(
+          authUser &&
+            inboxAlertMeta.unreadCount > 0 &&
+            !(
+              (currentView === 'dashboard' || currentView === 'login') &&
+              activeDashboardPage === 'inbox'
+            )
+        )}
+      />
+
+      {/* Real-time Recipient-Only Inbox Notification Popup */}
+      {authUser && (
+        <InboxToastNotification
+          unreadCount={inboxAlertMeta.unreadCount}
+          latestEventKey={inboxAlertMeta.latestEventKey}
+          senderHint={inboxAlertMeta.senderHint}
+          isCurrentlyViewingInbox={
+            (currentView === 'dashboard' || currentView === 'login') &&
+            activeDashboardPage === 'inbox'
+          }
+          onOpenInbox={() => {
+            setRequestedDashboardPage({ page: 'inbox', nonce: Date.now() });
+            navigateTo('dashboard');
+          }}
+        />
+      )}
 
       {/* Global Club Footer on EVERY single page */}
       <ClubFooter />

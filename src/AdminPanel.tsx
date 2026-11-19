@@ -110,6 +110,8 @@ import {
 import { INITIAL_COMMITTEE } from './ExecutiveCommitteePage';
 import ConfirmationSlipModal from './components/ConfirmationSlipModal';
 import DotLoader from './components/DotLoader';
+import InboxToastNotification from './components/InboxToastNotification';
+import NotificationPermissionBanner from './components/NotificationPermissionBanner';
 
 const CLUB_LOGO_URL = '/assets/club-logo.png';
 
@@ -134,6 +136,10 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   const [authLoading, setAuthLoading] = useState(() => !auth.currentUser);
   const isPresident = isPresidentEmail(currentUser?.email);
   const [presidentUnreadCount, setPresidentUnreadCount] = useState(0);
+  const [presidentNotifMeta, setPresidentNotifMeta] = useState<{
+    latestEventKey: string;
+    senderHint?: string;
+  }>({ latestEventKey: '' });
 
   // Login form state
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -145,11 +151,25 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   useEffect(() => {
     if (!isPresident) {
       setPresidentUnreadCount(0);
+      setPresidentNotifMeta({ latestEventKey: '' });
       return;
     }
     return subscribeToPresidentInboxThreads((list) => {
-      const total = list.reduce((sum, t) => sum + (t.unreadByPresident || 0), 0);
+      const unreadThreads = list.filter((t) => (t.unreadByPresident || 0) > 0);
+      const total = unreadThreads.reduce((sum, t) => sum + (t.unreadByPresident || 0), 0);
       setPresidentUnreadCount(total);
+      if (total > 0) {
+        const latest = unreadThreads[0];
+        setPresidentNotifMeta({
+          latestEventKey: `admin-pres:${total}:${latest?.id || ''}:${latest?.lastMessageAt || ''}`,
+          senderHint:
+            unreadThreads.length === 1
+              ? `From ${latest?.memberName || 'Club Member'}`
+              : `From ${unreadThreads.length} members`
+        });
+      } else {
+        setPresidentNotifMeta({ latestEventKey: '' });
+      }
     });
   }, [isPresident]);
 
@@ -3166,6 +3186,23 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
         <ConfirmationSlipModal
           member={slipMember as any}
           onClose={() => setSlipMember(null)}
+        />
+      )}
+
+      {/* First-entry browser notification permission prompt */}
+      <NotificationPermissionBanner
+        suppressWhenToastVisible={Boolean(isPresident && presidentUnreadCount > 0 && activeTab !== 'inbox')}
+      />
+
+      {/* Real-time President Inbox Notification in Admin Panel */}
+      {isPresident && (
+        <InboxToastNotification
+          unreadCount={presidentUnreadCount}
+          latestEventKey={presidentNotifMeta.latestEventKey}
+          senderHint={presidentNotifMeta.senderHint}
+          isCurrentlyViewingInbox={activeTab === 'inbox'}
+          buttonLabel="Check Your Dashboard"
+          onOpenInbox={() => setActiveTab('inbox')}
         />
       )}
     </div>

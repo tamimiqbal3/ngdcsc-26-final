@@ -85,6 +85,8 @@ interface MemberDashboardProps {
   onBackToHome: () => void;
   onGoToRegistration: () => void;
   onSignedOut: () => void;
+  requestedPage?: { page: DashboardPage; nonce: number } | null;
+  onActivePageChange?: (page: DashboardPage) => void;
 }
 
 export default function MemberDashboard({
@@ -92,7 +94,9 @@ export default function MemberDashboard({
   registrationSetting,
   onBackToHome,
   onGoToRegistration,
-  onSignedOut
+  onSignedOut,
+  requestedPage,
+  onActivePageChange
 }: MemberDashboardProps) {
   const initialCachedRef = useRef<SubmissionRecord | null | undefined>(undefined);
   if (initialCachedRef.current === undefined) {
@@ -106,11 +110,21 @@ export default function MemberDashboard({
   const [loading, setLoading] = useState(!initialCached && !isPresident);
   const [member, setMember] = useState<SubmissionRecord | null>(initialCached);
   const [activePage, setActivePage] = useState<DashboardPage>(
-    isPresident && !initialCached ? 'inbox' : 'slip'
+    requestedPage?.page || (isPresident && !initialCached ? 'inbox' : 'slip')
   );
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
   const [presidentMembersDirectory, setPresidentMembersDirectory] = useState<SubmissionRecord[]>([]);
   const isFormDirtyRef = useRef(false);
+
+  useEffect(() => {
+    if (requestedPage?.page) {
+      setActivePage(requestedPage.page);
+    }
+  }, [requestedPage?.nonce, requestedPage?.page]);
+
+  useEffect(() => {
+    onActivePageChange?.(activePage);
+  }, [activePage, onActivePageChange]);
 
   // Editable form state (Roll, Phone, and Email are strictly locked)
   const [photo, setPhoto] = useState<string | null>(initialCached?.photo || null);
