@@ -98,10 +98,10 @@ service cloud.firestore {
     // Helper: matches the specific member who owns a given Inbox thread
     function isThreadMemberOwner(threadData) {
       return request.auth != null && (
-        (threadData.memberUid != null && threadData.memberUid == request.auth.uid) ||
-        (threadData.memberEmailLower != null &&
+        (threadData.get('memberUid', null) != null && threadData.get('memberUid', null) == request.auth.uid) ||
+        (threadData.get('memberEmailLower', null) != null &&
          request.auth.token.email != null &&
-         threadData.memberEmailLower == request.auth.token.email.lower())
+         threadData.get('memberEmailLower', null) == request.auth.token.email.lower())
       );
     }
 
@@ -113,13 +113,17 @@ service cloud.firestore {
       allow create: if isPresident() || (
         request.auth != null &&
         request.auth.token.email != null &&
-        request.resource.data.memberEmailLower == request.auth.token.email.lower() &&
-        request.resource.data.lastSenderRole == 'member'
+        request.resource.data.get('memberEmailLower', '') == request.auth.token.email.lower() &&
+        request.resource.data.get('lastSenderRole', '') == 'member'
       );
       allow update: if isPresident() || (
         isThreadMemberOwner(resource.data) &&
-        request.resource.data.memberEmailLower == resource.data.memberEmailLower &&
-        request.resource.data.memberId == resource.data.memberId
+        request.resource.data.get('memberEmailLower', '') == resource.data.get('memberEmailLower', '') &&
+        request.resource.data.get('memberId', '') == resource.data.get('memberId', '') &&
+        (
+          resource.data.get('memberUid', null) == null ||
+          request.resource.data.get('memberUid', null) == resource.data.get('memberUid', null)
+        )
       );
       allow delete: if false;
 

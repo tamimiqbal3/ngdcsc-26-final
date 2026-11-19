@@ -102,6 +102,34 @@ function formatShortThreadTime(iso?: string): string {
   }
 }
 
+function isMessageSeen(msgCreatedAt?: string, recipientLastReadAt?: string): boolean {
+  if (!msgCreatedAt || !recipientLastReadAt) return false;
+  const msgMs = Date.parse(msgCreatedAt);
+  const readMs = Date.parse(recipientLastReadAt);
+  if (!Number.isNaN(msgMs) && !Number.isNaN(readMs)) {
+    return msgMs <= readMs;
+  }
+  return msgCreatedAt <= recipientLastReadAt;
+}
+
+function pickLatestIso(...values: Array<string | null | undefined>): string | undefined {
+  let best: string | undefined;
+  let bestMs = -Infinity;
+  for (const val of values) {
+    if (!val) continue;
+    const ms = Date.parse(val);
+    if (!Number.isNaN(ms)) {
+      if (ms > bestMs || (ms === bestMs && (!best || val > best))) {
+        bestMs = ms;
+        best = val;
+      }
+    } else if (!best || val > best) {
+      best = val;
+    }
+  }
+  return best;
+}
+
 /**
  * Safely parses URLs in chat messages (https://..., http://..., www....) and renders them as real clickable links.
  */
@@ -273,6 +301,22 @@ export default function InboxPanel({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const lastReadSyncRef = useRef<Record<string, string>>({});
+  const [visibilityPulse, setVisibilityPulse] = useState(0);
+
+  useEffect(() => {
+    const bump = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        setVisibilityPulse((n) => n + 1);
+      }
+    };
+    window.addEventListener('focus', bump);
+    document.addEventListener('visibilitychange', bump);
+    return () => {
+      window.removeEventListener('focus', bump);
+      document.removeEventListener('visibilitychange', bump);
+    };
+  }, []);
 
   useEffect(() => {
     const el = composerRef.current;
@@ -324,46 +368,73 @@ export default function InboxPanel({
     return () => unsub();
   }, [activeThreadId, shouldSubscribeMessages]);
 
-  // Clear unread counter & persist read receipt timestamp in Firestore when viewing an active conversation
+  // Clear unread counter & persist read receipt timestamp immediately in Firestore when viewing chat
   useEffect(() => {
     if (!activeThreadId) return;
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+      return;
+    }
+
     if (isPresident) {
       if (!selectedContact) return;
       const th = threads.find((t) => t.id === activeThreadId);
+      if (!th) return;
+
       const latestMemberMsg = [...messages]
         .reverse()
         .find((m) => m.senderRole === 'member');
-      const latestMemberTs =
-        latestMemberMsg?.createdAt ||
-        (th?.lastSenderRole === 'member' ? th.lastMessageAt : undefined);
+      const latestMemberTs = pickLatestIso(
+        latestMemberMsg?.createdAt,
+        th.lastSenderRole === 'member' ? th.lastMessageAt : undefined
+      );
+
       const needsMark =
-        Boolean(th && (th.unreadByPresident || 0) > 0) ||
-        Boolean(
-          latestMemberTs &&
-            th &&
-            (!th.presidentLastReadAt || latestMemberTs > th.presidentLastReadAt)
-        );
+        (th.unreadByPresident || 0) > 0 ||
+        Boolean(latestMemberTs && !isMessageSeen(latestMemberTs, th.presidentLastReadAt));
+
       if (needsMark) {
-        markInboxThreadRead(activeThreadId, 'president', latestMemberTs);
+        const syncSignature = `president:${th.unreadByPresident || 0}:${latestMemberTs || ''}:${th.presidentLastReadAt || ''}`;
+        if (lastReadSyncRef.current[activeThreadId] === syncSignature) return;
+        lastReadSyncRef.current[activeThreadId] = syncSignature;
+
+        markInboxThreadRead(activeThreadId, 'president', {
+          latestIncomingCreatedAt: latestMemberTs,
+          currentLastReadAt: th.presidentLastReadAt
+        }).catch(() => {
+          delete lastReadSyncRef.current[activeThreadId];
+        });
       }
     } else if (myThread && myThread.id === activeThreadId) {
       const latestPresidentMsg = [...messages]
         .reverse()
         .find((m) => m.senderRole === 'president');
-      const latestPresidentTs =
-        latestPresidentMsg?.createdAt ||
-        (myThread.lastSenderRole === 'president' ? myThread.lastMessageAt : undefined);
+      const latestPresidentTs = pickLatestIso(
+        latestPresidentMsg?.createdAt,
+        myThread.lastSenderRole === 'president' ? myThread.lastMessageAt : undefined
+      );
+
+      const needsUidLink = Boolean(!myThread.memberUid && currentUserUid);
       const needsMark =
         (myThread.unreadByMember || 0) > 0 ||
-        Boolean(
-          latestPresidentTs &&
-            (!myThread.memberLastReadAt || latestPresidentTs > myThread.memberLastReadAt)
-        );
+        Boolean(latestPresidentTs && !isMessageSeen(latestPresidentTs, myThread.memberLastReadAt)) ||
+        needsUidLink;
+
       if (needsMark) {
-        markInboxThreadRead(activeThreadId, 'member', latestPresidentTs);
+        const syncSignature = `member:${myThread.unreadByMember || 0}:${latestPresidentTs || ''}:${myThread.memberLastReadAt || ''}:${myThread.memberUid || ''}`;
+        if (lastReadSyncRef.current[activeThreadId] === syncSignature) return;
+        lastReadSyncRef.current[activeThreadId] = syncSignature;
+
+        markInboxThreadRead(activeThreadId, 'member', {
+          latestIncomingCreatedAt: latestPresidentTs,
+          currentLastReadAt: myThread.memberLastReadAt,
+          viewerUid: currentUserUid,
+          currentMemberUid: myThread.memberUid
+        }).catch(() => {
+          delete lastReadSyncRef.current[activeThreadId];
+        });
       }
     }
-  }, [activeThreadId, isPresident, selectedContact, threads, myThread, messages]);
+  }, [activeThreadId, isPresident, selectedContact, threads, myThread, messages, currentUserUid, visibilityPulse]);
 
   // Auto-scroll to newest message
   useEffect(() => {
@@ -810,12 +881,10 @@ export default function InboxPanel({
                             {contact.thread ? (
                               <>
                                 {contact.thread.lastSenderRole === 'president' && (
-                                  contact.thread.memberLastReadAt &&
-                                  contact.thread.lastMessageAt &&
-                                  contact.thread.memberLastReadAt >= contact.thread.lastMessageAt ? (
-                                    <CheckCheck className="w-3 h-3 text-emerald-600 shrink-0" />
+                                  isMessageSeen(contact.thread.lastMessageAt, contact.thread.memberLastReadAt) ? (
+                                    <CheckCheck className="w-3.5 h-3.5 text-sky-600 shrink-0" aria-label="Seen" />
                                   ) : (
-                                    <Check className="w-3 h-3 text-slate-400 shrink-0" />
+                                    <Check className="w-3.5 h-3.5 text-slate-400 shrink-0" aria-label="Sent" />
                                   )
                                 )}
                                 <span className="truncate">{contact.thread.lastMessage}</span>
@@ -911,9 +980,7 @@ export default function InboxPanel({
                     renderedMessages.map(({ msg, dateLabel, showDateSeparator, isFirstInRun, isLastInRun }) => {
                       const isMine = msg.senderRole === 'president';
                       const memberLastRead = activeContact?.thread?.memberLastReadAt;
-                      const isSeenByRecipient = Boolean(
-                        isMine && memberLastRead && msg.createdAt <= memberLastRead
-                      );
+                      const isSeenByRecipient = isMine && isMessageSeen(msg.createdAt, memberLastRead);
                       return (
                         <React.Fragment key={msg.id}>
                           {showDateSeparator && (
@@ -962,22 +1029,32 @@ export default function InboxPanel({
                                 {renderMessageTextWithLinks(msg.text, isMine)}
                               </p>
                               <div
-                                className={`mt-1 flex items-center justify-end gap-1 text-[10px] leading-none ${
-                                  isMine ? 'text-emerald-100/85' : 'text-slate-400'
+                                className={`mt-1 flex items-center justify-end gap-1.5 text-[10px] leading-none ${
+                                  isMine ? 'text-emerald-100/90' : 'text-slate-400'
                                 }`}
                               >
                                 <span>{formatMessageTime(msg.createdAt)}</span>
                                 {isMine &&
                                   (isSeenByRecipient ? (
-                                    <CheckCheck
-                                      className="w-3.5 h-3.5 text-cyan-200"
-                                      aria-label="Seen"
-                                    />
+                                    <span
+                                      title="Seen"
+                                      className="inline-flex items-center px-1 py-0.5 rounded-full bg-white text-sky-600 shadow-2xs"
+                                    >
+                                      <CheckCheck
+                                        className="w-3.5 h-3.5 stroke-[2.6]"
+                                        aria-label="Seen"
+                                      />
+                                    </span>
                                   ) : (
-                                    <Check
-                                      className="w-3 h-3 text-emerald-100/80"
-                                      aria-label="Sent"
-                                    />
+                                    <span
+                                      title="Sent"
+                                      className="inline-flex items-center text-emerald-100/80"
+                                    >
+                                      <Check
+                                        className="w-3.5 h-3.5 stroke-[2.25]"
+                                        aria-label="Sent"
+                                      />
+                                    </span>
                                   ))}
                               </div>
                             </div>
@@ -1262,9 +1339,7 @@ export default function InboxPanel({
           renderedMessages.map(({ msg, dateLabel, showDateSeparator, isFirstInRun, isLastInRun }) => {
             const isMine = msg.senderRole === 'member';
             const presidentLastRead = myThread?.presidentLastReadAt;
-            const isSeenByPresident = Boolean(
-              isMine && presidentLastRead && msg.createdAt <= presidentLastRead
-            );
+            const isSeenByPresident = isMine && isMessageSeen(msg.createdAt, presidentLastRead);
             return (
               <React.Fragment key={msg.id}>
                 {showDateSeparator && (
@@ -1301,22 +1376,32 @@ export default function InboxPanel({
                       {renderMessageTextWithLinks(msg.text, isMine)}
                     </p>
                     <div
-                      className={`mt-1 flex items-center justify-end gap-1 text-[10px] leading-none ${
-                        isMine ? 'text-emerald-100/85' : 'text-slate-400'
+                      className={`mt-1 flex items-center justify-end gap-1.5 text-[10px] leading-none ${
+                        isMine ? 'text-emerald-100/90' : 'text-slate-400'
                       }`}
                     >
                       <span>{formatMessageTime(msg.createdAt)}</span>
                       {isMine &&
                         (isSeenByPresident ? (
-                          <CheckCheck
-                            className="w-3.5 h-3.5 text-cyan-200"
-                            aria-label="Seen"
-                          />
+                          <span
+                            title="Seen"
+                            className="inline-flex items-center px-1 py-0.5 rounded-full bg-white text-sky-600 shadow-2xs"
+                          >
+                            <CheckCheck
+                              className="w-3.5 h-3.5 stroke-[2.6]"
+                              aria-label="Seen"
+                            />
+                          </span>
                         ) : (
-                          <Check
-                            className="w-3 h-3 text-emerald-100/80"
-                            aria-label="Sent"
-                          />
+                          <span
+                            title="Sent"
+                            className="inline-flex items-center text-emerald-100/80"
+                          >
+                            <Check
+                              className="w-3.5 h-3.5 stroke-[2.25]"
+                              aria-label="Sent"
+                            />
+                          </span>
                         ))}
                     </div>
                   </div>

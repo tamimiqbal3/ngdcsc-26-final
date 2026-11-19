@@ -2555,6 +2555,24 @@ export function subscribeToInboxMessages(
   );
 }
 
+function maxIsoTimestamp(...values: Array<string | null | undefined>): string {
+  let best = '';
+  let bestMs = -Infinity;
+  for (const val of values) {
+    if (!val || typeof val !== 'string') continue;
+    const ms = Date.parse(val);
+    if (!Number.isNaN(ms)) {
+      if (ms > bestMs || (ms === bestMs && val > best)) {
+        bestMs = ms;
+        best = val;
+      }
+    } else if (!best || val > best) {
+      best = val;
+    }
+  }
+  return best || new Date().toISOString();
+}
+
 /**
  * Sends a persistent chat message inside the 1-on-1 thread between Tamim Iqbal (President) and a member.
  * Updates/creates the thread metadata document first so security rules verify thread ownership immediately.
@@ -2597,10 +2615,11 @@ export async function sendInboxMessage(params: {
 
   const threadRef = doc(db, 'inbox_threads', params.threadId);
   const existingSnap = await getDoc(threadRef).catch(() => null);
+  const existingData = existingSnap?.exists() ? (existingSnap.data() as any) : null;
 
   const memberUidToStore = !senderIsPresident && params.senderUid
     ? params.senderUid
-    : (params.memberInfo.uid || (existingSnap?.exists() ? (existingSnap.data() as any)?.memberUid : null) || null);
+    : (params.memberInfo.uid || existingData?.memberUid || null);
 
   const threadBasePayload = cleanFirestoreData({
     id: params.threadId,
@@ -2622,19 +2641,30 @@ export async function sendInboxMessage(params: {
     updatedAt: nowIso
   });
 
-  if (existingSnap && existingSnap.exists()) {
+  if (existingData) {
+    const nextPresidentReadAt = maxIsoTimestamp(
+      nowIso,
+      existingData.presidentLastReadAt,
+      existingData.lastSenderRole === 'member' ? existingData.lastMessageAt : undefined
+    );
+    const nextMemberReadAt = maxIsoTimestamp(
+      nowIso,
+      existingData.memberLastReadAt,
+      existingData.lastSenderRole === 'president' ? existingData.lastMessageAt : undefined
+    );
+
     await updateDoc(threadRef, {
       ...threadBasePayload,
       ...(senderIsPresident
         ? {
             unreadByMember: increment(1),
             unreadByPresident: 0,
-            presidentLastReadAt: nowIso
+            presidentLastReadAt: nextPresidentReadAt
           }
         : {
             unreadByPresident: increment(1),
             unreadByMember: 0,
-            memberLastReadAt: nowIso
+            memberLastReadAt: nextMemberReadAt
           })
     });
   } else {
@@ -2667,51 +2697,43 @@ export async function sendInboxMessage(params: {
 }
 
 /**
- * Resets the unread badge counter and records the exact read watermark timestamp
- * in Firestore so sent messages switch from 1 tick (sent) to 2 ticks (seen) live.
+ * Directly resets the unread counter and advances the monotonic read watermark timestamp
+ * in Firestore in a single write so double-tick seen receipts appear immediately on both sides.
  */
 export async function markInboxThreadRead(
   threadId: string,
   viewerRole: InboxSenderRole,
-  latestMessageCreatedAt?: string
+  options?: {
+    latestIncomingCreatedAt?: string;
+    currentLastReadAt?: string;
+    viewerUid?: string | null;
+    currentMemberUid?: string | null;
+  }
 ): Promise<void> {
   if (!threadId) return;
   try {
     const threadRef = doc(db, 'inbox_threads', threadId);
-    const snap = await getDoc(threadRef);
-    if (!snap.exists()) return;
-    const data = snap.data() as any;
-
     const nowIso = new Date().toISOString();
-    const readTimestamp =
-      latestMessageCreatedAt && latestMessageCreatedAt > nowIso
-        ? latestMessageCreatedAt
-        : nowIso;
+    const nextReadTs = maxIsoTimestamp(
+      nowIso,
+      options?.latestIncomingCreatedAt,
+      options?.currentLastReadAt
+    );
 
     if (viewerRole === 'president') {
-      const currentRead = data.presidentLastReadAt || '';
-      const needsUnreadReset = (data.unreadByPresident || 0) > 0;
-      const needsReadBump =
-        !currentRead ||
-        (latestMessageCreatedAt ? latestMessageCreatedAt > currentRead : false);
-      if (needsUnreadReset || needsReadBump) {
-        await updateDoc(threadRef, {
-          unreadByPresident: 0,
-          presidentLastReadAt: readTimestamp > currentRead ? readTimestamp : currentRead
-        });
-      }
+      await updateDoc(threadRef, {
+        unreadByPresident: 0,
+        presidentLastReadAt: nextReadTs
+      });
     } else if (viewerRole === 'member') {
-      const currentRead = data.memberLastReadAt || '';
-      const needsUnreadReset = (data.unreadByMember || 0) > 0;
-      const needsReadBump =
-        !currentRead ||
-        (latestMessageCreatedAt ? latestMessageCreatedAt > currentRead : false);
-      if (needsUnreadReset || needsReadBump) {
-        await updateDoc(threadRef, {
-          unreadByMember: 0,
-          memberLastReadAt: readTimestamp > currentRead ? readTimestamp : currentRead
-        });
+      const patch: Record<string, any> = {
+        unreadByMember: 0,
+        memberLastReadAt: nextReadTs
+      };
+      if (!options?.currentMemberUid && options?.viewerUid) {
+        patch.memberUid = options.viewerUid;
       }
+      await updateDoc(threadRef, patch);
     }
   } catch (err) {
     console.warn('Mark inbox thread read warning:', err);
