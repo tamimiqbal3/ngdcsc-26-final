@@ -77,7 +77,10 @@ import {
   getCachedNotices,
   getCachedRegistrationSetting,
   subscribeRegistrationSetting,
-  DEFAULT_REGISTRATION_SETTING
+  DEFAULT_REGISTRATION_SETTING,
+  isPresidentEmail,
+  subscribeToPresidentInboxThreads,
+  subscribeToMemberInboxThread
 } from './services/firebase';
 
 const CLUB_SEGMENTS = [
@@ -502,6 +505,7 @@ export default function App() {
   // Auth state for Member Login & My Dashboard
   const [authUser, setAuthUser] = useState<FirebaseUser | null>(() => auth.currentUser);
   const [authInitialized, setAuthInitialized] = useState(() => Boolean(auth.currentUser));
+  const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -510,6 +514,22 @@ export default function App() {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!authUser) {
+      setInboxUnreadCount(0);
+      return;
+    }
+    if (isPresidentEmail(authUser.email)) {
+      return subscribeToPresidentInboxThreads((list) => {
+        const unread = list.reduce((sum, t) => sum + (t.unreadByPresident || 0), 0);
+        setInboxUnreadCount(unread);
+      });
+    }
+    return subscribeToMemberInboxThread(authUser.uid, authUser.email, (thread) => {
+      setInboxUnreadCount(thread?.unreadByMember || 0);
+    });
+  }, [authUser]);
 
   // URL detection for /admin, /notices, /committee, /, and unknown routes -> 404
   const [currentView, setCurrentView] = useState<ViewType>(resolveCurrentView);
@@ -922,6 +942,11 @@ export default function App() {
                 <>
                   <UserCheck className="w-3.5 h-3.5 shrink-0" />
                   <span>My Dashboard</span>
+                  {inboxUnreadCount > 0 && (
+                    <span className="px-1.5 py-0.5 min-w-[18px] text-center rounded-full bg-red-600 text-white text-[10px] font-black leading-none shadow-2xs">
+                      {inboxUnreadCount}
+                    </span>
+                  )}
                 </>
               ) : (
                 <>
@@ -949,6 +974,11 @@ export default function App() {
                 <>
                   <UserCheck className="w-3.5 h-3.5 shrink-0" />
                   <span>Dashboard</span>
+                  {inboxUnreadCount > 0 && (
+                    <span className="px-1.5 py-0.5 min-w-[16px] text-center rounded-full bg-red-600 text-white text-[9.5px] font-black leading-none">
+                      {inboxUnreadCount}
+                    </span>
+                  )}
                 </>
               ) : (
                 <>
@@ -996,7 +1026,14 @@ export default function App() {
                   : 'text-slate-800 hover:bg-slate-50'
               }`}
             >
-              <span>{authUser ? 'My Dashboard' : 'Login / Sign Up'}</span>
+              <span className="flex items-center gap-2">
+                <span>{authUser ? 'My Dashboard' : 'Login / Sign Up'}</span>
+                {authUser && inboxUnreadCount > 0 && (
+                  <span className="px-1.5 py-0.5 min-w-[18px] text-center rounded-full bg-red-600 text-white text-[10px] font-black leading-none">
+                    {inboxUnreadCount}
+                  </span>
+                )}
+              </span>
               {authUser ? (
                 <UserCheck className="w-4 h-4 text-emerald-600" />
               ) : (

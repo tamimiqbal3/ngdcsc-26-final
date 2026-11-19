@@ -420,14 +420,11 @@ export default function InboxPanel({
   }, [isPresident, allMembers, threads]);
 
   const activeContact = useMemo<PresidentContactRow | null>(() => {
-    if (!isPresident) return null;
-    if (selectedContact) {
-      return (
-        presidentContacts.find((c) => c.threadId === selectedContact.threadId) ||
-        selectedContact
-      );
-    }
-    return presidentContacts[0] || null;
+    if (!isPresident || !selectedContact) return null;
+    return (
+      presidentContacts.find((c) => c.threadId === selectedContact.threadId) ||
+      selectedContact
+    );
   }, [isPresident, selectedContact, presidentContacts]);
 
   const filteredContacts = useMemo(() => {
@@ -438,6 +435,7 @@ export default function InboxPanel({
       return (
         c.name.toLowerCase().includes(q) ||
         (c.email || '').toLowerCase().includes(q) ||
+        (c.studentId || '').toLowerCase().includes(q) ||
         (c.membershipId || '').toLowerCase().includes(q)
       );
     });
@@ -454,6 +452,8 @@ export default function InboxPanel({
     return presidentContacts.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
+        (c.email || '').toLowerCase().includes(q) ||
+        (c.studentId || '').toLowerCase().includes(q) ||
         (c.membershipId || '').toLowerCase().includes(q) ||
         (c.batch || '').toLowerCase().includes(q)
     );
@@ -670,7 +670,7 @@ export default function InboxPanel({
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search member..."
+                  placeholder="Search name, roll, email, ID..."
                   className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-100/80 border border-transparent text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-emerald-500 focus:outline-none transition-all"
                 />
                 {searchTerm && (
@@ -700,13 +700,18 @@ export default function InboxPanel({
                 <button
                   type="button"
                   onClick={() => setListFilter('chats')}
-                  className={`py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                  className={`py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                     listFilter === 'chats'
                       ? 'bg-white text-slate-900 shadow-2xs'
                       : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
-                  Chats ({threads.length})
+                  <span>Chats ({threads.length})</span>
+                  {threads.reduce((sum, t) => sum + (t.unreadByPresident || 0), 0) > 0 && (
+                    <span className="px-1.5 py-0.5 min-w-[16px] text-center rounded-full bg-red-600 text-white text-[10px] font-black leading-none">
+                      {threads.reduce((sum, t) => sum + (t.unreadByPresident || 0), 0)}
+                    </span>
+                  )}
                 </button>
               </div>
             </div>
@@ -758,7 +763,7 @@ export default function InboxPanel({
                           {contact.thread?.lastMessageAt && (
                             <span
                               className={`text-[10px] shrink-0 ${
-                                unread > 0 ? 'font-bold text-emerald-600' : 'text-slate-400'
+                                unread > 0 ? 'font-bold text-red-600' : 'text-slate-400'
                               }`}
                             >
                               {formatShortThreadTime(contact.thread.lastMessageAt)}
@@ -782,7 +787,7 @@ export default function InboxPanel({
                                   : 'Tap to message')}
                           </p>
                           {unread > 0 && (
-                            <span className="px-1.5 py-0.5 min-w-[18px] text-center rounded-full bg-emerald-600 text-white text-[10px] font-black leading-none shrink-0">
+                            <span className="px-1.5 py-0.5 min-w-[18px] text-center rounded-full bg-red-600 text-white text-[10px] font-black leading-none shrink-0 shadow-2xs">
                               {unread}
                             </span>
                           )}
@@ -1045,7 +1050,7 @@ export default function InboxPanel({
                         type="text"
                         value={broadcastSearch}
                         onChange={(e) => setBroadcastSearch(e.target.value)}
-                        placeholder="Filter members..."
+                        placeholder="Filter name, roll, email..."
                         className="flex-1 bg-transparent text-xs text-slate-900 outline-none"
                       />
                       <button
