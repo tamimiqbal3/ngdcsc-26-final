@@ -638,13 +638,15 @@ export default function MemberDashboard({
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200/90 rounded-2xl p-4 sm:px-6 shadow-xs">
             <div>
               <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
-                {isPresident ? `${PRESIDENT_DISPLAY_NAME} • Dashboard` : 'My Dashboard'}
+                {isPresident ? PRESIDENT_DISPLAY_NAME : 'My Dashboard'}
               </h1>
               <p className="text-xs text-slate-500">
                 {isPresident ? (
-                  <>
-                    <span className="font-bold text-emerald-700">{PRESIDENT_ROLE_LABEL}</span> • {user.email}
-                  </>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
+                    {PRESIDENT_ROLE_LABEL}
+                  </span>
+                ) : activePage === 'inbox' ? (
+                  <span>{member?.name}</span>
                 ) : (
                   <>
                     {member?.name} • Roll <span className="font-mono font-semibold text-slate-700">{member?.studentId}</span>
@@ -687,16 +689,16 @@ export default function MemberDashboard({
               <button
                 type="button"
                 onClick={() => switchPage('inbox')}
-                className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
                   activePage === 'inbox'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-gradient-to-r from-rose-50 via-red-50 to-orange-50 text-red-600 border-2 border-red-500 shadow-sm shadow-red-500/15'
+                    : 'bg-gradient-to-r from-rose-500/15 via-red-500/15 to-amber-500/15 hover:from-rose-500/25 hover:via-red-500/25 hover:to-amber-500/25 text-red-600 border border-red-300/80'
                 }`}
               >
-                <Inbox className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Inbox</span>
+                <Inbox className="w-3.5 h-3.5 text-red-600" />
+                <span className="text-red-600 font-black">Inbox</span>
                 {inboxUnreadCount > 0 && (
-                  <span className="px-1.5 py-0.5 min-w-[18px] text-center rounded-full bg-emerald-600 text-white text-[10px] font-black leading-none">
+                  <span className="px-1.5 py-0.5 min-w-[18px] text-center rounded-full bg-red-600 text-white text-[10px] font-black leading-none shadow-2xs">
                     {inboxUnreadCount}
                   </span>
                 )}

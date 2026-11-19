@@ -121,7 +121,7 @@ service cloud.firestore {
         request.resource.data.memberEmailLower == resource.data.memberEmailLower &&
         request.resource.data.memberId == resource.data.memberId
       );
-      allow delete: if isPresident();
+      allow delete: if false;
 
       match /messages/{messageId} {
         allow read: if isPresident() || (
@@ -138,7 +138,7 @@ service cloud.firestore {
              exists(/databases/$(database)/documents/inbox_threads/$(threadId)) &&
              isThreadMemberOwner(get(/databases/$(database)/documents/inbox_threads/$(threadId)).data))
           );
-        allow update, delete: if isPresident();
+        allow update, delete: if false;
       }
     }
 

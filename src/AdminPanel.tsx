@@ -1207,18 +1207,16 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
             <button
               type="button"
               onClick={() => setActiveTab('inbox')}
-              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
+              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer shrink-0 ${
                 activeTab === 'inbox'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  ? 'bg-gradient-to-r from-rose-50 via-red-50 to-orange-50 text-red-600 border-2 border-red-500 shadow-sm shadow-red-500/15'
+                  : 'bg-gradient-to-r from-rose-500/15 via-red-500/15 to-amber-500/15 hover:from-rose-500/25 hover:via-red-500/25 hover:to-amber-500/25 text-red-600 border border-red-300/80'
               }`}
             >
-              <Inbox className="w-4 h-4 shrink-0" />
-              <span>President Inbox</span>
+              <Inbox className="w-4 h-4 shrink-0 text-red-600" />
+              <span className="text-red-600 font-black">President Inbox</span>
               {presidentUnreadCount > 0 && (
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                  activeTab === 'inbox' ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white'
-                }`}>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-600 text-white">
                   {presidentUnreadCount}
                 </span>
               )}

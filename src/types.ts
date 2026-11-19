@@ -164,6 +164,8 @@ export interface AttendanceSession {
 export const PRESIDENT_EMAIL = 'info.tamimiq@gmail.com';
 export const PRESIDENT_DISPLAY_NAME = 'Tamim Iqbal';
 export const PRESIDENT_ROLE_LABEL = 'President';
+export const PRESIDENT_PHOTO_URL =
+  'https://raw.githubusercontent.com/tamimiqbal3/tamimiqshop/refs/heads/main/profile.jpg';
 
 export type InboxSenderRole = 'president' | 'member';
 

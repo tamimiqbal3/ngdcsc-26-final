@@ -2314,6 +2314,7 @@ export function subscribeToMyAttendance(
 // ==================== PRESIDENT <-> MEMBER INBOX OPERATIONS ====================
 
 const LS_PRESIDENT_INBOX_KEY = 'ngdcsc_president_inbox_threads_cache';
+let inboxMsgSeq = 0;
 
 export function isPresidentEmail(email?: string | null): boolean {
   return (email || '').trim().toLowerCase() === PRESIDENT_EMAIL;
@@ -2591,7 +2592,8 @@ export async function sendInboxMessage(params: {
   const memberEmailClean = (params.memberInfo.email || '').trim();
   const memberEmailLower = memberEmailClean.toLowerCase();
   const nowIso = new Date().toISOString();
-  const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  inboxMsgSeq = (inboxMsgSeq + 1) % 10000;
+  const msgId = `msg_${Date.now()}_${String(inboxMsgSeq).padStart(4, '0')}_${Math.random().toString(36).slice(2, 6)}`;
 
   const threadRef = doc(db, 'inbox_threads', params.threadId);
   const existingSnap = await getDoc(threadRef).catch(() => null);
@@ -2677,5 +2679,81 @@ export async function markInboxThreadRead(
     console.warn('Mark inbox thread read warning:', err);
   }
 }
+
+/**
+ * President-only: Sends the exact same message individually into multiple members'
+ * separate 1-on-1 private Inbox threads so each member receives it in their own chat.
+ */
+export async function sendPresidentIndividualBroadcast(params: {
+  recipients: Array<{
+    threadId: string;
+    memberId?: string;
+    memberUid?: string | null;
+    email: string;
+    name: string;
+    studentId?: string;
+    membershipId?: string;
+    batch?: string;
+    section?: string;
+    photo?: string | null;
+  }>;
+  senderEmail: string;
+  senderUid?: string | null;
+  text: string;
+  onProgress?: (completed: number, total: number) => void;
+}): Promise<{ sentCount: number; failedCount: number }> {
+  if (!isPresidentEmail(params.senderEmail)) {
+    throw new Error('Only the President can send individual messages to all members.');
+  }
+  const cleanText = params.text.trim();
+  if (!cleanText) {
+    throw new Error('Message cannot be empty.');
+  }
+
+  const total = params.recipients.length;
+  let completed = 0;
+  let sentCount = 0;
+  let failedCount = 0;
+
+  const CHUNK_SIZE = 5;
+  for (let i = 0; i < total; i += CHUNK_SIZE) {
+    const chunk = params.recipients.slice(i, i + CHUNK_SIZE);
+    const results = await Promise.allSettled(
+      chunk.map((r) =>
+        sendInboxMessage({
+          threadId: r.threadId,
+          memberInfo: {
+            id: r.memberId || r.threadId,
+            uid: r.memberUid || null,
+            email: r.email,
+            name: r.name,
+            studentId: r.studentId,
+            membershipId: r.membershipId,
+            batch: r.batch,
+            section: r.section,
+            photo: r.photo || null
+          },
+          senderEmail: params.senderEmail,
+          senderUid: params.senderUid || null,
+          text: cleanText
+        })
+      )
+    );
+    results.forEach((res) => {
+      completed += 1;
+      if (res.status === 'fulfilled') {
+        sentCount += 1;
+      } else {
+        failedCount += 1;
+      }
+    });
+    if (params.onProgress) {
+      params.onProgress(completed, total);
+    }
+  }
+
+  return { sentCount, failedCount };
+}
+
 
 
