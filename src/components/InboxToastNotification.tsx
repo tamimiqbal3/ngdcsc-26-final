@@ -46,8 +46,7 @@ export default function InboxToastNotification({
   latestEventKey,
   isCurrentlyViewingInbox = false,
   onOpenInbox,
-  buttonLabel = 'Check Your Dashboard',
-  senderHint
+  buttonLabel = 'Check Dashboard'
 }: InboxToastNotificationProps) {
   const [dismissedKey, setDismissedKey] = useState<string>('');
   const [notifPermission, setNotifPermission] = useState<BrowserNotificationPermission>(() =>
@@ -61,7 +60,6 @@ export default function InboxToastNotification({
     typeof document !== 'undefined' ? document.title.replace(/^\(\d+\)\s*/, '') : 'NGDC Science Club'
   );
 
-  // Register Service Worker & listen for SW click-to-open-inbox messages + permission updates
   useEffect(() => {
     registerNotificationServiceWorker();
 
@@ -88,7 +86,7 @@ export default function InboxToastNotification({
     };
   }, []);
 
-  // Sync browser tab title with live unread count across all browsers
+  // Sync browser tab title with live unread count
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const baseTitle = baseTitleRef.current || 'NGDC Science Club';
@@ -102,7 +100,7 @@ export default function InboxToastNotification({
     };
   }, [unreadCount]);
 
-  // Trigger subtle sound + native browser/ServiceWorker notification when a new unread event arrives
+  // Trigger sound + native browser notification for new unread inbox messages
   useEffect(() => {
     if (unreadCount <= 0 || !latestEventKey) {
       lastAlertedKeyRef.current = '';
@@ -122,20 +120,17 @@ export default function InboxToastNotification({
       notifPermission === 'granted' &&
       (!isCurrentlyViewingInbox || (typeof document !== 'undefined' && document.hidden))
     ) {
-      const headline =
+      const countTitle =
         unreadCount === 1 ? '1 New Message' : `${unreadCount} New Messages`;
-      const body = senderHint
-        ? `${senderHint} — Please check your dashboard.`
-        : 'You have a new message in your Inbox. Please check your dashboard.';
 
       dispatchBrowserNotification({
-        title: `${headline} • NGDC Science Club`,
-        body,
+        title: `NGDC Science Club • ${countTitle}`,
+        body: 'Check your dashboard.',
         tag: latestEventKey,
         onClick: () => onOpenInboxRef.current()
       });
     }
-  }, [unreadCount, latestEventKey, isCurrentlyViewingInbox, senderHint, notifPermission]);
+  }, [unreadCount, latestEventKey, isCurrentlyViewingInbox, notifPermission]);
 
   const handleEnableBrowserAlerts = async () => {
     const result = await requestBrowserNotificationPermission();
@@ -156,26 +151,24 @@ export default function InboxToastNotification({
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-[calc(100vw-2rem)] max-w-sm animate-in fade-in slide-in-from-bottom-4 duration-200 font-sans"
+      className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-[calc(100vw-2rem)] max-w-xs animate-in fade-in slide-in-from-bottom-4 duration-200 font-sans"
     >
-      <div className="bg-white/95 backdrop-blur-md rounded-2xl border border-slate-200/90 shadow-[0_18px_45px_rgba(15,23,42,0.18)] overflow-hidden">
-        {/* Top Accent Strip */}
+      <div className="bg-white/95 backdrop-blur-md rounded-2xl border border-slate-200 shadow-[0_18px_45px_rgba(15,23,42,0.18)] overflow-hidden">
         <div className="h-1 w-full bg-gradient-to-r from-emerald-600 via-teal-500 to-rose-500" />
 
-        <div className="p-4 flex items-start gap-3.5 relative">
-          {/* Close / Dismiss */}
+        <div className="p-4 flex items-center gap-3.5 relative">
           <button
             type="button"
             onClick={() => setDismissedKey(latestEventKey)}
-            aria-label="Dismiss message notification"
-            className="absolute top-3 right-3 p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+            aria-label="Close notification"
+            className="absolute top-2.5 right-2.5 p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
 
-          {/* Website Logo Avatar with Live Unread Badge */}
+          {/* Website Logo + Unread Count Badge */}
           <div className="relative shrink-0">
-            <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-200 p-1.5 flex items-center justify-center shadow-2xs">
+            <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-200 p-1.5 flex items-center justify-center">
               <img
                 src="/assets/club-logo.png"
                 alt="NGDC Science Club"
@@ -187,34 +180,23 @@ export default function InboxToastNotification({
             </span>
           </div>
 
-          {/* Formal Notification Copy + Dashboard CTA */}
-          <div className="flex-1 min-w-0 pr-5 space-y-1">
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 truncate">
-                NGDC Science Club
-              </span>
-            </div>
-
-            <h4 className="text-sm font-black text-slate-900 leading-snug">
+          {/* Simple Formal Notification Text */}
+          <div className="flex-1 min-w-0 pr-4 space-y-1">
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">
+              NGDC Science Club
+            </p>
+            <h4 className="text-sm font-black text-slate-900 leading-tight">
               {countLabel}
             </h4>
-
-            <p className="text-xs text-slate-600 leading-relaxed">
-              {senderHint ? (
-                <>
-                  <span className="font-semibold text-slate-800">{senderHint}</span> • Please check your dashboard.
-                </>
-              ) : (
-                'You have a new inbox message. Please check your dashboard.'
-              )}
+            <p className="text-xs text-slate-600">
+              Check your dashboard.
             </p>
 
-            <div className="pt-2 flex flex-wrap items-center gap-2">
+            <div className="pt-1.5 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={onOpenInbox}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-colors cursor-pointer"
               >
                 <span>{buttonLabel}</span>
                 <ChevronRight className="w-3.5 h-3.5" />
@@ -224,11 +206,10 @@ export default function InboxToastNotification({
                 <button
                   type="button"
                   onClick={handleEnableBrowserAlerts}
-                  className="inline-flex items-center gap-1 px-2.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-[11px] font-bold transition-colors cursor-pointer"
-                  title="Allow browser notifications"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-[11px] font-bold transition-colors cursor-pointer"
                 >
                   <BellRing className="w-3 h-3" />
-                  <span>Allow Alerts</span>
+                  <span>Allow</span>
                 </button>
               )}
             </div>

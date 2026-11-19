@@ -1,19 +1,9 @@
 export type BrowserNotificationPermission = NotificationPermission | 'unsupported';
 
 const CLUB_LOGO_ICON = '/assets/club-logo.png';
-const AUTO_PERM_SESSION_KEY = 'ngdcsc_notif_auto_prompt_v1';
-const PROMPT_DISMISS_LS_KEY = 'ngdcsc_notif_banner_dismissed_at';
+const PROMPT_DISMISS_LS_KEY = 'ngdcsc_notif_popup_dismissed_at';
 
 let swRegistrationPromise: Promise<ServiceWorkerRegistration | null> | null = null;
-
-export function isEmbeddedIframe(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    return window.self !== window.top;
-  } catch {
-    return true;
-  }
-}
 
 export function getBrowserNotificationPermission(): BrowserNotificationPermission {
   if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -40,7 +30,7 @@ export async function requestBrowserNotificationPermission(): Promise<BrowserNot
     return 'unsupported';
   }
 
-  await registerNotificationServiceWorker();
+  registerNotificationServiceWorker();
 
   if (Notification.permission === 'granted' || Notification.permission === 'denied') {
     return Notification.permission;
@@ -65,35 +55,13 @@ export async function requestBrowserNotificationPermission(): Promise<BrowserNot
   }
 }
 
-/**
- * Attempts to request native permission once right on first page entry
- * for browsers that allow immediate prompts on load.
- */
-export async function attemptFirstEntryPermissionRequest(): Promise<BrowserNotificationPermission> {
-  const current = getBrowserNotificationPermission();
-  if (current !== 'default') return current;
-  if (isEmbeddedIframe()) return current;
-
-  try {
-    if (sessionStorage.getItem(AUTO_PERM_SESSION_KEY) === '1') {
-      return current;
-    }
-    sessionStorage.setItem(AUTO_PERM_SESSION_KEY, '1');
-  } catch {
-    // ignore storage errors
-  }
-
-  return requestBrowserNotificationPermission();
-}
-
 export function wasPermissionBannerRecentlyDismissed(): boolean {
   try {
     const raw = localStorage.getItem(PROMPT_DISMISS_LS_KEY);
     if (!raw) return false;
     const ts = Number(raw);
     if (!Number.isFinite(ts)) return false;
-    // Allow re-asking after 12 hours if permission is still default
-    return Date.now() - ts < 12 * 60 * 60 * 1000;
+    return Date.now() - ts < 24 * 60 * 60 * 1000;
   } catch {
     return false;
   }
@@ -120,12 +88,31 @@ export async function dispatchBrowserNotification(params: {
     return false;
   }
 
-  // Prefer ServiceWorkerRegistration.showNotification so Android Chrome & desktop both work cleanly
+  // 1. Try standard Notification constructor first (instant on Chrome/Edge/Firefox/Safari desktop)
+  try {
+    const notif = new Notification(params.title, {
+      body: params.body,
+      icon: CLUB_LOGO_ICON,
+      badge: CLUB_LOGO_ICON,
+      tag: params.tag,
+      renotify: true
+    } as NotificationOptions);
+    notif.onclick = () => {
+      window.focus();
+      params.onClick?.();
+      notif.close();
+    };
+    return true;
+  } catch {
+    // Expected on Android Chrome & mobile PWAs: requires ServiceWorkerRegistration.showNotification
+  }
+
+  // 2. Fallback to Service Worker showNotification (works on Android Chrome & mobile browsers)
   if ('serviceWorker' in navigator) {
     try {
       const reg =
         (await registerNotificationServiceWorker()) ||
-        (await navigator.serviceWorker.getRegistration());
+        (await navigator.serviceWorker.ready);
       if (reg && typeof reg.showNotification === 'function') {
         await reg.showNotification(params.title, {
           body: params.body,
@@ -138,24 +125,9 @@ export async function dispatchBrowserNotification(params: {
         return true;
       }
     } catch {
-      // fall through to window.Notification
+      return false;
     }
   }
 
-  try {
-    const notif = new Notification(params.title, {
-      body: params.body,
-      icon: CLUB_LOGO_ICON,
-      badge: CLUB_LOGO_ICON,
-      tag: params.tag
-    });
-    notif.onclick = () => {
-      window.focus();
-      params.onClick?.();
-      notif.close();
-    };
-    return true;
-  } catch {
-    return false;
-  }
+  return false;
 }

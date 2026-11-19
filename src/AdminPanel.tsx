@@ -3201,7 +3201,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
           latestEventKey={presidentNotifMeta.latestEventKey}
           senderHint={presidentNotifMeta.senderHint}
           isCurrentlyViewingInbox={activeTab === 'inbox'}
-          buttonLabel="Check Your Dashboard"
+          buttonLabel="Check Dashboard"
           onOpenInbox={() => setActiveTab('inbox')}
         />
       )}
