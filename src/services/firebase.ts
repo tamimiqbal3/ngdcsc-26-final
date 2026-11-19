@@ -51,7 +51,8 @@ import {
   AttendanceRecord,
   AttendanceSession,
   AttendanceStatus,
-  AttendanceMethod
+  AttendanceMethod,
+  MemberCredentialRecord
 } from '../types';
 
 import { getAnalytics, isSupported } from 'firebase/analytics';
@@ -129,6 +130,7 @@ const LS_MEMBERS_KEY = 'ngdcsc_firebase_members_cache';
 const LS_COMMITTEE_KEY = 'ngdcsc_firebase_committee_cache';
 const LS_NOTICES_KEY = 'ngdcsc_firebase_notices_cache';
 const LS_ACTIVE_MEMBER_COUNT_KEY = 'ngdcsc_active_member_count_cache';
+const LS_MEMBER_CREDENTIALS_KEY = 'ngdcsc_firebase_member_credentials_cache';
 
 export function getCachedActiveMemberCount(): number | null {
   try {
@@ -663,7 +665,10 @@ export async function deleteMemberFromFirebase(id: string, memberData?: Submissi
   const deletePromises = Array.from(keysToDelete).map(k => 
     deleteDoc(doc(db, 'member_status', k)).catch(() => {})
   );
-  await Promise.allSettled(deletePromises);
+  await Promise.allSettled([
+    ...deletePromises,
+    deleteMemberCredentialForAdmin(id).catch(() => {})
+  ]);
 }
 
 /**
@@ -1613,17 +1618,34 @@ function generateSecureTempPassword(): string {
   return Array.from(bytes, (b) => chars[b % chars.length]).join('');
 }
 
+export function generateRollAutoPassword(studentId?: string, suffixDigits?: string): string {
+  const digits = suffixDigits || String(Math.floor(100 + Math.random() * 900));
+  const cleanRoll = (studentId || '').trim().replace(/\s+/g, '');
+  if (!cleanRoll || cleanRoll.toUpperCase() === 'N/A') {
+    return `NGDC${digits}`;
+  }
+  return cleanRoll.length + 3 >= 6
+    ? `${cleanRoll}${digits}`
+    : `${cleanRoll.padStart(3, '0')}${digits}`;
+}
+
+export interface ProvisionAuthResult {
+  uid: string | null;
+  created: boolean;
+  alreadyExists: boolean;
+}
+
 /**
  * Ensures an Auth account exists for a manually-added registered member using an isolated
  * in-memory secondary session so the admin's active session is never disturbed.
  */
-export async function ensureMemberAuthAccount(
+export async function provisionMemberAuthAccount(
   email: string,
   displayName?: string,
   customPassword?: string
-): Promise<string | null> {
+): Promise<ProvisionAuthResult> {
   const cleanEmail = email.trim();
-  if (!cleanEmail) return null;
+  if (!cleanEmail) return { uid: null, created: false, alreadyExists: false };
 
   const passwordToUse =
     customPassword && customPassword.length >= 6
@@ -1640,16 +1662,28 @@ export async function ensureMemberAuthAccount(
     if (displayName && cred.user) {
       await updateProfile(cred.user, { displayName: displayName.trim() }).catch(() => {});
     }
-    return cred.user.uid;
+    return { uid: cred.user.uid, created: true, alreadyExists: false };
   } catch (err: any) {
     if (err?.code === 'auth/email-already-in-use') {
-      return null;
+      return { uid: null, created: false, alreadyExists: true };
     }
     console.warn('Account setup warning:', err);
-    return null;
+    return { uid: null, created: false, alreadyExists: false };
   } finally {
     await signOut(secAuth).catch(() => {});
   }
+}
+
+/**
+ * Legacy wrapper returning just the newly created UID or null.
+ */
+export async function ensureMemberAuthAccount(
+  email: string,
+  displayName?: string,
+  customPassword?: string
+): Promise<string | null> {
+  const res = await provisionMemberAuthAccount(email, displayName, customPassword);
+  return res.uid;
 }
 
 /**
@@ -2305,3 +2339,140 @@ export function subscribeToMyAttendance(
   };
 }
 
+// ============================================================================
+// ADMIN-ONLY SAVED MEMBER CREDENTIALS (/member_credentials/{memberId})
+// ============================================================================
+
+export function getCachedMemberCredentials(): Record<string, MemberCredentialRecord> {
+  try {
+    const raw = localStorage.getItem(LS_MEMBER_CREDENTIALS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+export function clearCachedMemberCredentials(): void {
+  try {
+    localStorage.removeItem(LS_MEMBER_CREDENTIALS_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export async function saveMemberCredentialForAdmin(
+  memberId: string,
+  data: Omit<MemberCredentialRecord, 'memberId'>
+): Promise<void> {
+  if (!memberId) return;
+  const record: MemberCredentialRecord = {
+    memberId,
+    uid: data.uid ?? null,
+    email: data.email ?? null,
+    loginPassword: data.loginPassword ?? null,
+    passwordChangedByMember: Boolean(data.passwordChangedByMember),
+    createdByAdmin: data.createdByAdmin !== false,
+    updatedAt: data.updatedAt || new Date().toISOString(),
+    updatedBy: data.updatedBy || 'Admin'
+  };
+
+  try {
+    const cached = getCachedMemberCredentials();
+    cached[memberId] = record;
+    localStorage.setItem(LS_MEMBER_CREDENTIALS_KEY, JSON.stringify(cached));
+  } catch {
+    // ignore
+  }
+
+  try {
+    await setDoc(doc(db, 'member_credentials', memberId), cleanFirestoreData(record), { merge: true });
+  } catch (err) {
+    console.warn('Member credential save warning:', err);
+  }
+}
+
+export async function markMemberPasswordChangedByMember(
+  memberId: string,
+  uid: string,
+  email?: string | null
+): Promise<void> {
+  if (!memberId || !uid) return;
+  const payload = {
+    memberId,
+    uid,
+    email: email || null,
+    loginPassword: null,
+    passwordChangedByMember: true,
+    updatedAt: new Date().toISOString()
+  };
+
+  try {
+    const cached = getCachedMemberCredentials();
+    if (cached[memberId]) {
+      cached[memberId] = { ...cached[memberId], ...payload };
+      localStorage.setItem(LS_MEMBER_CREDENTIALS_KEY, JSON.stringify(cached));
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    await setDoc(doc(db, 'member_credentials', memberId), payload, { merge: true });
+  } catch {
+    // non-critical if rule rejects or offline
+  }
+}
+
+export async function deleteMemberCredentialForAdmin(memberId: string): Promise<void> {
+  if (!memberId) return;
+  try {
+    const cached = getCachedMemberCredentials();
+    if (cached[memberId]) {
+      delete cached[memberId];
+      localStorage.setItem(LS_MEMBER_CREDENTIALS_KEY, JSON.stringify(cached));
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    await deleteDoc(doc(db, 'member_credentials', memberId));
+  } catch {
+    // ignore
+  }
+}
+
+export function subscribeToMemberCredentials(
+  callback: (creds: Record<string, MemberCredentialRecord>) => void
+): Unsubscribe {
+  const cached = getCachedMemberCredentials();
+  if (Object.keys(cached).length > 0) {
+    callback(cached);
+  }
+
+  const colRef = collection(db, 'member_credentials');
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const map: Record<string, MemberCredentialRecord> = {};
+      snapshot.forEach((d) => {
+        map[d.id] = { memberId: d.id, ...(d.data() as any) } as MemberCredentialRecord;
+      });
+      try {
+        localStorage.setItem(LS_MEMBER_CREDENTIALS_KEY, JSON.stringify(map));
+      } catch {
+        // ignore
+      }
+      callback(map);
+    },
+    (err) => {
+      console.warn('Member credentials listener warning:', err);
+      callback(getCachedMemberCredentials());
+    }
+  );
+}

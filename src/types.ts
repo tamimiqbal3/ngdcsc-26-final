@@ -161,3 +161,13 @@ export interface AttendanceSession {
   updatedBy?: string;
 }
 
+export interface MemberCredentialRecord {
+  memberId: string;
+  uid?: string | null;
+  email?: string | null;
+  loginPassword?: string | null;
+  passwordChangedByMember?: boolean;
+  createdByAdmin?: boolean;
+  updatedAt?: string;
+  updatedBy?: string;
+}

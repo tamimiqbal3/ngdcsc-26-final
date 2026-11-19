@@ -52,7 +52,8 @@ import {
   subscribeToAttendanceSessions,
   getCachedMyAttendance,
   getCachedAttendanceSessions,
-  getTodayLocalDateStr
+  getTodayLocalDateStr,
+  markMemberPasswordChangedByMember
 } from './services/firebase';
 import ImageAdjustModal from './components/ImageAdjustModal';
 import DotLoader from './components/DotLoader';
@@ -431,6 +432,9 @@ export default function MemberDashboard({
     setChangingPassword(true);
     try {
       await changeMemberPassword(currentPassword, newPassword);
+      if (member?.id && user?.uid) {
+        markMemberPasswordChangedByMember(member.id, user.uid, user.email).catch(() => {});
+      }
       setCurrentPassword('');
       setNewPassword('');
       setConfirmNewPassword('');
