@@ -53,7 +53,9 @@ import {
   ClubNotice, 
   MembershipRegistrationSetting, 
   RegistrationStatusMode,
-  DEFAULT_SKILL_OPTIONS
+  DEFAULT_SKILL_OPTIONS,
+  detectGroupFromRoll,
+  GROUP_BADGE_STYLES
 } from './types';
 import ScienceBackground from './ScienceBackground';
 import ExecutiveCommitteePage from './ExecutiveCommitteePage';
@@ -788,6 +790,7 @@ export default function App() {
 
     const newRecord: SubmissionRecord = {
       ...formData,
+      academicGroup: detectGroupFromRoll(formData.studentId) || formData.academicGroup || '',
       uid: memberUid,
       membershipId: undefined,
       status: 'pending',
@@ -1995,12 +1998,32 @@ export default function App() {
                       type="text"
                       id="student-id"
                       required
-                      placeholder="e.g. 20251588"
+                      placeholder="e.g. 2025'1'133 or 20251588"
                       value={formData.studentId}
-                      onChange={(e) => setFormData(prev => ({ ...prev, studentId: e.target.value }))}
+                      onChange={(e) => {
+                        const nextRoll = e.target.value;
+                        const detected = detectGroupFromRoll(nextRoll);
+                        setFormData(prev => ({
+                          ...prev,
+                          studentId: nextRoll,
+                          academicGroup: detected || ''
+                        }));
+                      }}
                       className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 text-slate-900 placeholder:text-slate-400 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15 outline-none transition-all font-mono font-medium"
                     />
                   </div>
+                  {detectGroupFromRoll(formData.studentId) && (
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <span className="text-[11px] font-medium text-slate-500">Auto-detected Group:</span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full border text-[11px] font-bold ${
+                          GROUP_BADGE_STYLES[detectGroupFromRoll(formData.studentId)!]
+                        }`}
+                      >
+                        {detectGroupFromRoll(formData.studentId)}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div>

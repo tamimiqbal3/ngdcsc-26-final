@@ -2238,6 +2238,40 @@ export async function deleteAttendanceRecord(recordId: string): Promise<void> {
 }
 
 /**
+ * Permanently deletes an entire date's attendance session and all member records for that date,
+ * resetting that date so neither Present nor Absent is counted for any member (0 / 0).
+ */
+export async function deleteAttendanceByDate(date: string): Promise<{ deletedCount: number }> {
+  const cleanDate = date.trim();
+  if (!cleanDate) return { deletedCount: 0 };
+
+  const colRef = collection(db, 'attendance');
+  const snap = await getDocs(query(colRef, where('date', '==', cleanDate)));
+
+  await Promise.all([
+    ...snap.docs.map((d) => deleteDoc(d.ref)),
+    deleteDoc(doc(db, 'attendance_sessions', cleanDate)).catch(() => {})
+  ]);
+
+  try {
+    const cachedRecords = getCachedAttendance();
+    localStorage.setItem(
+      LS_ATTENDANCE_KEY,
+      JSON.stringify(cachedRecords.filter((r) => r.date !== cleanDate))
+    );
+    const cachedSessions = getCachedAttendanceSessions();
+    localStorage.setItem(
+      LS_ATTENDANCE_SESSIONS_KEY,
+      JSON.stringify(cachedSessions.filter((s) => s.date !== cleanDate))
+    );
+  } catch {
+    // ignore
+  }
+
+  return { deletedCount: snap.size };
+}
+
+/**
  * Strictly isolated per-member attendance listener:
  * Queries ONLY records owned by the logged-in user's UID or lowercase email.
  */

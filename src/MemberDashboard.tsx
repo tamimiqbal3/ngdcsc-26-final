@@ -42,7 +42,9 @@ import {
   AttendanceRecord,
   AttendanceSession,
   PRESIDENT_DISPLAY_NAME,
-  PRESIDENT_ROLE_LABEL
+  PRESIDENT_ROLE_LABEL,
+  getEffectiveMemberGroup,
+  GROUP_BADGE_STYLES
 } from './types';
 import {
   getCachedMemberProfileForUser,
@@ -876,9 +878,20 @@ export default function MemberDashboard({
                             <span className="text-[10px] font-bold uppercase text-slate-400 block">
                               College Roll
                             </span>
-                            <span className="font-mono font-bold text-slate-900">
-                              {member.studentId}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono font-bold text-slate-900">
+                                {member.studentId}
+                              </span>
+                              {getEffectiveMemberGroup(member) && (
+                                <span
+                                  className={`px-1.5 py-0.5 rounded border text-[10px] font-bold ${
+                                    GROUP_BADGE_STYLES[getEffectiveMemberGroup(member)!]
+                                  }`}
+                                >
+                                  {getEffectiveMemberGroup(member)}
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
                             <span className="text-[10px] font-bold uppercase text-slate-400 block">
@@ -1429,9 +1442,20 @@ export default function MemberDashboard({
                         <Lock className="w-3.5 h-3.5" />
                       </div>
                     </div>
-                    <p className="text-[10.5px] text-slate-500 mt-1">
-                      College Roll cannot be edited after registration.
-                    </p>
+                    <div className="flex items-center justify-between gap-2 flex-wrap mt-1">
+                      <p className="text-[10.5px] text-slate-500">
+                        College Roll cannot be edited after registration.
+                      </p>
+                      {getEffectiveMemberGroup(member) && (
+                        <span
+                          className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${
+                            GROUP_BADGE_STYLES[getEffectiveMemberGroup(member)!]
+                          }`}
+                        >
+                          Group: {getEffectiveMemberGroup(member)}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* DOB */}

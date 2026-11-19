@@ -26,7 +26,9 @@ import {
   SubmissionRecord,
   AttendanceRecord,
   AttendanceSession,
-  AttendanceStatus
+  AttendanceStatus,
+  getEffectiveMemberGroup,
+  GROUP_BADGE_STYLES
 } from '../types';
 import {
   getTodayLocalDateStr,
@@ -35,6 +37,7 @@ import {
   markMemberAttendance,
   updateAttendanceRecord,
   deleteAttendanceRecord,
+  deleteAttendanceByDate,
   upsertAttendanceSession
 } from '../services/firebase';
 
@@ -108,6 +111,8 @@ export default function AdminAttendancePanel({
     const existing = attendanceSessions.find((s) => s.date === selectedDate);
     if (existing?.eventTitle) {
       setEventTitle(existing.eventTitle);
+    } else {
+      setEventTitle('Club Session / Event');
     }
   }, [selectedDate, attendanceSessions]);
 
@@ -120,9 +125,11 @@ export default function AdminAttendancePanel({
   const [scanFeedback, setScanFeedback] = useState<ScanFeedback | null>(null);
   const [processingScan, setProcessingScan] = useState(false);
 
-  // Filters & Edit Modal state
+  // Filters, Date Delete Modal & Edit Modal state
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'present' | 'absent'>('all');
+  const [confirmDeleteDate, setConfirmDeleteDate] = useState<string | null>(null);
+  const [deletingDate, setDeletingDate] = useState(false);
   const [editingEntry, setEditingEntry] = useState<{
     member: SubmissionRecord;
     record: AttendanceRecord | null;
@@ -246,31 +253,50 @@ export default function AdminAttendancePanel({
     return rows;
   }, [members, recordsByMemberForDate, attendanceRecords, selectedDate]);
 
+  const savedRecordsForDateCount = useMemo(
+    () => attendanceRecords.filter((r) => r.date === selectedDate).length,
+    [attendanceRecords, selectedDate]
+  );
+
+  const hasSavedSessionForDate = useMemo(
+    () =>
+      attendanceSessions.some((s) => s.date === selectedDate) ||
+      savedRecordsForDateCount > 0,
+    [attendanceSessions, selectedDate, savedRecordsForDateCount]
+  );
+
   const presentCount = useMemo(
-    () => rosterRows.filter((r) => r.effectiveStatus === 'present').length,
-    [rosterRows]
+    () => (hasSavedSessionForDate ? rosterRows.filter((r) => r.effectiveStatus === 'present').length : 0),
+    [rosterRows, hasSavedSessionForDate]
   );
   const absentCount = useMemo(
-    () => rosterRows.filter((r) => r.effectiveStatus === 'absent').length,
-    [rosterRows]
+    () => (hasSavedSessionForDate ? rosterRows.filter((r) => r.effectiveStatus === 'absent').length : 0),
+    [rosterRows, hasSavedSessionForDate]
   );
   const attendancePercent =
-    rosterRows.length > 0 ? Math.round((presentCount / rosterRows.length) * 100) : 0;
+    hasSavedSessionForDate && rosterRows.length > 0
+      ? Math.round((presentCount / rosterRows.length) * 100)
+      : 0;
 
   const filteredRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return rosterRows.filter(({ member, effectiveStatus }) => {
+      if (!hasSavedSessionForDate && (statusFilter === 'present' || statusFilter === 'absent')) {
+        return false;
+      }
       if (statusFilter === 'present' && effectiveStatus !== 'present') return false;
       if (statusFilter === 'absent' && effectiveStatus !== 'absent') return false;
       if (!q) return true;
+      const grp = (getEffectiveMemberGroup(member) || '').toLowerCase();
       return (
         (member.name || '').toLowerCase().includes(q) ||
         (member.membershipId || '').toLowerCase().includes(q) ||
         (member.studentId || '').toLowerCase().includes(q) ||
-        (member.phone || '').toLowerCase().includes(q)
+        (member.phone || '').toLowerCase().includes(q) ||
+        grp.includes(q)
       );
     });
-  }, [rosterRows, searchQuery, statusFilter]);
+  }, [rosterRows, searchQuery, statusFilter, hasSavedSessionForDate]);
 
   const findMemberByCode = (rawInput: string): { normalizedId: string; member?: SubmissionRecord } => {
     const trimmed = rawInput.trim();
@@ -606,11 +632,33 @@ export default function AdminAttendancePanel({
     }
   };
 
+  const handleDeleteEntireDate = async () => {
+    if (!confirmDeleteDate || deletingDate) return;
+    setDeletingDate(true);
+    try {
+      const targetDate = confirmDeleteDate;
+      const { deletedCount } = await deleteAttendanceByDate(targetDate);
+      if (scanFeedback && selectedDate === targetDate) {
+        setScanFeedback(null);
+      }
+      setConfirmDeleteDate(null);
+      onNotify(
+        `Deleted all attendance for ${targetDate} (${deletedCount} record${deletedCount === 1 ? '' : 's'} cleared — counts reset to 0/0)`
+      );
+    } catch (err) {
+      console.error('Error deleting date attendance:', err);
+      onNotify('Failed to delete attendance for this date. Check connection.');
+    } finally {
+      setDeletingDate(false);
+    }
+  };
+
   const handleExportCsv = () => {
     const headers = [
       'Membership ID',
       'Member Name',
       'Roll',
+      'Group',
       'Batch',
       'Section',
       'Date',
@@ -628,10 +676,17 @@ export default function AdminAttendancePanel({
           escapeCsv(member.membershipId || ''),
           escapeCsv(member.name || ''),
           escapeCsv(member.studentId || ''),
+          escapeCsv(getEffectiveMemberGroup(member) || ''),
           escapeCsv(member.batch || ''),
           escapeCsv(member.section || ''),
           escapeCsv(selectedDate),
-          escapeCsv(effectiveStatus === 'present' ? 'Present' : 'Absent'),
+          escapeCsv(
+            !hasSavedSessionForDate
+              ? 'Not Recorded'
+              : effectiveStatus === 'present'
+              ? 'Present'
+              : 'Absent'
+          ),
           escapeCsv(effectiveStatus === 'present' && record ? record.scannedTimeLabel : '—'),
           escapeCsv(record ? (record.method === 'qr_scan' ? 'QR Scan' : 'Manual') : 'Not Scanned'),
           escapeCsv(record?.eventTitle || eventTitle),
@@ -699,6 +754,21 @@ export default function AdminAttendancePanel({
             >
               <Download className="w-3.5 h-3.5" />
               <span>Export CSV</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={!hasSavedSessionForDate}
+              onClick={() => setConfirmDeleteDate(selectedDate)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 border border-rose-600 text-white text-xs font-bold cursor-pointer disabled:cursor-not-allowed transition-colors"
+              title={
+                hasSavedSessionForDate
+                  ? `Delete entire attendance for ${selectedDate} (reset everyone to 0/0)`
+                  : 'No saved attendance session on this date'
+              }
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Date Attendance</span>
             </button>
           </div>
         </div>
@@ -986,7 +1056,9 @@ export default function AdminAttendancePanel({
                 <span className="text-[11px] font-bold uppercase">Present</span>
               </div>
               <p className="text-2xl font-black text-slate-900">{presentCount}</p>
-              <p className="text-[11px] text-slate-500">{attendancePercent}% attended</p>
+              <p className="text-[11px] text-slate-500">
+                {hasSavedSessionForDate ? `${attendancePercent}% attended` : 'No session yet'}
+              </p>
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-xs">
@@ -995,7 +1067,9 @@ export default function AdminAttendancePanel({
                 <span className="text-[11px] font-bold uppercase">Absent</span>
               </div>
               <p className="text-2xl font-black text-slate-900">{absentCount}</p>
-              <p className="text-[11px] text-slate-500">Not scanned</p>
+              <p className="text-[11px] text-slate-500">
+                {hasSavedSessionForDate ? 'Not scanned' : '0/0 cleared'}
+              </p>
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-xs">
@@ -1117,8 +1191,19 @@ export default function AdminAttendancePanel({
                       </td>
 
                       <td className="py-3 px-4 text-slate-600">
-                        <span className="font-semibold text-slate-800">{member.batch}</span> • Sec{' '}
-                        {member.section}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-slate-800">{member.batch}</span>
+                          <span>• Sec {member.section}</span>
+                          {getEffectiveMemberGroup(member) && (
+                            <span
+                              className={`px-1.5 py-0.5 rounded border text-[10px] font-bold ${
+                                GROUP_BADGE_STYLES[getEffectiveMemberGroup(member)!]
+                              }`}
+                            >
+                              {getEffectiveMemberGroup(member)}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] font-mono text-slate-500">
                           Roll: {member.studentId || '—'}
                         </div>
@@ -1132,6 +1217,10 @@ export default function AdminAttendancePanel({
                             {record?.method === 'qr_scan' && (
                               <span className="text-[10px] opacity-75">(QR)</span>
                             )}
+                          </span>
+                        ) : !hasSavedSessionForDate ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 font-bold text-[11px]">
+                            <span>Not Recorded (0/0)</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-700 font-bold text-[11px]">
@@ -1344,6 +1433,63 @@ export default function AdminAttendancePanel({
               </div>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* 5. CONFIRM DELETE ENTIRE DATE ATTENDANCE MODAL */}
+      {confirmDeleteDate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden text-slate-900">
+            <div className="p-4 sm:p-5 border-b border-rose-100 bg-rose-50/70 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Delete Entire Date Attendance</h3>
+                  <p className="text-xs font-mono font-bold text-rose-700">{confirmDeleteDate}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={deletingDate}
+                onClick={() => setConfirmDeleteDate(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-rose-100 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3 text-xs leading-relaxed text-slate-700">
+              <p>
+                Are you sure you want to permanently delete <strong>all attendance records</strong> and the session entry for{' '}
+                <span className="font-mono font-bold text-slate-900">{confirmDeleteDate}</span> ({eventTitle})?
+              </p>
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 font-semibold">
+                All members will reset to <strong>0 / 0</strong> for this date — neither Present nor Absent will be counted on Admin Panel or Member Dashboards.
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={deletingDate}
+                onClick={() => setConfirmDeleteDate(null)}
+                className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingDate}
+                onClick={handleDeleteEntireDate}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50 shadow-xs"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{deletingDate ? 'Deleting...' : 'Yes, Delete Entire Date'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

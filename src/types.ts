@@ -1,5 +1,6 @@
 export type SectionType = 'A' | 'B' | 'C' | 'D';
 export type BatchType = 'HSC 27' | 'HSC 28';
+export type AcademicGroup = 'Science' | 'Arts' | 'Commerce';
 export type MemberStatus = 'pending' | 'approved' | 'rejected';
 export type EmailType = 'confirmation' | 'decline' | 'custom';
 
@@ -27,6 +28,7 @@ export interface MembershipFormData {
   sameAsPhone: boolean;
   email: string;
   studentId: string;
+  academicGroup?: AcademicGroup | '';
   section: SectionType;
   dob: string;
   batch: BatchType;
@@ -67,6 +69,7 @@ export interface PublicMemberStatus {
   whatsapp?: string;
   email?: string;
   studentId?: string;
+  academicGroup?: AcademicGroup | '';
   dob?: string;
   interestedSegments?: string[];
   skills?: string[];
@@ -204,4 +207,61 @@ export interface InboxMessage {
   text: string;
   createdAt: string;
 }
+
+/**
+ * Auto-detects Academic Group (Science / Arts / Commerce) from NGDC College Roll number.
+ * Examples:
+ * - 2025'1'133, 2026'1'133, 2025(1)133, 2025-1-133, 20251133 -> Science (middle code 1)
+ * - 2025'2'133, 2026(2)133, 20252133 -> Arts (middle code 2)
+ * - 2025'3'133, 2026(3)133, 20253133 -> Commerce (middle code 3)
+ */
+export function detectGroupFromRoll(roll?: string | null): AcademicGroup | null {
+  if (!roll) return null;
+  const trimmed = roll.trim();
+  if (!trimmed) return null;
+
+  // 1. Explicit quote/bracket/dash separator around the group digit: e.g. 2025'1'133, 2026(1)133, 25'2'105
+  const delimitedMatch = trimmed.match(
+    /^\d{2,4}\s*['"(\[\-\/\s.]+\s*([123])(?:\s*['")\-\/\s.\]]|\d|$)/
+  );
+  if (delimitedMatch) {
+    if (delimitedMatch[1] === '1') return 'Science';
+    if (delimitedMatch[1] === '2') return 'Arts';
+    if (delimitedMatch[1] === '3') return 'Commerce';
+  }
+
+  // 2. Compact numeric format with 4-digit year + group digit + serial: e.g. 20251133, 20261133, 20252045
+  const digitsOnly = trimmed.replace(/\D/g, '');
+  const compactMatch = digitsOnly.match(/^(?:19|20)\d{2}([123])\d+$/);
+  if (compactMatch) {
+    if (compactMatch[1] === '1') return 'Science';
+    if (compactMatch[1] === '2') return 'Arts';
+    if (compactMatch[1] === '3') return 'Commerce';
+  }
+
+  return null;
+}
+
+export function getEffectiveMemberGroup(
+  member?: { studentId?: string | null; academicGroup?: string | null } | null
+): AcademicGroup | null {
+  if (!member) return null;
+  const detected = detectGroupFromRoll(member.studentId);
+  if (detected) return detected;
+  if (
+    member.academicGroup === 'Science' ||
+    member.academicGroup === 'Arts' ||
+    member.academicGroup === 'Commerce'
+  ) {
+    return member.academicGroup;
+  }
+  return null;
+}
+
+export const GROUP_BADGE_STYLES: Record<AcademicGroup, string> = {
+  Science: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  Arts: 'bg-violet-50 text-violet-800 border-violet-200',
+  Commerce: 'bg-amber-50 text-amber-800 border-amber-200'
+};
+
 

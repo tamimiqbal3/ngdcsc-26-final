@@ -57,7 +57,11 @@ import {
   DEFAULT_SKILL_OPTIONS,
   EmailLogRecord,
   AttendanceRecord,
-  AttendanceSession
+  AttendanceSession,
+  AcademicGroup,
+  detectGroupFromRoll,
+  getEffectiveMemberGroup,
+  GROUP_BADGE_STYLES
 } from './types';
 import AdminDashboardView from './AdminDashboardView';
 import { 
@@ -731,7 +735,12 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     e.preventDefault();
     if (!editingMember || !editingMember.id) return;
     const memberId = editingMember.id;
-    const updated = { ...editingMember, id: memberId };
+    const autoGroup = detectGroupFromRoll(editingMember.studentId);
+    const updated: SubmissionRecord = {
+      ...editingMember,
+      id: memberId,
+      academicGroup: editingMember.academicGroup || autoGroup || ''
+    };
     // Optimistic save
     setMembers(prev => prev.map(m => m.id === memberId ? updated : m));
     setEditingMember(null);
@@ -788,6 +797,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       'Submission Date',
       'Name',
       'Student ID / Roll',
+      'Group',
       'Phone',
       'WhatsApp',
       'Email',
@@ -806,6 +816,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       `"${m.submittedAt || ''}"`,
       `"${m.name || ''}"`,
       `"${m.studentId || ''}"`,
+      `"${getEffectiveMemberGroup(m) || ''}"`,
       `"${m.phone || ''}"`,
       `"${m.whatsapp || ''}"`,
       `"${m.email || ''}"`,
@@ -885,7 +896,8 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
           (m.studentId || '').toLowerCase().includes(memberSearch.toLowerCase()) ||
           (m.phone || '').includes(memberSearch) ||
           (m.membershipId || '').toLowerCase().includes(memberSearch.toLowerCase()) ||
-          (m.email || '').toLowerCase().includes(memberSearch.toLowerCase());
+          (m.email || '').toLowerCase().includes(memberSearch.toLowerCase()) ||
+          (getEffectiveMemberGroup(m) || '').toLowerCase().includes(memberSearch.toLowerCase());
 
         const matchBatch = filterBatch === 'All' || m.batch === filterBatch;
         const matchSection = filterSection === 'All' || m.section === filterSection;
@@ -1542,6 +1554,15 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                               </span>
                             )}
                             <span>Roll: {member.studentId || 'N/A'} • {member.batch} (Sec {member.section})</span>
+                            {getEffectiveMemberGroup(member) && (
+                              <span
+                                className={`px-1.5 py-0.5 rounded border text-[9px] font-bold font-sans ${
+                                  GROUP_BADGE_STYLES[getEffectiveMemberGroup(member)!]
+                                }`}
+                              >
+                                {getEffectiveMemberGroup(member)}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1751,7 +1772,16 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                           </td>
 
                           <td className="py-3 px-4 font-mono font-bold text-slate-900">
-                            {member.studentId || '—'}
+                            <div>{member.studentId || '—'}</div>
+                            {getEffectiveMemberGroup(member) && (
+                              <span
+                                className={`inline-block mt-1 px-1.5 py-0.5 rounded border text-[10px] font-sans font-bold ${
+                                  GROUP_BADGE_STYLES[getEffectiveMemberGroup(member)!]
+                                }`}
+                              >
+                                {getEffectiveMemberGroup(member)}
+                              </span>
+                            )}
                           </td>
 
                           <td className="py-3 px-4 font-bold">
@@ -2566,7 +2596,18 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                 <div>
                   <h4 className="text-lg font-black text-slate-900">{selectedMember.name}</h4>
                   <p className="text-xs font-mono font-bold text-emerald-700 mt-0.5">Roll: {selectedMember.studentId || 'N/A'}</p>
-                  <p className="text-xs text-slate-500">{selectedMember.batch} • Section {selectedMember.section}</p>
+                  <p className="text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
+                    <span>{selectedMember.batch} • Section {selectedMember.section}</span>
+                    {getEffectiveMemberGroup(selectedMember) && (
+                      <span
+                        className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${
+                          GROUP_BADGE_STYLES[getEffectiveMemberGroup(selectedMember)!]
+                        }`}
+                      >
+                        {getEffectiveMemberGroup(selectedMember)}
+                      </span>
+                    )}
+                  </p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     {selectedMember.membershipId && (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black uppercase bg-emerald-50 text-emerald-800 border border-emerald-300">
@@ -2871,7 +2912,16 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                   <input
                     type="text"
                     value={editingMember.studentId}
-                    onChange={(e) => setEditingMember({ ...editingMember, studentId: e.target.value })}
+                    onChange={(e) => {
+                      const nextRoll = e.target.value;
+                      const detected = detectGroupFromRoll(nextRoll);
+                      setEditingMember({
+                        ...editingMember,
+                        studentId: nextRoll,
+                        academicGroup: detected || ''
+                      });
+                    }}
+                    placeholder="e.g. 2025'1'133"
                     className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-600 font-mono font-bold"
                   />
                 </div>
@@ -2887,6 +2937,54 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                   </select>
                 </div>
               </div>
+
+              {/* Auto-Detected Group from Roll (1=Science, 2=Arts, 3=Commerce) */}
+              {(() => {
+                const detectedFromRoll = detectGroupFromRoll(editingMember.studentId);
+                const effectiveGroup = getEffectiveMemberGroup(editingMember);
+                return (
+                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-slate-700">Group (Auto from Roll):</span>
+                        {effectiveGroup ? (
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full border text-[11px] font-black ${GROUP_BADGE_STYLES[effectiveGroup]}`}
+                          >
+                            {effectiveGroup}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold">
+                            Not Detected
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500">
+                        {detectedFromRoll
+                          ? `Detected ${detectedFromRoll} from roll (${editingMember.studentId})`
+                          : "Format: 2025'1'133 -> 1 = Science, 2 = Arts, 3 = Commerce"}
+                      </p>
+                    </div>
+
+                    <select
+                      value={editingMember.academicGroup || detectedFromRoll || ''}
+                      onChange={(e) =>
+                        setEditingMember({
+                          ...editingMember,
+                          academicGroup: (e.target.value as AcademicGroup) || ''
+                        })
+                      }
+                      aria-label="Academic Group"
+                      className="px-3 py-1.5 rounded-xl bg-white border border-slate-300 text-slate-900 font-bold text-xs outline-none focus:border-emerald-600 shrink-0"
+                    >
+                      <option value="">Auto ({detectedFromRoll || 'None'})</option>
+                      <option value="Science">Science</option>
+                      <option value="Arts">Arts</option>
+                      <option value="Commerce">Commerce</option>
+                    </select>
+                  </div>
+                );
+              })()}
 
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
@@ -3171,6 +3269,7 @@ function AddMemberManualModal({
           membershipId: (membershipId.trim() || suggestedId || '').toUpperCase(),
           name: name.trim() || 'Club Member',
           studentId: studentId.trim() || 'N/A',
+          academicGroup: detectGroupFromRoll(studentId) || '',
           phone: phone.trim() || 'N/A',
           whatsapp: whatsapp.trim() || phone.trim() || 'N/A',
           email: email.trim(),
@@ -3297,9 +3396,21 @@ function AddMemberManualModal({
                 type="text" 
                 value={studentId} 
                 onChange={(e) => setStudentId(e.target.value)} 
-                placeholder="e.g. 2701" 
+                placeholder="e.g. 2025'1'133" 
                 className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:outline-none focus:border-emerald-600 font-mono font-bold" 
               />
+              {detectGroupFromRoll(studentId) && (
+                <div className="mt-1 flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-500">Group:</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${
+                      GROUP_BADGE_STYLES[detectGroupFromRoll(studentId)!]
+                    }`}
+                  >
+                    {detectGroupFromRoll(studentId)}
+                  </span>
+                </div>
+              )}
             </div>
             <div>
               <label className="font-bold text-slate-700 block mb-1">Batch</label>
