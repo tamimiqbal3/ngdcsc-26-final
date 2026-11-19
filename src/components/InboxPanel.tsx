@@ -324,18 +324,46 @@ export default function InboxPanel({
     return () => unsub();
   }, [activeThreadId, shouldSubscribeMessages]);
 
-  // Clear unread counter when viewing an active conversation
+  // Clear unread counter & persist read receipt timestamp in Firestore when viewing an active conversation
   useEffect(() => {
     if (!activeThreadId) return;
     if (isPresident) {
+      if (!selectedContact) return;
       const th = threads.find((t) => t.id === activeThreadId);
-      if (th && (th.unreadByPresident || 0) > 0) {
-        markInboxThreadRead(activeThreadId, 'president');
+      const latestMemberMsg = [...messages]
+        .reverse()
+        .find((m) => m.senderRole === 'member');
+      const latestMemberTs =
+        latestMemberMsg?.createdAt ||
+        (th?.lastSenderRole === 'member' ? th.lastMessageAt : undefined);
+      const needsMark =
+        Boolean(th && (th.unreadByPresident || 0) > 0) ||
+        Boolean(
+          latestMemberTs &&
+            th &&
+            (!th.presidentLastReadAt || latestMemberTs > th.presidentLastReadAt)
+        );
+      if (needsMark) {
+        markInboxThreadRead(activeThreadId, 'president', latestMemberTs);
       }
-    } else if (myThread && myThread.id === activeThreadId && (myThread.unreadByMember || 0) > 0) {
-      markInboxThreadRead(activeThreadId, 'member');
+    } else if (myThread && myThread.id === activeThreadId) {
+      const latestPresidentMsg = [...messages]
+        .reverse()
+        .find((m) => m.senderRole === 'president');
+      const latestPresidentTs =
+        latestPresidentMsg?.createdAt ||
+        (myThread.lastSenderRole === 'president' ? myThread.lastMessageAt : undefined);
+      const needsMark =
+        (myThread.unreadByMember || 0) > 0 ||
+        Boolean(
+          latestPresidentTs &&
+            (!myThread.memberLastReadAt || latestPresidentTs > myThread.memberLastReadAt)
+        );
+      if (needsMark) {
+        markInboxThreadRead(activeThreadId, 'member', latestPresidentTs);
+      }
     }
-  }, [activeThreadId, isPresident, threads, myThread]);
+  }, [activeThreadId, isPresident, selectedContact, threads, myThread, messages]);
 
   // Auto-scroll to newest message
   useEffect(() => {
@@ -773,18 +801,31 @@ export default function InboxPanel({
 
                         <div className="flex items-center justify-between gap-2 mt-0.5">
                           <p
-                            className={`text-[11px] truncate ${
+                            className={`text-[11px] truncate flex items-center gap-1 ${
                               unread > 0
                                 ? 'font-semibold text-slate-900'
                                 : 'text-slate-500'
                             }`}
                           >
-                            {contact.thread
-                              ? `${contact.thread.lastSenderRole === 'president' ? 'You: ' : ''}${contact.thread.lastMessage}`
-                              : contact.membershipId ||
-                                (contact.batch
-                                  ? `${contact.batch}${contact.section ? ` • Sec ${contact.section}` : ''}`
-                                  : 'Tap to message')}
+                            {contact.thread ? (
+                              <>
+                                {contact.thread.lastSenderRole === 'president' && (
+                                  contact.thread.memberLastReadAt &&
+                                  contact.thread.lastMessageAt &&
+                                  contact.thread.memberLastReadAt >= contact.thread.lastMessageAt ? (
+                                    <CheckCheck className="w-3 h-3 text-emerald-600 shrink-0" />
+                                  ) : (
+                                    <Check className="w-3 h-3 text-slate-400 shrink-0" />
+                                  )
+                                )}
+                                <span className="truncate">{contact.thread.lastMessage}</span>
+                              </>
+                            ) : (
+                              contact.membershipId ||
+                              (contact.batch
+                                ? `${contact.batch}${contact.section ? ` • Sec ${contact.section}` : ''}`
+                                : 'Tap to message')
+                            )}
                           </p>
                           {unread > 0 && (
                             <span className="px-1.5 py-0.5 min-w-[18px] text-center rounded-full bg-red-600 text-white text-[10px] font-black leading-none shrink-0 shadow-2xs">
@@ -869,6 +910,10 @@ export default function InboxPanel({
                   ) : (
                     renderedMessages.map(({ msg, dateLabel, showDateSeparator, isFirstInRun, isLastInRun }) => {
                       const isMine = msg.senderRole === 'president';
+                      const memberLastRead = activeContact?.thread?.memberLastReadAt;
+                      const isSeenByRecipient = Boolean(
+                        isMine && memberLastRead && msg.createdAt <= memberLastRead
+                      );
                       return (
                         <React.Fragment key={msg.id}>
                           {showDateSeparator && (
@@ -922,7 +967,18 @@ export default function InboxPanel({
                                 }`}
                               >
                                 <span>{formatMessageTime(msg.createdAt)}</span>
-                                {isMine && <CheckCheck className="w-3 h-3 opacity-90" />}
+                                {isMine &&
+                                  (isSeenByRecipient ? (
+                                    <CheckCheck
+                                      className="w-3.5 h-3.5 text-cyan-200"
+                                      aria-label="Seen"
+                                    />
+                                  ) : (
+                                    <Check
+                                      className="w-3 h-3 text-emerald-100/80"
+                                      aria-label="Sent"
+                                    />
+                                  ))}
                               </div>
                             </div>
                           </div>
@@ -1205,6 +1261,10 @@ export default function InboxPanel({
         ) : (
           renderedMessages.map(({ msg, dateLabel, showDateSeparator, isFirstInRun, isLastInRun }) => {
             const isMine = msg.senderRole === 'member';
+            const presidentLastRead = myThread?.presidentLastReadAt;
+            const isSeenByPresident = Boolean(
+              isMine && presidentLastRead && msg.createdAt <= presidentLastRead
+            );
             return (
               <React.Fragment key={msg.id}>
                 {showDateSeparator && (
@@ -1246,7 +1306,18 @@ export default function InboxPanel({
                       }`}
                     >
                       <span>{formatMessageTime(msg.createdAt)}</span>
-                      {isMine && <CheckCheck className="w-3 h-3 opacity-90" />}
+                      {isMine &&
+                        (isSeenByPresident ? (
+                          <CheckCheck
+                            className="w-3.5 h-3.5 text-cyan-200"
+                            aria-label="Seen"
+                          />
+                        ) : (
+                          <Check
+                            className="w-3 h-3 text-emerald-100/80"
+                            aria-label="Sent"
+                          />
+                        ))}
                     </div>
                   </div>
                 </div>

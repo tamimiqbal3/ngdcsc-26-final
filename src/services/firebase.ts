@@ -2626,14 +2626,23 @@ export async function sendInboxMessage(params: {
     await updateDoc(threadRef, {
       ...threadBasePayload,
       ...(senderIsPresident
-        ? { unreadByMember: increment(1), unreadByPresident: 0 }
-        : { unreadByPresident: increment(1), unreadByMember: 0 })
+        ? {
+            unreadByMember: increment(1),
+            unreadByPresident: 0,
+            presidentLastReadAt: nowIso
+          }
+        : {
+            unreadByPresident: increment(1),
+            unreadByMember: 0,
+            memberLastReadAt: nowIso
+          })
     });
   } else {
     await setDoc(threadRef, {
       ...threadBasePayload,
       unreadByPresident: senderIsPresident ? 0 : 1,
-      unreadByMember: senderIsPresident ? 1 : 0
+      unreadByMember: senderIsPresident ? 1 : 0,
+      ...(senderIsPresident ? { presidentLastReadAt: nowIso } : { memberLastReadAt: nowIso })
     });
   }
 
@@ -2658,11 +2667,13 @@ export async function sendInboxMessage(params: {
 }
 
 /**
- * Resets the unread badge counter when President or Member opens/reads a thread.
+ * Resets the unread badge counter and records the exact read watermark timestamp
+ * in Firestore so sent messages switch from 1 tick (sent) to 2 ticks (seen) live.
  */
 export async function markInboxThreadRead(
   threadId: string,
-  viewerRole: InboxSenderRole
+  viewerRole: InboxSenderRole,
+  latestMessageCreatedAt?: string
 ): Promise<void> {
   if (!threadId) return;
   try {
@@ -2670,10 +2681,37 @@ export async function markInboxThreadRead(
     const snap = await getDoc(threadRef);
     if (!snap.exists()) return;
     const data = snap.data() as any;
-    if (viewerRole === 'president' && (data.unreadByPresident || 0) > 0) {
-      await updateDoc(threadRef, { unreadByPresident: 0 });
-    } else if (viewerRole === 'member' && (data.unreadByMember || 0) > 0) {
-      await updateDoc(threadRef, { unreadByMember: 0 });
+
+    const nowIso = new Date().toISOString();
+    const readTimestamp =
+      latestMessageCreatedAt && latestMessageCreatedAt > nowIso
+        ? latestMessageCreatedAt
+        : nowIso;
+
+    if (viewerRole === 'president') {
+      const currentRead = data.presidentLastReadAt || '';
+      const needsUnreadReset = (data.unreadByPresident || 0) > 0;
+      const needsReadBump =
+        !currentRead ||
+        (latestMessageCreatedAt ? latestMessageCreatedAt > currentRead : false);
+      if (needsUnreadReset || needsReadBump) {
+        await updateDoc(threadRef, {
+          unreadByPresident: 0,
+          presidentLastReadAt: readTimestamp > currentRead ? readTimestamp : currentRead
+        });
+      }
+    } else if (viewerRole === 'member') {
+      const currentRead = data.memberLastReadAt || '';
+      const needsUnreadReset = (data.unreadByMember || 0) > 0;
+      const needsReadBump =
+        !currentRead ||
+        (latestMessageCreatedAt ? latestMessageCreatedAt > currentRead : false);
+      if (needsUnreadReset || needsReadBump) {
+        await updateDoc(threadRef, {
+          unreadByMember: 0,
+          memberLastReadAt: readTimestamp > currentRead ? readTimestamp : currentRead
+        });
+      }
     }
   } catch (err) {
     console.warn('Mark inbox thread read warning:', err);

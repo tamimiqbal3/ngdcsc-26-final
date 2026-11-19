@@ -188,6 +188,8 @@ export interface InboxThread {
   lastMessageAt: string;
   unreadByPresident: number;
   unreadByMember: number;
+  presidentLastReadAt?: string;
+  memberLastReadAt?: string;
   updatedAt?: string;
 }
 
