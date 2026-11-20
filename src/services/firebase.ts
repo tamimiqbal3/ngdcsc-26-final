@@ -2729,12 +2729,14 @@ export async function sendInboxMessage(params: {
   );
 
   // Fire-and-forget Web Push so recipient gets notified immediately even when not on the website
+  const effectiveMemberEmailLower =
+    memberEmailLower || String(existingData?.memberEmailLower || '').trim().toLowerCase();
   auth.currentUser
     ?.getIdToken()
     .then((idToken) => {
       if (!idToken) return;
       const targets = senderIsPresident
-        ? (memberEmailLower ? [memberEmailLower] : [])
+        ? (effectiveMemberEmailLower ? [effectiveMemberEmailLower] : [])
         : [PRESIDENT_EMAIL];
       return triggerRecipientWebPush({
         idToken,

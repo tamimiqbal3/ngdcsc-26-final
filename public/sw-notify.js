@@ -1,5 +1,5 @@
-self.addEventListener('install', () => {
-  self.skipWaiting();
+self.addEventListener('install', (event) => {
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener('activate', (event) => {
@@ -43,6 +43,7 @@ self.addEventListener('push', (event) => {
       tag: payload.tag,
       renotify: true,
       requireInteraction: false,
+      vibrate: [200, 100, 200],
       data: { url: payload.url }
     })
   );
@@ -50,21 +51,62 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) || '/dashboard?open=inbox';
+  const targetUrl =
+    (event.notification.data && event.notification.data.url) || '/dashboard?open=inbox';
 
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if ('focus' in client) {
-          client.focus();
-          client.postMessage({ type: 'OPEN_INBOX' });
-          return;
+    self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then(async (clientList) => {
+        for (const client of clientList) {
+          try {
+            if ('focus' in client) {
+              await client.focus();
+            }
+            client.postMessage({ type: 'OPEN_INBOX' });
+            return;
+          } catch {
+            // continue to next client or openWindow
+          }
         }
+        if (self.clients.openWindow) {
+          return self.clients.openWindow(targetUrl);
+        }
+        return undefined;
+      })
+  );
+});
+
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(
+    (async () => {
+      try {
+        const res = await fetch('/api/push/public-key');
+        if (!res.ok) return;
+        const data = await res.json();
+        const publicKey = data && data.publicKey;
+        if (!publicKey) return;
+
+        const padding = '='.repeat((4 - (publicKey.length % 4)) % 4);
+        const base64 = (publicKey + padding).replace(/-/g, '+').replace(/_/g, '/');
+        const rawData = atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; ++i) {
+          outputArray[i] = rawData.charCodeAt(i);
+        }
+
+        await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: outputArray
+        });
+
+        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const client of clients) {
+          client.postMessage({ type: 'PUSH_SUBSCRIPTION_CHANGED' });
+        }
+      } catch {
+        // ignore; active client will re-sync on next open
       }
-      if (self.clients.openWindow) {
-        return self.clients.openWindow(targetUrl);
-      }
-      return undefined;
-    })
+    })()
   );
 });

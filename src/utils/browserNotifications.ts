@@ -17,11 +17,61 @@ export function registerNotificationServiceWorker(): Promise<ServiceWorkerRegist
   }
   if (!swRegistrationPromise) {
     swRegistrationPromise = navigator.serviceWorker
-      .register('/sw-notify.js', { scope: '/' })
-      .then((reg) => reg)
-      .catch(() => null);
+      .register('/sw-notify.js', { scope: '/', updateViaCache: 'none' })
+      .then((reg) => {
+        reg.update().catch(() => {});
+        return reg;
+      })
+      .catch(() => {
+        swRegistrationPromise = null;
+        return null;
+      });
   }
   return swRegistrationPromise;
+}
+
+async function waitForActiveServiceWorker(
+  reg: ServiceWorkerRegistration
+): Promise<ServiceWorker | null> {
+  if (reg.active) return reg.active;
+
+  const pendingWorker = reg.installing || reg.waiting;
+  if (pendingWorker) {
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const timer = window.setTimeout(done, 6000);
+      const onState = () => {
+        if (pendingWorker.state === 'activated' || pendingWorker.state === 'redundant') {
+          window.clearTimeout(timer);
+          pendingWorker.removeEventListener('statechange', onState);
+          done();
+        }
+      };
+      pendingWorker.addEventListener('statechange', onState);
+      if (pendingWorker.state === 'activated' || pendingWorker.state === 'redundant') {
+        window.clearTimeout(timer);
+        pendingWorker.removeEventListener('statechange', onState);
+        done();
+      }
+    });
+  }
+
+  if (reg.active) return reg.active;
+
+  try {
+    const readyReg = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 6000))
+    ]);
+    return readyReg?.active || null;
+  } catch {
+    return null;
+  }
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
@@ -46,42 +96,88 @@ function uint8ArrayEqual(a: ArrayBuffer | null, b: Uint8Array): boolean {
   return true;
 }
 
-export async function syncPushSubscriptionForUser(idToken: string): Promise<boolean> {
+async function subscribePushWithRetry(
+  reg: ServiceWorkerRegistration,
+  applicationServerKey: Uint8Array<ArrayBuffer>
+): Promise<PushSubscription | null> {
+  let sub = await reg.pushManager.getSubscription();
   if (
-    typeof window === 'undefined' ||
-    !idToken ||
-    !('Notification' in window) ||
-    Notification.permission !== 'granted' ||
-    !('serviceWorker' in navigator) ||
-    !('PushManager' in window)
+    sub &&
+    sub.options?.applicationServerKey &&
+    !uint8ArrayEqual(sub.options.applicationServerKey, applicationServerKey)
   ) {
+    await sub.unsubscribe().catch(() => {});
+    sub = null;
+  }
+
+  if (sub) return sub;
+
+  try {
+    return await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey
+    });
+  } catch {
+    // Retry once after unsubscribing stale registration if push service returned transient AbortError
+    const existing = await reg.pushManager.getSubscription().catch(() => null);
+    if (existing) {
+      await existing.unsubscribe().catch(() => {});
+    }
+    await new Promise((r) => window.setTimeout(r, 400));
+    return await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey
+    });
+  }
+}
+
+export async function syncPushSubscriptionForUser(idToken: string): Promise<boolean> {
+  if (typeof window === 'undefined' || !idToken) {
     return false;
   }
 
   try {
-    await registerNotificationServiceWorker();
-    const reg = await navigator.serviceWorker.ready;
+    // Ensure server canonical VAPID keys are synced if caller is an admin, and retrieve active publicKey
+    let publicKey: string | undefined;
+    try {
+      const syncRes = await fetch('/api/push/sync-keys', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` }
+      });
+      if (syncRes.ok) {
+        const data = (await syncRes.json()) as { publicKey?: string };
+        publicKey = data?.publicKey;
+      }
+    } catch {
+      // fallback below
+    }
+
+    if (
+      !('Notification' in window) ||
+      Notification.permission !== 'granted' ||
+      !('serviceWorker' in navigator) ||
+      !('PushManager' in window)
+    ) {
+      return false;
+    }
+
+    const reg = await registerNotificationServiceWorker();
     if (!reg || !reg.pushManager) return false;
 
-    const keyRes = await fetch('/api/push/public-key');
-    if (!keyRes.ok) return false;
-    const { publicKey } = (await keyRes.json()) as { publicKey?: string };
+    const activeSw = await waitForActiveServiceWorker(reg);
+    if (!activeSw) return false;
+
+    if (!publicKey) {
+      const keyRes = await fetch('/api/push/public-key', { cache: 'no-store' });
+      if (!keyRes.ok) return false;
+      const data = (await keyRes.json()) as { publicKey?: string };
+      publicKey = data?.publicKey;
+    }
     if (!publicKey) return false;
 
     const desiredKey = urlBase64ToUint8Array(publicKey);
-    let sub = await reg.pushManager.getSubscription();
-
-    if (sub && sub.options?.applicationServerKey && !uint8ArrayEqual(sub.options.applicationServerKey, desiredKey)) {
-      await sub.unsubscribe().catch(() => {});
-      sub = null;
-    }
-
-    if (!sub) {
-      sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: desiredKey
-      });
-    }
+    const sub = await subscribePushWithRetry(reg, desiredKey);
+    if (!sub) return false;
 
     const regRes = await fetch('/api/push/register', {
       method: 'POST',
@@ -91,7 +187,31 @@ export async function syncPushSubscriptionForUser(idToken: string): Promise<bool
       },
       body: JSON.stringify({ subscription: sub.toJSON() })
     });
-    return regRes.ok;
+    if (!regRes.ok) return false;
+
+    const regData = (await regRes.json().catch(() => null)) as {
+      ok?: boolean;
+      publicKey?: string;
+    } | null;
+
+    // If canonical key rotated during registration, re-subscribe cleanly with canonical publicKey
+    if (regData?.publicKey && regData.publicKey !== publicKey) {
+      await sub.unsubscribe().catch(() => {});
+      const rotatedKey = urlBase64ToUint8Array(regData.publicKey);
+      const rotatedSub = await subscribePushWithRetry(reg, rotatedKey);
+      if (!rotatedSub) return false;
+      const retryRes = await fetch('/api/push/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ subscription: rotatedSub.toJSON() })
+      });
+      return retryRes.ok;
+    }
+
+    return true;
   } catch {
     return false;
   }
@@ -110,6 +230,7 @@ export async function triggerRecipientWebPush(params: {
   try {
     await fetch('/api/push/send', {
       method: 'POST',
+      keepalive: true,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${params.idToken}`

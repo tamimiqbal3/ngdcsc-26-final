@@ -152,18 +152,69 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
   useEffect(() => {
     if (!currentUser) return;
-    const sync = () => {
-      currentUser
-        .getIdToken()
-        .then((token) => {
-          if (token) syncPushSubscriptionForUser(token);
-        })
-        .catch(() => {});
+    let cancelled = false;
+    let lastAttemptAt = 0;
+    let syncedOnce = false;
+    const retryTimers: number[] = [];
+
+    const runSync = async (force = false) => {
+      if (cancelled) return;
+      const now = Date.now();
+      if (!force && syncedOnce && now - lastAttemptAt < 30000) return;
+      lastAttemptAt = now;
+      try {
+        const token = await currentUser.getIdToken();
+        if (!token || cancelled) return;
+        const ok = await syncPushSubscriptionForUser(token);
+        if (ok) {
+          syncedOnce = true;
+        }
+      } catch {
+        // ignore transient errors
+      }
     };
-    sync();
-    window.addEventListener('ngdcsc-notif-permission-changed', sync);
+
+    runSync(true).then(() => {
+      if (
+        !cancelled &&
+        typeof Notification !== 'undefined' &&
+        Notification.permission === 'granted'
+      ) {
+        retryTimers.push(window.setTimeout(() => { if (!syncedOnce) runSync(true); }, 3000));
+        retryTimers.push(window.setTimeout(() => { if (!syncedOnce) runSync(true); }, 10000));
+      }
+    });
+
+    const handleForceSync = () => runSync(true);
+    const handleVisibilityOrFocus = () => {
+      if (typeof document === 'undefined' || !document.hidden) {
+        runSync(false);
+      }
+    };
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'PUSH_SUBSCRIPTION_CHANGED') {
+        runSync(true);
+      }
+    };
+
+    window.addEventListener('ngdcsc-notif-permission-changed', handleForceSync);
+    window.addEventListener('online', handleForceSync);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    }
+
     return () => {
-      window.removeEventListener('ngdcsc-notif-permission-changed', sync);
+      cancelled = true;
+      retryTimers.forEach((t) => window.clearTimeout(t));
+      window.removeEventListener('ngdcsc-notif-permission-changed', handleForceSync);
+      window.removeEventListener('online', handleForceSync);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      }
     };
   }, [currentUser]);
 
