@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { BellRing, ChevronRight, X } from 'lucide-react';
+import { auth } from '../services/firebase';
 import {
   BrowserNotificationPermission,
   dispatchBrowserNotification,
+  enableNotificationsForUser,
   getBrowserNotificationPermission,
-  registerNotificationServiceWorker,
-  requestBrowserNotificationPermission
+  registerNotificationServiceWorker
 } from '../utils/browserNotifications';
 
 interface InboxToastNotificationProps {
@@ -135,11 +136,9 @@ export default function InboxToastNotification({
   }, [unreadCount, latestEventKey, notifTag, isCurrentlyViewingInbox, notifPermission]);
 
   const handleEnableBrowserAlerts = async () => {
-    const result = await requestBrowserNotificationPermission();
-    setNotifPermission(result);
-    window.dispatchEvent(
-      new CustomEvent('ngdcsc-notif-permission-changed', { detail: result })
-    );
+    const token = await auth.currentUser?.getIdToken().catch(() => null);
+    const res = await enableNotificationsForUser(token);
+    setNotifPermission(res.permission);
   };
 
   if (unreadCount <= 0 || isCurrentlyViewingInbox || (latestEventKey && dismissedKey === latestEventKey)) {

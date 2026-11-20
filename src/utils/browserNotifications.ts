@@ -6,6 +6,7 @@ export type PushSyncFailureReason =
   | 'unsupported'
   | 'permission-needed'
   | 'denied'
+  | 'disabled'
   | 'push-failed';
 
 export interface PushSyncStatus {
@@ -15,6 +16,8 @@ export interface PushSyncStatus {
 }
 
 const CLUB_LOGO_ICON = '/assets/club-logo.png';
+const USER_DISABLED_KEY = 'ngdcsc_notif_user_disabled_v1';
+const PROMPT_SEEN_KEY = 'ngdcsc_notif_prompt_seen_v1';
 
 let swRegistrationPromise: Promise<ServiceWorkerRegistration | null> | null = null;
 let lastPushSyncStatus: PushSyncStatus = { checked: false, ok: false };
@@ -30,6 +33,38 @@ function emitPushSyncStatus(status: PushSyncStatus) {
 
 export function getLastPushSyncStatus(): PushSyncStatus {
   return lastPushSyncStatus;
+}
+
+export function hasSeenNotificationPrompt(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    return localStorage.getItem(PROMPT_SEEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function markNotificationPromptSeen(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(PROMPT_SEEN_KEY, '1');
+  } catch {
+    // ignore
+  }
+}
+
+export function isUserDisabledNotifications(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem(USER_DISABLED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function isDeviceNotificationsEnabled(): boolean {
+  if (typeof window === 'undefined' || !('Notification' in window)) return false;
+  return Notification.permission === 'granted' && !isUserDisabledNotifications();
 }
 
 export function isInEmbeddedIframe(): boolean {
@@ -185,12 +220,21 @@ export async function syncPushSubscriptionForUser(idToken: string): Promise<bool
     return false;
   }
 
+  if (isUserDisabledNotifications()) {
+    emitPushSyncStatus({ checked: true, ok: false, reason: 'disabled' });
+    return false;
+  }
+
   try {
     let publicKey: string | undefined;
     try {
       const syncRes = await fetch('/api/push/sync-keys', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${idToken}` }
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Firebase-Token': idToken
+        },
+        body: JSON.stringify({ idToken })
       });
       if (syncRes.ok) {
         const data = (await syncRes.json()) as { publicKey?: string };
@@ -277,9 +321,9 @@ export async function syncPushSubscriptionForUser(idToken: string): Promise<bool
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${idToken}`
+        'X-Firebase-Token': idToken
       },
-      body: JSON.stringify({ subscription: sub.toJSON() })
+      body: JSON.stringify({ idToken, subscription: sub.toJSON() })
     });
     if (!regRes.ok) {
       emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
@@ -303,9 +347,9 @@ export async function syncPushSubscriptionForUser(idToken: string): Promise<bool
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`
+          'X-Firebase-Token': idToken
         },
-        body: JSON.stringify({ subscription: rotatedSub.toJSON() })
+        body: JSON.stringify({ idToken, subscription: rotatedSub.toJSON() })
       });
       const ok = retryRes.ok;
       emitPushSyncStatus(ok ? { checked: true, ok: true } : { checked: true, ok: false, reason: 'push-failed' });
@@ -324,6 +368,104 @@ export async function syncPushSubscriptionForUser(idToken: string): Promise<bool
   }
 }
 
+export async function enableNotificationsForUser(idToken?: string | null): Promise<{
+  permission: BrowserNotificationPermission;
+  pushActive: boolean;
+  reason?: PushSyncFailureReason;
+}> {
+  if (typeof window === 'undefined') {
+    return { permission: 'unsupported', pushActive: false, reason: 'unsupported' };
+  }
+
+  markNotificationPromptSeen();
+
+  try {
+    localStorage.removeItem(USER_DISABLED_KEY);
+  } catch {
+    // ignore
+  }
+
+  if (isIosNonStandalone() && (!('Notification' in window) || !('PushManager' in window))) {
+    emitPushSyncStatus({ checked: true, ok: false, reason: 'ios-a2hs' });
+    return { permission: 'unsupported', pushActive: false, reason: 'ios-a2hs' };
+  }
+
+  if (!('Notification' in window)) {
+    const reason = isInEmbeddedIframe() ? 'iframe' : 'unsupported';
+    emitPushSyncStatus({ checked: true, ok: false, reason });
+    return { permission: 'unsupported', pushActive: false, reason };
+  }
+
+  const perm = await requestBrowserNotificationPermission();
+  window.dispatchEvent(new CustomEvent('ngdcsc-notif-permission-changed', { detail: perm }));
+
+  if (perm !== 'granted') {
+    const reason = isInEmbeddedIframe() ? 'iframe' : perm === 'denied' ? 'denied' : 'permission-needed';
+    emitPushSyncStatus({ checked: true, ok: false, reason });
+    return { permission: perm, pushActive: false, reason };
+  }
+
+  let pushActive = false;
+  if (idToken) {
+    pushActive = await syncPushSubscriptionForUser(idToken);
+  } else {
+    const reg = await registerNotificationServiceWorker();
+    if (reg) await waitForActiveServiceWorker(reg);
+  }
+
+  // Send immediate confirmation system notification so user confirms OS alerts work
+  dispatchBrowserNotification({
+    title: 'NGDC Science Club',
+    body: 'Notifications are now enabled for this device.',
+    tag: 'ngdcsc-notif-enabled'
+  }).catch(() => {});
+
+  return {
+    permission: perm,
+    pushActive,
+    reason: pushActive ? undefined : lastPushSyncStatus.reason
+  };
+}
+
+export async function disableNotificationsForUser(idToken?: string | null): Promise<void> {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(USER_DISABLED_KEY, '1');
+  } catch {
+    // ignore
+  }
+
+  try {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration('/');
+      const sub = await reg?.pushManager?.getSubscription();
+      if (sub) {
+        const endpoint = sub.endpoint;
+        await sub.unsubscribe().catch(() => {});
+        if (idToken && endpoint) {
+          await fetch('/api/push/unregister', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Firebase-Token': idToken
+            },
+            body: JSON.stringify({ idToken, endpoint })
+          }).catch(() => {});
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  emitPushSyncStatus({ checked: true, ok: false, reason: 'disabled' });
+  window.dispatchEvent(
+    new CustomEvent('ngdcsc-notif-permission-changed', {
+      detail: getBrowserNotificationPermission()
+    })
+  );
+}
+
 export async function triggerRecipientWebPush(params: {
   idToken: string;
   targetEmails: string[];
@@ -340,9 +482,10 @@ export async function triggerRecipientWebPush(params: {
       keepalive: true,
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${params.idToken}`
+        'X-Firebase-Token': params.idToken
       },
       body: JSON.stringify({
+        idToken: params.idToken,
         targetEmails: params.targetEmails,
         targetUid: params.targetUid || undefined,
         title: params.title,
@@ -395,7 +538,7 @@ export async function dispatchBrowserNotification(params: {
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return false;
   }
-  if (Notification.permission !== 'granted') {
+  if (Notification.permission !== 'granted' || isUserDisabledNotifications()) {
     return false;
   }
 

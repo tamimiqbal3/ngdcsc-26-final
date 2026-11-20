@@ -335,10 +335,18 @@ function saveSubscriptionsToDisk() {
 }
 
 async function verifyFirebaseToken(
-  authHeader: string | undefined
+  req: express.Request
 ): Promise<{ uid: string; emailLower: string; idToken: string } | null> {
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  const idToken = authHeader.slice('Bearer '.length).trim();
+  const headerCustom = req.headers['x-firebase-token'];
+  const customToken = Array.isArray(headerCustom) ? headerCustom[0] : headerCustom;
+  const bodyToken = typeof req.body?.idToken === 'string' ? req.body.idToken : '';
+  const authHeader = req.headers.authorization;
+  const bearerToken =
+    authHeader && authHeader.startsWith('Bearer ')
+      ? authHeader.slice('Bearer '.length).trim()
+      : '';
+
+  const idToken = (customToken || bodyToken || bearerToken || '').trim();
   if (!idToken) return null;
 
   try {
@@ -383,7 +391,7 @@ async function startServer() {
   });
 
   app.post('/api/push/sync-keys', async (req, res) => {
-    const user = await verifyFirebaseToken(req.headers.authorization);
+    const user = await verifyFirebaseToken(req);
     if (!user) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
@@ -395,7 +403,7 @@ async function startServer() {
   });
 
   app.get('/api/push/status', async (req, res) => {
-    const user = await verifyFirebaseToken(req.headers.authorization);
+    const user = await verifyFirebaseToken(req);
     if (!user) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
@@ -407,7 +415,7 @@ async function startServer() {
   });
 
   app.post('/api/push/register', async (req, res) => {
-    const user = await verifyFirebaseToken(req.headers.authorization);
+    const user = await verifyFirebaseToken(req);
     if (!user) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
@@ -464,7 +472,7 @@ async function startServer() {
   });
 
   app.post('/api/push/unregister', async (req, res) => {
-    const user = await verifyFirebaseToken(req.headers.authorization);
+    const user = await verifyFirebaseToken(req);
     if (!user) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
@@ -487,7 +495,7 @@ async function startServer() {
   });
 
   app.post('/api/push/send', async (req, res) => {
-    const sender = await verifyFirebaseToken(req.headers.authorization);
+    const sender = await verifyFirebaseToken(req);
     if (!sender) {
       res.status(401).json({ error: 'Unauthorized' });
       return;

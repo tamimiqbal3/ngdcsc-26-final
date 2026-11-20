@@ -43,6 +43,7 @@ import {
   getCachedInboxMessages
 } from '../services/firebase';
 import DotLoader from './DotLoader';
+import NotificationToggleControl from './NotificationToggleControl';
 
 interface InboxPanelProps {
   currentUserEmail: string;
@@ -784,15 +785,18 @@ export default function InboxPanel({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleOpenBroadcastModal}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer shrink-0"
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Message All Individually</span>
-              <span className="sm:hidden">Message All</span>
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <NotificationToggleControl compact />
+              <button
+                type="button"
+                onClick={handleOpenBroadcastModal}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer shrink-0"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Message All Individually</span>
+                <span className="sm:hidden">Message All</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -1629,6 +1633,7 @@ export default function InboxPanel({
               <span className="text-sm font-black text-slate-900 truncate">Inbox</span>
             </div>
           </div>
+          <NotificationToggleControl compact />
         </div>
       )}
 

@@ -67,6 +67,7 @@ import ImageAdjustModal from './components/ImageAdjustModal';
 import DotLoader from './components/DotLoader';
 import MemberQrCode from './components/MemberQrCode';
 import InboxPanel from './components/InboxPanel';
+import NotificationToggleControl from './components/NotificationToggleControl';
 
 const CLUB_SEGMENTS = [
   'Science Olympiad (Math, Physics, Bio, Chem)',
@@ -613,14 +614,17 @@ export default function MemberDashboard({
           <span>Back to Home</span>
         </button>
 
-        <button
-          type="button"
-          onClick={handleSignOut}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/85 hover:bg-rose-50 text-slate-700 hover:text-rose-700 text-xs font-bold border border-slate-200/90 hover:border-rose-200 shadow-xs transition-all cursor-pointer"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          <span>Sign Out</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <NotificationToggleControl />
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/85 hover:bg-rose-50 text-slate-700 hover:text-rose-700 text-xs font-bold border border-slate-200/90 hover:border-rose-200 shadow-xs transition-all cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Sign Out</span>
+          </button>
+        </div>
       </div>
 
       {/* Loading State */}

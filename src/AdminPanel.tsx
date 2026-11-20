@@ -112,6 +112,7 @@ import ConfirmationSlipModal from './components/ConfirmationSlipModal';
 import DotLoader from './components/DotLoader';
 import InboxToastNotification from './components/InboxToastNotification';
 import NotificationPermissionBanner from './components/NotificationPermissionBanner';
+import NotificationToggleControl from './components/NotificationToggleControl';
 import { syncPushSubscriptionForUser } from './utils/browserNotifications';
 
 const CLUB_LOGO_URL = '/assets/club-logo.png';
@@ -1221,6 +1222,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <NotificationToggleControl compact />
           {/* Quick Registration Portal Status Toggle & Indicator */}
           <button
             type="button"
