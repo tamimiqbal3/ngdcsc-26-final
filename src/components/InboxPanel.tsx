@@ -311,6 +311,7 @@ export default function InboxPanel({
   const [messages, setMessages] = useState<InboxMessage[]>(() =>
     activeThreadId ? getCachedInboxMessages(activeThreadId) : []
   );
+  const [pendingMessages, setPendingMessages] = useState<InboxMessage[]>([]);
   const [draftText, setDraftText] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -685,21 +686,38 @@ export default function InboxPanel({
           photo: currentMember?.photo || null
         };
 
+    const tempId = `pending_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const optimisticMsg: InboxMessage = {
+      id: tempId,
+      threadId: targetThreadId,
+      senderEmail: currentUserEmail,
+      senderEmailLower: currentUserEmail.trim().toLowerCase(),
+      senderUid: currentUserUid || null,
+      senderName: isPresident ? 'Tamim Iqbal' : (memberInfo.name || currentUserEmail),
+      senderRole: isPresident ? 'president' : 'member',
+      text: cleanText,
+      createdAt: new Date().toISOString()
+    };
+
     setSending(true);
     setSendError(null);
     const prevDraft = draftText;
     setDraftText('');
+    setPendingMessages((prev) => [...prev, optimisticMsg]);
 
     try {
-      await sendInboxMessage({
+      const committed = await sendInboxMessage({
         threadId: targetThreadId,
         memberInfo,
         senderEmail: currentUserEmail,
         senderUid: currentUserUid || null,
         text: cleanText
       });
+      setMessages((prev) => (prev.some((m) => m.id === committed.id) ? prev : [...prev, committed]));
+      setPendingMessages((prev) => prev.filter((m) => m.id !== tempId));
     } catch (err: any) {
       console.error('Error sending inbox message:', err);
+      setPendingMessages((prev) => prev.filter((m) => m.id !== tempId));
       setDraftText(prevDraft);
       setSendError('Failed to send message. Please try again.');
     } finally {
@@ -714,16 +732,25 @@ export default function InboxPanel({
     }
   };
 
+  const displayMessages = useMemo(() => {
+    if (!activeThreadId) return messages;
+    const pendingForThread = pendingMessages.filter((p) => p.threadId === activeThreadId);
+    if (pendingForThread.length === 0) return messages;
+    const seenIds = new Set(messages.map((m) => m.id));
+    const extras = pendingForThread.filter((p) => !seenIds.has(p.id));
+    return [...messages, ...extras];
+  }, [messages, pendingMessages, activeThreadId]);
+
   // Group messages by date separator & consecutive sender runs
   const renderedMessages = useMemo(() => {
     let lastDateLabel = '';
-    return messages.map((msg, idx) => {
+    return displayMessages.map((msg, idx) => {
       const dateLabel = formatMessageDateLabel(msg.createdAt);
       const showDateSeparator = Boolean(dateLabel && dateLabel !== lastDateLabel);
       if (dateLabel) lastDateLabel = dateLabel;
 
-      const prevMsg = idx > 0 ? messages[idx - 1] : null;
-      const nextMsg = idx < messages.length - 1 ? messages[idx + 1] : null;
+      const prevMsg = idx > 0 ? displayMessages[idx - 1] : null;
+      const nextMsg = idx < displayMessages.length - 1 ? displayMessages[idx + 1] : null;
 
       const sameSenderAsPrev =
         !showDateSeparator && Boolean(prevMsg && prevMsg.senderRole === msg.senderRole);
@@ -742,7 +769,7 @@ export default function InboxPanel({
         isLastInRun: !sameSenderAsNext
       };
     });
-  }, [messages]);
+  }, [displayMessages]);
 
   // ==================== PRESIDENT INBOX UI (1-on-1 WITH ANY MEMBER + INDIVIDUAL BROADCAST) ====================
   if (isPresident) {

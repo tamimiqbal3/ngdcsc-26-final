@@ -25,6 +25,7 @@ import {
   setDoc, 
   getDoc, 
   getDocs, 
+  getDocsFromServer,
   updateDoc, 
   deleteDoc, 
   query, 
@@ -85,13 +86,12 @@ try {
   // ignore
 }
 
-// Initialize Firestore with resilient connection handling:
-// experimentalForceLongPolling connects immediately using standard HTTP POST long-polling
-// without attempting WebChannel streaming (which fails in sandboxed iframes and triggers [code=unavailable]).
+// Initialize Firestore with fast WebChannel streaming + automatic long-polling fallback
+// when behind restrictive corporate/mobile proxies.
 export const db = (() => {
   try {
     return initializeFirestore(firebaseApp, {
-      experimentalForceLongPolling: true,
+      experimentalAutoDetectLongPolling: true,
       ignoreUndefinedProperties: true
     });
   } catch {
@@ -2446,65 +2446,150 @@ function sortMessagesChronological(list: InboxMessage[]): InboxMessage[] {
   });
 }
 
+function buildThreadsFingerprint(list: InboxThread[]): string {
+  return list
+    .map(
+      (t) =>
+        `${t.id}|${t.lastMessageAt || ''}|${t.unreadByPresident || 0}|${t.unreadByMember || 0}|${t.presidentLastReadAt || ''}|${t.memberLastReadAt || ''}|${t.memberUid || ''}`
+    )
+    .join(';');
+}
+
+function buildMessagesFingerprint(list: InboxMessage[]): string {
+  return list.map((m) => `${m.id}|${m.createdAt || ''}`).join(';');
+}
+
 /**
  * President-only real-time subscription to ALL member inbox threads, newest activity first.
+ * Uses WebChannel onSnapshot + immediate server fetch + silent catch-up so new messages
+ * always arrive live without ever needing a page refresh.
  */
 export function subscribeToPresidentInboxThreads(
   callback: (threads: InboxThread[]) => void
 ): Unsubscribe {
+  let disposed = false;
+  let lastFp = '';
+
+  const emitSorted = (threads: InboxThread[]) => {
+    if (disposed) return;
+    const sorted = sortThreadsNewestFirst(threads);
+    const fp = buildThreadsFingerprint(sorted);
+    if (fp === lastFp) return;
+    lastFp = fp;
+    try {
+      localStorage.setItem(LS_PRESIDENT_INBOX_KEY, JSON.stringify(sorted));
+    } catch {
+      // ignore
+    }
+    callback(sorted);
+  };
+
   const cached = getCachedPresidentInboxThreads();
   if (cached.length > 0) {
-    callback(sortThreadsNewestFirst(cached));
+    emitSorted(cached);
   }
 
   const colRef = collection(db, 'inbox_threads');
-  return onSnapshot(
+
+  const fetchServerNow = async () => {
+    if (disposed) return;
+    try {
+      const snap = await getDocsFromServer(colRef);
+      if (disposed) return;
+      const threads: InboxThread[] = [];
+      snap.forEach((d) => {
+        threads.push({ id: d.id, ...(d.data() as any) } as InboxThread);
+      });
+      emitSorted(threads);
+    } catch {
+      // fallback to active onSnapshot stream
+    }
+  };
+
+  fetchServerNow();
+
+  const unsubSnapshot = onSnapshot(
     colRef,
     (snap) => {
       const threads: InboxThread[] = [];
       snap.forEach((d) => {
         threads.push({ id: d.id, ...(d.data() as any) } as InboxThread);
       });
-      const sorted = sortThreadsNewestFirst(threads);
-      try {
-        localStorage.setItem(LS_PRESIDENT_INBOX_KEY, JSON.stringify(sorted));
-      } catch {
-        // ignore
-      }
-      callback(sorted);
+      emitSorted(threads);
     },
     (err) => {
       console.warn('President inbox threads subscription error:', err);
     }
   );
+
+  const handleWake = () => {
+    if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+      fetchServerNow();
+    }
+  };
+
+  let catchUpTimer: number | null = null;
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', handleWake);
+    window.addEventListener('online', handleWake);
+    document.addEventListener('visibilitychange', handleWake);
+    catchUpTimer = window.setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        fetchServerNow();
+      }
+    }, 4000);
+  }
+
+  return () => {
+    disposed = true;
+    unsubSnapshot();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', handleWake);
+      window.removeEventListener('online', handleWake);
+      document.removeEventListener('visibilitychange', handleWake);
+      if (catchUpTimer !== null) window.clearInterval(catchUpTimer);
+    }
+  };
 }
 
 /**
  * Member-only real-time subscription to their SINGLE thread with Tamim Iqbal (President).
- * Uses equality filters matching Firestore security rules cleanly.
+ * Uses equality filters matching Firestore security rules cleanly + immediate server fetch + silent catch-up.
  */
 export function subscribeToMemberInboxThread(
   uid: string,
   email: string | null | undefined,
   callback: (thread: InboxThread | null) => void
 ): Unsubscribe {
+  let disposed = false;
+  let lastFp = '__init__';
+
   const cached = getCachedMemberInboxThread(uid);
   if (cached) {
+    lastFp = buildThreadsFingerprint([cached]);
     callback(cached);
   }
 
   const colRef = collection(db, 'inbox_threads');
   const cleanEmailLower = (email || '').trim().toLowerCase();
+  const uidQuery = query(colRef, where('memberUid', '==', uid));
+  const emailQuery = cleanEmailLower
+    ? query(colRef, where('memberEmailLower', '==', cleanEmailLower))
+    : null;
 
   const uidMap = new Map<string, InboxThread>();
   const emailMap = new Map<string, InboxThread>();
 
   const emitBest = () => {
+    if (disposed) return;
     const merged = new Map<string, InboxThread>();
     uidMap.forEach((v, k) => merged.set(k, v));
     emailMap.forEach((v, k) => merged.set(k, v));
     const list = sortThreadsNewestFirst(Array.from(merged.values()));
     const best = list[0] || null;
+    const fp = best ? buildThreadsFingerprint([best]) : 'null';
+    if (fp === lastFp) return;
+    lastFp = fp;
     try {
       if (best) {
         localStorage.setItem(getMemberInboxThreadCacheKey(uid), JSON.stringify(best));
@@ -2515,11 +2600,41 @@ export function subscribeToMemberInboxThread(
     callback(best);
   };
 
+  const fetchServerNow = async () => {
+    if (disposed) return;
+    try {
+      const [uidSnap, emailSnap] = await Promise.all([
+        getDocsFromServer(uidQuery).catch(() => null),
+        emailQuery ? getDocsFromServer(emailQuery).catch(() => null) : Promise.resolve(null)
+      ]);
+      if (disposed) return;
+      if (uidSnap) {
+        uidMap.clear();
+        uidSnap.forEach((d) => {
+          uidMap.set(d.id, { id: d.id, ...(d.data() as any) } as InboxThread);
+        });
+      }
+      if (emailSnap) {
+        emailMap.clear();
+        emailSnap.forEach((d) => {
+          emailMap.set(d.id, { id: d.id, ...(d.data() as any) } as InboxThread);
+        });
+      }
+      if (uidSnap || emailSnap) {
+        emitBest();
+      }
+    } catch {
+      // fallback to active onSnapshot listeners
+    }
+  };
+
+  fetchServerNow();
+
   const unsubs: Unsubscribe[] = [];
 
   unsubs.push(
     onSnapshot(
-      query(colRef, where('memberUid', '==', uid)),
+      uidQuery,
       (snap) => {
         uidMap.clear();
         snap.forEach((d) => {
@@ -2533,10 +2648,10 @@ export function subscribeToMemberInboxThread(
     )
   );
 
-  if (cleanEmailLower) {
+  if (emailQuery) {
     unsubs.push(
       onSnapshot(
-        query(colRef, where('memberEmailLower', '==', cleanEmailLower)),
+        emailQuery,
         (snap) => {
           emailMap.clear();
           snap.forEach((d) => {
@@ -2551,43 +2666,128 @@ export function subscribeToMemberInboxThread(
     );
   }
 
+  const handleWake = () => {
+    if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+      fetchServerNow();
+    }
+  };
+
+  let catchUpTimer: number | null = null;
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', handleWake);
+    window.addEventListener('online', handleWake);
+    document.addEventListener('visibilitychange', handleWake);
+    catchUpTimer = window.setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        fetchServerNow();
+      }
+    }, 3000);
+  }
+
   return () => {
+    disposed = true;
     unsubs.forEach((u) => u());
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', handleWake);
+      window.removeEventListener('online', handleWake);
+      document.removeEventListener('visibilitychange', handleWake);
+      if (catchUpTimer !== null) window.clearInterval(catchUpTimer);
+    }
   };
 }
 
 /**
  * Real-time subscription to chronological chat history messages inside a specific thread.
+ * Pairs WebChannel onSnapshot with instant server fetch + silent live catch-up so new
+ * messages always stream in immediately without needing a page refresh.
  */
 export function subscribeToInboxMessages(
   threadId: string,
   callback: (messages: InboxMessage[]) => void
 ): Unsubscribe {
+  let disposed = false;
+  let lastFp = '__init__';
+
+  const emitSorted = (msgs: InboxMessage[]) => {
+    if (disposed) return;
+    const sorted = sortMessagesChronological(msgs);
+    const fp = buildMessagesFingerprint(sorted);
+    if (fp === lastFp) return;
+    lastFp = fp;
+    try {
+      localStorage.setItem(getInboxMessagesCacheKey(threadId), JSON.stringify(sorted));
+    } catch {
+      // ignore
+    }
+    callback(sorted);
+  };
+
   const cached = getCachedInboxMessages(threadId);
   if (cached.length > 0) {
-    callback(sortMessagesChronological(cached));
+    emitSorted(cached);
   }
 
   const msgsRef = collection(db, 'inbox_threads', threadId, 'messages');
-  return onSnapshot(
+
+  const fetchServerNow = async () => {
+    if (disposed) return;
+    try {
+      const snap = await getDocsFromServer(msgsRef);
+      if (disposed) return;
+      const msgs: InboxMessage[] = [];
+      snap.forEach((d) => {
+        msgs.push({ id: d.id, ...(d.data() as any) } as InboxMessage);
+      });
+      emitSorted(msgs);
+    } catch {
+      // fallback to active onSnapshot listener
+    }
+  };
+
+  fetchServerNow();
+
+  const unsubSnapshot = onSnapshot(
     msgsRef,
     (snap) => {
       const msgs: InboxMessage[] = [];
       snap.forEach((d) => {
         msgs.push({ id: d.id, ...(d.data() as any) } as InboxMessage);
       });
-      const sorted = sortMessagesChronological(msgs);
-      try {
-        localStorage.setItem(getInboxMessagesCacheKey(threadId), JSON.stringify(sorted));
-      } catch {
-        // ignore
-      }
-      callback(sorted);
+      emitSorted(msgs);
     },
     (err) => {
       console.warn('Inbox messages subscription warning:', err);
     }
   );
+
+  const handleWake = () => {
+    if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+      fetchServerNow();
+    }
+  };
+
+  let catchUpTimer: number | null = null;
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', handleWake);
+    window.addEventListener('online', handleWake);
+    document.addEventListener('visibilitychange', handleWake);
+    catchUpTimer = window.setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        fetchServerNow();
+      }
+    }, 2000);
+  }
+
+  return () => {
+    disposed = true;
+    unsubSnapshot();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', handleWake);
+      window.removeEventListener('online', handleWake);
+      document.removeEventListener('visibilitychange', handleWake);
+      if (catchUpTimer !== null) window.clearInterval(catchUpTimer);
+    }
+  };
 }
 
 function maxIsoTimestamp(...values: Array<string | null | undefined>): string {

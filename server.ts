@@ -156,7 +156,7 @@ async function getFirestoreDoc(
     if (idToken) headers.Authorization = `Bearer ${idToken}`;
     const res = await fetch(`${FIRESTORE_DOC_BASE}/${docPath}`, {
       headers,
-      signal: AbortSignal.timeout(4000)
+      signal: AbortSignal.timeout(7000)
     });
     if (!res.ok) return null;
     const json = (await res.json()) as { fields?: Record<string, any> };
@@ -178,7 +178,7 @@ async function patchFirestoreDoc(
       method: 'PATCH',
       headers,
       body: JSON.stringify({ fields }),
-      signal: AbortSignal.timeout(4000)
+      signal: AbortSignal.timeout(7000)
     });
     return res.ok;
   } catch {
@@ -266,7 +266,7 @@ async function writeRemoteSubsForEmail(
 
   const trimmedSubs = [...subsForUser]
     .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))
-    .slice(0, 10);
+    .slice(0, 25);
 
   const sealed = sealSubscriptions(trimmedSubs, vapidKeys.privateKey);
   const nowIso = new Date().toISOString();
@@ -334,6 +334,11 @@ function saveSubscriptionsToDisk() {
   }
 }
 
+const verifiedTokenCache = new Map<
+  string,
+  { uid: string; emailLower: string; expiresAt: number }
+>();
+
 async function verifyFirebaseToken(
   req: express.Request
 ): Promise<{ uid: string; emailLower: string; idToken: string } | null> {
@@ -349,30 +354,48 @@ async function verifyFirebaseToken(
   const idToken = (customToken || bodyToken || bearerToken || '').trim();
   if (!idToken) return null;
 
-  try {
-    const res = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_WEB_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken }),
-        signal: AbortSignal.timeout(4000)
-      }
-    );
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      users?: Array<{ localId?: string; email?: string }>;
-    };
-    const user = data?.users?.[0];
-    if (!user?.localId || !user?.email) return null;
-    return {
-      uid: user.localId,
-      emailLower: user.email.trim().toLowerCase(),
-      idToken
-    };
-  } catch {
-    return null;
+  const now = Date.now();
+  const cached = verifiedTokenCache.get(idToken);
+  if (cached && cached.expiresAt > now) {
+    return { uid: cached.uid, emailLower: cached.emailLower, idToken };
   }
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_WEB_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken }),
+          signal: AbortSignal.timeout(7000)
+        }
+      );
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        users?: Array<{ localId?: string; email?: string }>;
+      };
+      const user = data?.users?.[0];
+      if (!user?.localId || !user?.email) return null;
+      const verified = {
+        uid: user.localId,
+        emailLower: user.email.trim().toLowerCase(),
+        idToken
+      };
+      if (verifiedTokenCache.size > 500) {
+        verifiedTokenCache.clear();
+      }
+      verifiedTokenCache.set(idToken, {
+        uid: verified.uid,
+        emailLower: verified.emailLower,
+        expiresAt: now + 5 * 60 * 1000
+      });
+      return verified;
+    } catch {
+      if (attempt === 1) return null;
+    }
+  }
+  return null;
 }
 
 async function startServer() {
@@ -538,6 +561,7 @@ async function startServer() {
     const matchingSubs = mergeSubscriptionLists(localMatching, ...remoteLists);
 
     if (matchingSubs.length === 0) {
+      console.log(`[web-push] 0 registered devices for ${allowedTargets.join(', ')}`);
       res.json({ sent: 0 });
       return;
     }
@@ -590,6 +614,9 @@ async function startServer() {
       );
     }
 
+    console.log(
+      `[web-push] sent ${sent}/${matchingSubs.length} push alerts for ${allowedTargets.join(', ')}`
+    );
     res.json({ sent, targeted: matchingSubs.length });
   });
 

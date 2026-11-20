@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BellRing, CheckCircle2, X } from 'lucide-react';
+import { BellRing, CheckCircle2, ExternalLink, X } from 'lucide-react';
 import { auth } from '../services/firebase';
 import {
   enableNotificationsForUser,
@@ -21,6 +21,7 @@ export default function NotificationPermissionBanner({
   const [dismissedThisVisit, setDismissedThisVisit] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [justEnabled, setJustEnabled] = useState(false);
+  const inIframe = isInEmbeddedIframe();
 
   useEffect(() => {
     registerNotificationServiceWorker();
@@ -72,7 +73,6 @@ export default function NotificationPermissionBanner({
     dismissedThisVisit ||
     permission !== 'default' ||
     isUserDisabledNotifications() ||
-    isInEmbeddedIframe() ||
     isIosNonStandalone()
   ) {
     return null;
@@ -114,7 +114,9 @@ export default function NotificationPermissionBanner({
               Allow Notifications
             </h3>
             <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-              Get instant message alerts even when the website is closed.
+              {inIframe
+                ? 'Open in a browser tab to enable instant alerts even when the website is closed.'
+                : 'Get instant message alerts even when the website is closed.'}
             </p>
           </div>
 
@@ -126,15 +128,28 @@ export default function NotificationPermissionBanner({
             >
               Not Now
             </button>
-            <button
-              type="button"
-              disabled={requesting}
-              onClick={handleAllow}
-              className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
-            >
-              <BellRing className="w-3.5 h-3.5" />
-              <span>{requesting ? 'Allowing...' : 'Allow'}</span>
-            </button>
+            {inIframe ? (
+              <a
+                href={typeof window !== 'undefined' ? window.location.href : '/'}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setDismissedThisVisit(true)}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-sm transition-colors inline-flex items-center justify-center gap-1.5"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open Tab</span>
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled={requesting}
+                onClick={handleAllow}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
+              >
+                <BellRing className="w-3.5 h-3.5" />
+                <span>{requesting ? 'Allowing...' : 'Allow'}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

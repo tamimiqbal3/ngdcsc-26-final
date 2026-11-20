@@ -20,6 +20,7 @@ const USER_DISABLED_KEY = 'ngdcsc_notif_user_disabled_v1';
 const PROMPT_SEEN_KEY = 'ngdcsc_notif_prompt_seen_v1';
 
 let swRegistrationPromise: Promise<ServiceWorkerRegistration | null> | null = null;
+let syncInFlightPromise: Promise<boolean> | null = null;
 let lastPushSyncStatus: PushSyncStatus = { checked: false, ok: false };
 
 function emitPushSyncStatus(status: PushSyncStatus) {
@@ -129,7 +130,7 @@ async function waitForActiveServiceWorker(
         settled = true;
         resolve();
       };
-      const timer = window.setTimeout(done, 6000);
+      const timer = window.setTimeout(done, 10000);
       const onState = () => {
         if (pendingWorker.state === 'activated' || pendingWorker.state === 'redundant') {
           window.clearTimeout(timer);
@@ -151,7 +152,7 @@ async function waitForActiveServiceWorker(
   try {
     const readyReg = await Promise.race([
       navigator.serviceWorker.ready,
-      new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 6000))
+      new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 10000))
     ]);
     return readyReg?.active || null;
   } catch {
@@ -197,29 +198,39 @@ async function subscribePushWithRetry(
 
   if (sub) return sub;
 
-  try {
-    return await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey
-    });
-  } catch {
-    const existing = await reg.pushManager.getSubscription().catch(() => null);
-    if (existing) {
-      await existing.unsubscribe().catch(() => {});
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey
+      });
+    } catch {
+      const existing = await reg.pushManager.getSubscription().catch(() => null);
+      if (existing) {
+        await existing.unsubscribe().catch(() => {});
+      }
+      if (attempt < 2) {
+        await new Promise((r) => window.setTimeout(r, 500 * (attempt + 1)));
+      }
     }
-    await new Promise((r) => window.setTimeout(r, 400));
-    return await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey
-    });
   }
+  return null;
 }
 
-export async function syncPushSubscriptionForUser(idToken: string): Promise<boolean> {
+export function syncPushSubscriptionForUser(idToken: string): Promise<boolean> {
   if (typeof window === 'undefined' || !idToken) {
-    return false;
+    return Promise.resolve(false);
   }
+  if (syncInFlightPromise) {
+    return syncInFlightPromise;
+  }
+  syncInFlightPromise = runSyncPushSubscriptionForUser(idToken).finally(() => {
+    syncInFlightPromise = null;
+  });
+  return syncInFlightPromise;
+}
 
+async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean> {
   if (isUserDisabledNotifications()) {
     emitPushSyncStatus({ checked: true, ok: false, reason: 'disabled' });
     return false;
@@ -409,8 +420,21 @@ export async function enableNotificationsForUser(idToken?: string | null): Promi
   if (idToken) {
     pushActive = await syncPushSubscriptionForUser(idToken);
   } else {
-    const reg = await registerNotificationServiceWorker();
-    if (reg) await waitForActiveServiceWorker(reg);
+    try {
+      const reg = await registerNotificationServiceWorker();
+      const sw = reg ? await waitForActiveServiceWorker(reg) : null;
+      if (reg && sw && reg.pushManager) {
+        const keyRes = await fetch('/api/push/public-key', { cache: 'no-store' });
+        if (keyRes.ok) {
+          const data = (await keyRes.json()) as { publicKey?: string };
+          if (data?.publicKey) {
+            await subscribePushWithRetry(reg, urlBase64ToUint8Array(data.publicKey));
+          }
+        }
+      }
+    } catch {
+      // will complete on login via syncPushSubscriptionForUser
+    }
   }
 
   // Send immediate confirmation system notification so user confirms OS alerts work
