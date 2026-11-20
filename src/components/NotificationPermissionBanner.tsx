@@ -1,10 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { BellRing, CheckCircle2, X } from 'lucide-react';
+import { BellRing, CheckCircle2, ExternalLink, RefreshCw, Share, X } from 'lucide-react';
+import { auth } from '../services/firebase';
 import {
   BrowserNotificationPermission,
+  PushSyncStatus,
   getBrowserNotificationPermission,
+  getLastPushSyncStatus,
+  isInEmbeddedIframe,
+  isIosNonStandalone,
   registerNotificationServiceWorker,
-  requestBrowserNotificationPermission
+  requestBrowserNotificationPermission,
+  syncPushSubscriptionForUser
 } from '../utils/browserNotifications';
 
 interface NotificationPermissionBannerProps {
@@ -17,10 +23,14 @@ export default function NotificationPermissionBanner({
   const [permission, setPermission] = useState<BrowserNotificationPermission>(() =>
     getBrowserNotificationPermission()
   );
-  // Only hide for current page session if user taps "Not Now" so next visit asks again until permission is granted
+  const [pushStatus, setPushStatus] = useState<PushSyncStatus>(() => getLastPushSyncStatus());
+  // Only hide for current page session if user taps "Not Now" so next visit asks again until active
   const [dismissedThisVisit, setDismissedThisVisit] = useState<boolean>(false);
   const [requesting, setRequesting] = useState(false);
   const [justEnabled, setJustEnabled] = useState(false);
+
+  const inIframe = isInEmbeddedIframe();
+  const needsIosA2hs = isIosNonStandalone();
 
   useEffect(() => {
     registerNotificationServiceWorker();
@@ -29,9 +39,17 @@ export default function NotificationPermissionBanner({
       const detail = (e as CustomEvent<BrowserNotificationPermission>).detail;
       setPermission(detail || getBrowserNotificationPermission());
     };
+    const handlePushStatus = (e: Event) => {
+      const detail = (e as CustomEvent<PushSyncStatus>).detail;
+      if (detail) {
+        setPushStatus(detail);
+      }
+    };
     window.addEventListener('ngdcsc-notif-permission-changed', handleSync);
+    window.addEventListener('ngdcsc-push-status-changed', handlePushStatus);
     return () => {
       window.removeEventListener('ngdcsc-notif-permission-changed', handleSync);
+      window.removeEventListener('ngdcsc-push-status-changed', handlePushStatus);
     };
   }, []);
 
@@ -44,12 +62,48 @@ export default function NotificationPermissionBanner({
         new CustomEvent('ngdcsc-notif-permission-changed', { detail: nextPerm })
       );
       if (nextPerm === 'granted') {
-        setJustEnabled(true);
-        setTimeout(() => {
-          setJustEnabled(false);
-        }, 2000);
+        const user = auth.currentUser;
+        if (user) {
+          const token = await user.getIdToken().catch(() => null);
+          const ok = token ? await syncPushSubscriptionForUser(token) : false;
+          if (ok) {
+            setJustEnabled(true);
+            setTimeout(() => {
+              setJustEnabled(false);
+            }, 2000);
+          } else {
+            // Keep retry card visible if push registration failed
+            setDismissedThisVisit(false);
+          }
+        } else {
+          setJustEnabled(true);
+          setTimeout(() => {
+            setJustEnabled(false);
+          }, 2000);
+        }
       } else {
         setDismissedThisVisit(true);
+      }
+    } finally {
+      setRequesting(false);
+    }
+  };
+
+  const handleRetryPushSync = async () => {
+    setRequesting(true);
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        const token = await user.getIdToken().catch(() => null);
+        if (token) {
+          const ok = await syncPushSubscriptionForUser(token);
+          if (ok) {
+            setJustEnabled(true);
+            setTimeout(() => {
+              setJustEnabled(false);
+            }, 2000);
+          }
+        }
       }
     } finally {
       setRequesting(false);
@@ -70,15 +124,33 @@ export default function NotificationPermissionBanner({
     );
   }
 
-  if (suppressWhenToastVisible || permission === 'granted' || permission === 'unsupported') {
+  const pushRetryNeeded =
+    permission === 'granted' &&
+    pushStatus.checked &&
+    !pushStatus.ok &&
+    pushStatus.reason === 'push-failed';
+
+  const iframeBlocked =
+    inIframe &&
+    (!pushStatus.checked || !pushStatus.ok) &&
+    (permission !== 'granted' || pushStatus.reason === 'iframe');
+
+  const iosGuideNeeded =
+    needsIosA2hs && (permission === 'unsupported' || (pushStatus.checked && pushStatus.reason === 'ios-a2hs'));
+
+  const deniedGuideNeeded = permission === 'denied' && !inIframe && !iosGuideNeeded;
+
+  const permissionNeeded = permission === 'default' && !inIframe && !iosGuideNeeded;
+
+  if (
+    suppressWhenToastVisible ||
+    (!iframeBlocked && !iosGuideNeeded && !deniedGuideNeeded && !permissionNeeded && !pushRetryNeeded)
+  ) {
     return null;
   }
 
-  // If permission was not granted yet and user minimized modal this visit, show a subtle reminder pill to re-open/allow
-  if (dismissedThisVisit || permission === 'denied') {
-    if (permission === 'denied') {
-      return null;
-    }
+  // If dismissed this visit, keep subtle reminder pill so user can re-open cleanly
+  if (dismissedThisVisit) {
     return (
       <button
         type="button"
@@ -119,36 +191,159 @@ export default function NotificationPermissionBanner({
             />
           </div>
 
-          <div className="space-y-1.5">
-            <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">
-              NGDC Science Club
-            </p>
-            <h3 className="text-lg font-black text-slate-900">
-              Allow Notifications
-            </h3>
-            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-              Get instant message alerts even when you are not on the site.
-            </p>
-          </div>
+          {iframeBlocked ? (
+            <>
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">
+                  NGDC Science Club
+                </p>
+                <h3 className="text-lg font-black text-slate-900">
+                  Open in Browser Tab
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                  Open this portal in a full browser tab and tap Allow so phone alerts arrive even when closed.
+                </p>
+              </div>
+              <div className="pt-1 flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setDismissedThisVisit(true)}
+                  className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Not Now
+                </button>
+                <a
+                  href={typeof window !== 'undefined' ? window.location.href : '/'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setDismissedThisVisit(true)}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Open Tab</span>
+                </a>
+              </div>
+            </>
+          ) : iosGuideNeeded ? (
+            <>
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">
+                  NGDC Science Club
+                </p>
+                <h3 className="text-lg font-black text-slate-900">
+                  Add to Home Screen
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                  On iPhone/iPad, tap <span className="font-bold text-slate-800 inline-flex items-center gap-0.5"><Share className="w-3 h-3" /> Share</span> then <span className="font-bold text-slate-800">Add to Home Screen</span>, and open it from your Home Screen to get alerts when closed.
+                </p>
+              </div>
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setDismissedThisVisit(true)}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Got It
+                </button>
+              </div>
+            </>
+          ) : deniedGuideNeeded ? (
+            <>
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">
+                  NGDC Science Club
+                </p>
+                <h3 className="text-lg font-black text-slate-900">
+                  Enable Browser Notifications
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                  Notifications are blocked in your browser. Tap the settings/lock icon in the address bar → <span className="font-bold text-slate-800">Permissions → Notifications → Allow</span>, then reload.
+                </p>
+              </div>
+              <div className="pt-1 flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setDismissedThisVisit(true)}
+                  className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Not Now
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Reload</span>
+                </button>
+              </div>
+            </>
+          ) : pushRetryNeeded ? (
+            <>
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">
+                  NGDC Science Club
+                </p>
+                <h3 className="text-lg font-black text-slate-900">
+                  Activate Background Alerts
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                  Tap Retry to register this device for instant message alerts even when the website is closed.
+                </p>
+              </div>
+              <div className="pt-1 flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setDismissedThisVisit(true)}
+                  className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Not Now
+                </button>
+                <button
+                  type="button"
+                  disabled={requesting}
+                  onClick={handleRetryPushSync}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${requesting ? 'animate-spin' : ''}`} />
+                  <span>{requesting ? 'Activating...' : 'Retry'}</span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">
+                  NGDC Science Club
+                </p>
+                <h3 className="text-lg font-black text-slate-900">
+                  Allow Notifications
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                  Get instant message alerts even when the website is closed.
+                </p>
+              </div>
 
-          <div className="pt-1 flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={() => setDismissedThisVisit(true)}
-              className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-colors cursor-pointer"
-            >
-              Not Now
-            </button>
-            <button
-              type="button"
-              disabled={requesting}
-              onClick={handleAllow}
-              className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
-            >
-              <BellRing className="w-3.5 h-3.5" />
-              <span>{requesting ? 'Allowing...' : 'Allow'}</span>
-            </button>
-          </div>
+              <div className="pt-1 flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setDismissedThisVisit(true)}
+                  className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Not Now
+                </button>
+                <button
+                  type="button"
+                  disabled={requesting}
+                  onClick={handleAllow}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5"
+                >
+                  <BellRing className="w-3.5 h-3.5" />
+                  <span>{requesting ? 'Allowing...' : 'Allow'}</span>
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -154,7 +154,10 @@ async function getFirestoreDoc(
   try {
     const headers: Record<string, string> = {};
     if (idToken) headers.Authorization = `Bearer ${idToken}`;
-    const res = await fetch(`${FIRESTORE_DOC_BASE}/${docPath}`, { headers });
+    const res = await fetch(`${FIRESTORE_DOC_BASE}/${docPath}`, {
+      headers,
+      signal: AbortSignal.timeout(4000)
+    });
     if (!res.ok) return null;
     const json = (await res.json()) as { fields?: Record<string, any> };
     return json?.fields || null;
@@ -174,7 +177,8 @@ async function patchFirestoreDoc(
     const res = await fetch(`${FIRESTORE_DOC_BASE}/${docPath}`, {
       method: 'PATCH',
       headers,
-      body: JSON.stringify({ fields })
+      body: JSON.stringify({ fields }),
+      signal: AbortSignal.timeout(4000)
     });
     return res.ok;
   } catch {
@@ -343,7 +347,8 @@ async function verifyFirebaseToken(
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken })
+        body: JSON.stringify({ idToken }),
+        signal: AbortSignal.timeout(4000)
       }
     );
     if (!res.ok) return null;
@@ -366,6 +371,12 @@ async function startServer() {
   const app = express();
   app.use(express.json({ limit: '256kb' }));
 
+  app.use(['/sw.js', '/sw-notify.js'], (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Service-Worker-Allowed', '/');
+    next();
+  });
+
   app.get('/api/push/public-key', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json({ publicKey: vapidKeys.publicKey });
@@ -381,6 +392,18 @@ async function startServer() {
       await syncCanonicalVapidKeysWithAdminToken(user.idToken);
     }
     res.json({ ok: true, publicKey: vapidKeys.publicKey });
+  });
+
+  app.get('/api/push/status', async (req, res) => {
+    const user = await verifyFirebaseToken(req.headers.authorization);
+    if (!user) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    const remoteForUser = await readRemoteSubsForEmail(user.emailLower, user.idToken);
+    const localForUser = subscriptionStore.filter((s) => s.emailLower === user.emailLower);
+    const merged = mergeSubscriptionLists(remoteForUser, localForUser);
+    res.json({ registered: merged.length > 0, deviceCount: merged.length });
   });
 
   app.post('/api/push/register', async (req, res) => {
@@ -436,7 +459,8 @@ async function startServer() {
     saveSubscriptionsToDisk();
     await writeRemoteSubsForEmail(user.emailLower, mergedForUser, user.idToken);
 
-    res.json({ ok: true, publicKey: vapidKeys.publicKey });
+    console.log(`[web-push] registered device for ${user.emailLower} (${mergedForUser.length} active)`);
+    res.json({ ok: true, publicKey: vapidKeys.publicKey, deviceCount: mergedForUser.length });
   });
 
   app.post('/api/push/unregister', async (req, res) => {

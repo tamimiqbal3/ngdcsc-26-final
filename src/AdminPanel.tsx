@@ -147,8 +147,14 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginSubmitting, setLoginSubmitting] = useState(false);
 
-  // Active Tab: Default is 'dashboard' with rich graphs
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+  // Active Tab: Default is 'dashboard' with rich graphs (or 'inbox' when opened from push notification)
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get('open') === 'inbox') return 'inbox';
+    }
+    return 'dashboard';
+  });
 
   useEffect(() => {
     if (!currentUser) return;

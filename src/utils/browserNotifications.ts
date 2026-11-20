@@ -1,8 +1,58 @@
 export type BrowserNotificationPermission = NotificationPermission | 'unsupported';
 
+export type PushSyncFailureReason =
+  | 'iframe'
+  | 'ios-a2hs'
+  | 'unsupported'
+  | 'permission-needed'
+  | 'denied'
+  | 'push-failed';
+
+export interface PushSyncStatus {
+  checked: boolean;
+  ok: boolean;
+  reason?: PushSyncFailureReason;
+}
+
 const CLUB_LOGO_ICON = '/assets/club-logo.png';
 
 let swRegistrationPromise: Promise<ServiceWorkerRegistration | null> | null = null;
+let lastPushSyncStatus: PushSyncStatus = { checked: false, ok: false };
+
+function emitPushSyncStatus(status: PushSyncStatus) {
+  lastPushSyncStatus = status;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent<PushSyncStatus>('ngdcsc-push-status-changed', { detail: status })
+    );
+  }
+}
+
+export function getLastPushSyncStatus(): PushSyncStatus {
+  return lastPushSyncStatus;
+}
+
+export function isInEmbeddedIframe(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.self !== window.top;
+  } catch {
+    return true;
+  }
+}
+
+export function isIosNonStandalone(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const isIos =
+    /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
+  if (!isIos) return false;
+  const isStandalone =
+    window.matchMedia?.('(display-mode: standalone)')?.matches ||
+    Boolean((navigator as any).standalone);
+  return !isStandalone;
+}
 
 export function getBrowserNotificationPermission(): BrowserNotificationPermission {
   if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -17,7 +67,7 @@ export function registerNotificationServiceWorker(): Promise<ServiceWorkerRegist
   }
   if (!swRegistrationPromise) {
     swRegistrationPromise = navigator.serviceWorker
-      .register('/sw-notify.js', { scope: '/', updateViaCache: 'none' })
+      .register('/sw.js', { scope: '/', updateViaCache: 'none' })
       .then((reg) => {
         reg.update().catch(() => {});
         return reg;
@@ -118,7 +168,6 @@ async function subscribePushWithRetry(
       applicationServerKey
     });
   } catch {
-    // Retry once after unsubscribing stale registration if push service returned transient AbortError
     const existing = await reg.pushManager.getSubscription().catch(() => null);
     if (existing) {
       await existing.unsubscribe().catch(() => {});
@@ -137,7 +186,6 @@ export async function syncPushSubscriptionForUser(idToken: string): Promise<bool
   }
 
   try {
-    // Ensure server canonical VAPID keys are synced if caller is an admin, and retrieve active publicKey
     let publicKey: string | undefined;
     try {
       const syncRes = await fetch('/api/push/sync-keys', {
@@ -152,32 +200,78 @@ export async function syncPushSubscriptionForUser(idToken: string): Promise<bool
       // fallback below
     }
 
-    if (
-      !('Notification' in window) ||
-      Notification.permission !== 'granted' ||
-      !('serviceWorker' in navigator) ||
-      !('PushManager' in window)
-    ) {
+    if (isIosNonStandalone() && (!('Notification' in window) || !('PushManager' in window))) {
+      emitPushSyncStatus({ checked: true, ok: false, reason: 'ios-a2hs' });
+      return false;
+    }
+
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      emitPushSyncStatus({
+        checked: true,
+        ok: false,
+        reason: isInEmbeddedIframe() ? 'iframe' : 'unsupported'
+      });
+      return false;
+    }
+
+    if (Notification.permission === 'denied') {
+      emitPushSyncStatus({
+        checked: true,
+        ok: false,
+        reason: isInEmbeddedIframe() ? 'iframe' : 'denied'
+      });
+      return false;
+    }
+
+    if (Notification.permission !== 'granted') {
+      emitPushSyncStatus({
+        checked: true,
+        ok: false,
+        reason: isInEmbeddedIframe() ? 'iframe' : 'permission-needed'
+      });
       return false;
     }
 
     const reg = await registerNotificationServiceWorker();
-    if (!reg || !reg.pushManager) return false;
+    if (!reg || !reg.pushManager) {
+      emitPushSyncStatus({
+        checked: true,
+        ok: false,
+        reason: isInEmbeddedIframe() ? 'iframe' : 'push-failed'
+      });
+      return false;
+    }
 
     const activeSw = await waitForActiveServiceWorker(reg);
-    if (!activeSw) return false;
+    if (!activeSw) {
+      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
+      return false;
+    }
 
     if (!publicKey) {
       const keyRes = await fetch('/api/push/public-key', { cache: 'no-store' });
-      if (!keyRes.ok) return false;
+      if (!keyRes.ok) {
+        emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
+        return false;
+      }
       const data = (await keyRes.json()) as { publicKey?: string };
       publicKey = data?.publicKey;
     }
-    if (!publicKey) return false;
+    if (!publicKey) {
+      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
+      return false;
+    }
 
     const desiredKey = urlBase64ToUint8Array(publicKey);
     const sub = await subscribePushWithRetry(reg, desiredKey);
-    if (!sub) return false;
+    if (!sub) {
+      emitPushSyncStatus({
+        checked: true,
+        ok: false,
+        reason: isInEmbeddedIframe() ? 'iframe' : 'push-failed'
+      });
+      return false;
+    }
 
     const regRes = await fetch('/api/push/register', {
       method: 'POST',
@@ -187,19 +281,24 @@ export async function syncPushSubscriptionForUser(idToken: string): Promise<bool
       },
       body: JSON.stringify({ subscription: sub.toJSON() })
     });
-    if (!regRes.ok) return false;
+    if (!regRes.ok) {
+      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
+      return false;
+    }
 
     const regData = (await regRes.json().catch(() => null)) as {
       ok?: boolean;
       publicKey?: string;
     } | null;
 
-    // If canonical key rotated during registration, re-subscribe cleanly with canonical publicKey
     if (regData?.publicKey && regData.publicKey !== publicKey) {
       await sub.unsubscribe().catch(() => {});
       const rotatedKey = urlBase64ToUint8Array(regData.publicKey);
       const rotatedSub = await subscribePushWithRetry(reg, rotatedKey);
-      if (!rotatedSub) return false;
+      if (!rotatedSub) {
+        emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
+        return false;
+      }
       const retryRes = await fetch('/api/push/register', {
         method: 'POST',
         headers: {
@@ -208,11 +307,19 @@ export async function syncPushSubscriptionForUser(idToken: string): Promise<bool
         },
         body: JSON.stringify({ subscription: rotatedSub.toJSON() })
       });
-      return retryRes.ok;
+      const ok = retryRes.ok;
+      emitPushSyncStatus(ok ? { checked: true, ok: true } : { checked: true, ok: false, reason: 'push-failed' });
+      return ok;
     }
 
+    emitPushSyncStatus({ checked: true, ok: true });
     return true;
   } catch {
+    emitPushSyncStatus({
+      checked: true,
+      ok: false,
+      reason: isInEmbeddedIframe() ? 'iframe' : isIosNonStandalone() ? 'ios-a2hs' : 'push-failed'
+    });
     return false;
   }
 }
