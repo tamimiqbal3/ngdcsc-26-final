@@ -112,6 +112,7 @@ import ConfirmationSlipModal from './components/ConfirmationSlipModal';
 import DotLoader from './components/DotLoader';
 import InboxToastNotification from './components/InboxToastNotification';
 import NotificationPermissionBanner from './components/NotificationPermissionBanner';
+import { syncPushSubscriptionForUser } from './utils/browserNotifications';
 
 const CLUB_LOGO_URL = '/assets/club-logo.png';
 
@@ -138,6 +139,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   const [presidentUnreadCount, setPresidentUnreadCount] = useState(0);
   const [presidentNotifMeta, setPresidentNotifMeta] = useState<{
     latestEventKey: string;
+    notifTag?: string;
     senderHint?: string;
   }>({ latestEventKey: '' });
 
@@ -147,6 +149,23 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
   // Active Tab: Default is 'dashboard' with rich graphs
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const sync = () => {
+      currentUser
+        .getIdToken()
+        .then((token) => {
+          if (token) syncPushSubscriptionForUser(token);
+        })
+        .catch(() => {});
+    };
+    sync();
+    window.addEventListener('ngdcsc-notif-permission-changed', sync);
+    return () => {
+      window.removeEventListener('ngdcsc-notif-permission-changed', sync);
+    };
+  }, [currentUser]);
 
   useEffect(() => {
     if (!isPresident) {
@@ -162,6 +181,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
         const latest = unreadThreads[0];
         setPresidentNotifMeta({
           latestEventKey: `admin-pres:${total}:${latest?.id || ''}:${latest?.lastMessageAt || ''}`,
+          notifTag: latest?.id && latest?.lastMessageAt ? `ngdcsc-msg-${latest.id}-${latest.lastMessageAt}` : undefined,
           senderHint:
             unreadThreads.length === 1
               ? `From ${latest?.memberName || 'Club Member'}`
@@ -1097,6 +1117,24 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     );
   }
 
+  // ==================== DEDICATED FULL-SCREEN PRESIDENT INBOX ====================
+  if (activeTab === 'inbox' && isPresident) {
+    return (
+      <>
+        <InboxPanel
+          fullScreen
+          onBack={() => setActiveTab('dashboard')}
+          backLabel="Back to Admin Panel"
+          currentUserEmail={currentUser?.email || ''}
+          currentUserUid={currentUser?.uid || null}
+          allMembers={members}
+          onUnreadCountChange={setPresidentUnreadCount}
+        />
+        <NotificationPermissionBanner suppressWhenToastVisible={false} />
+      </>
+    );
+  }
+
   // ==================== AUTHENTICATED ADMIN PANEL (LIGHT THEME) ====================
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
@@ -1950,15 +1988,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
           />
         )}
 
-        {/* ===================== TAB: PRESIDENT INBOX ===================== */}
-        {activeTab === 'inbox' && isPresident && (
-          <InboxPanel
-            currentUserEmail={currentUser?.email || ''}
-            currentUserUid={currentUser?.uid || null}
-            allMembers={members}
-            onUnreadCountChange={setPresidentUnreadCount}
-          />
-        )}
+        {/* President Inbox renders in dedicated full-screen mode above */}
 
         {/* ===================== TAB: EMAIL LOGS & NOTIFICATIONS ===================== */}
         {activeTab === 'email_logs' && (
@@ -3199,6 +3229,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
         <InboxToastNotification
           unreadCount={presidentUnreadCount}
           latestEventKey={presidentNotifMeta.latestEventKey}
+          notifTag={presidentNotifMeta.notifTag}
           senderHint={presidentNotifMeta.senderHint}
           isCurrentlyViewingInbox={activeTab === 'inbox'}
           buttonLabel="Check Dashboard"

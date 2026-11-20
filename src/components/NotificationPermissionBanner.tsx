@@ -3,10 +3,8 @@ import { BellRing, CheckCircle2, X } from 'lucide-react';
 import {
   BrowserNotificationPermission,
   getBrowserNotificationPermission,
-  markPermissionBannerDismissed,
   registerNotificationServiceWorker,
-  requestBrowserNotificationPermission,
-  wasPermissionBannerRecentlyDismissed
+  requestBrowserNotificationPermission
 } from '../utils/browserNotifications';
 
 interface NotificationPermissionBannerProps {
@@ -19,9 +17,8 @@ export default function NotificationPermissionBanner({
   const [permission, setPermission] = useState<BrowserNotificationPermission>(() =>
     getBrowserNotificationPermission()
   );
-  const [dismissed, setDismissed] = useState<boolean>(() =>
-    wasPermissionBannerRecentlyDismissed()
-  );
+  // Only hide for current page session if user taps "Not Now" so next visit asks again until permission is granted
+  const [dismissedThisVisit, setDismissedThisVisit] = useState<boolean>(false);
   const [requesting, setRequesting] = useState(false);
   const [justEnabled, setJustEnabled] = useState(false);
 
@@ -52,18 +49,11 @@ export default function NotificationPermissionBanner({
           setJustEnabled(false);
         }, 2000);
       } else {
-        // Close popup cleanly if user denied or browser blocked in embedded preview
-        markPermissionBannerDismissed();
-        setDismissed(true);
+        setDismissedThisVisit(true);
       }
     } finally {
       setRequesting(false);
     }
-  };
-
-  const handleDismiss = () => {
-    markPermissionBannerDismissed();
-    setDismissed(true);
   };
 
   if (justEnabled) {
@@ -80,8 +70,25 @@ export default function NotificationPermissionBanner({
     );
   }
 
-  if (suppressWhenToastVisible || dismissed || permission !== 'default') {
+  if (suppressWhenToastVisible || permission === 'granted' || permission === 'unsupported') {
     return null;
+  }
+
+  // If permission was not granted yet and user minimized modal this visit, show a subtle reminder pill to re-open/allow
+  if (dismissedThisVisit || permission === 'denied') {
+    if (permission === 'denied') {
+      return null;
+    }
+    return (
+      <button
+        type="button"
+        onClick={() => setDismissedThisVisit(false)}
+        className="fixed bottom-4 left-4 sm:bottom-6 sm:left-6 z-50 inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-white/95 backdrop-blur-md border border-emerald-300 shadow-lg text-xs font-bold text-emerald-800 hover:bg-emerald-50 transition-all cursor-pointer font-sans"
+      >
+        <BellRing className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+        <span>Enable Notifications</span>
+      </button>
+    );
   }
 
   return (
@@ -96,7 +103,7 @@ export default function NotificationPermissionBanner({
 
         <button
           type="button"
-          onClick={handleDismiss}
+          onClick={() => setDismissedThisVisit(true)}
           aria-label="Close"
           className="absolute top-3.5 right-3.5 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
         >
@@ -120,14 +127,14 @@ export default function NotificationPermissionBanner({
               Allow Notifications
             </h3>
             <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-              Get real-time notifications when a new inbox message arrives.
+              Get instant message alerts even when you are not on the site.
             </p>
           </div>
 
           <div className="pt-1 flex items-center gap-2.5">
             <button
               type="button"
-              onClick={handleDismiss}
+              onClick={() => setDismissedThisVisit(true)}
               className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-colors cursor-pointer"
             >
               Not Now

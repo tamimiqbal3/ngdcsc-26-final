@@ -11,6 +11,7 @@ import {
 interface InboxToastNotificationProps {
   unreadCount: number;
   latestEventKey: string;
+  notifTag?: string;
   isCurrentlyViewingInbox?: boolean;
   onOpenInbox: () => void;
   buttonLabel?: string;
@@ -44,6 +45,7 @@ function playInboxNotificationSound() {
 export default function InboxToastNotification({
   unreadCount,
   latestEventKey,
+  notifTag,
   isCurrentlyViewingInbox = false,
   onOpenInbox,
   buttonLabel = 'Check Dashboard'
@@ -126,11 +128,11 @@ export default function InboxToastNotification({
       dispatchBrowserNotification({
         title: `NGDC Science Club • ${countTitle}`,
         body: 'Check your dashboard.',
-        tag: latestEventKey,
+        tag: notifTag || latestEventKey,
         onClick: () => onOpenInboxRef.current()
       });
     }
-  }, [unreadCount, latestEventKey, isCurrentlyViewingInbox, notifPermission]);
+  }, [unreadCount, latestEventKey, notifTag, isCurrentlyViewingInbox, notifPermission]);
 
   const handleEnableBrowserAlerts = async () => {
     const result = await requestBrowserNotificationPermission();

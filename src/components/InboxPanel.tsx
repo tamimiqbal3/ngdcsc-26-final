@@ -10,7 +10,13 @@ import {
   CheckCircle2,
   X,
   Users,
-  Check
+  Check,
+  Mail,
+  Phone,
+  Calendar,
+  Hash,
+  Award,
+  ShieldCheck
 } from 'lucide-react';
 import {
   SubmissionRecord,
@@ -19,7 +25,9 @@ import {
   PRESIDENT_EMAIL,
   PRESIDENT_DISPLAY_NAME,
   PRESIDENT_ROLE_LABEL,
-  PRESIDENT_PHOTO_URL
+  PRESIDENT_PHOTO_URL,
+  getEffectiveMemberGroup,
+  GROUP_BADGE_STYLES
 } from '../types';
 import {
   isPresidentEmail,
@@ -42,6 +50,9 @@ interface InboxPanelProps {
   currentMember?: SubmissionRecord | null;
   allMembers?: SubmissionRecord[];
   onUnreadCountChange?: (count: number) => void;
+  fullScreen?: boolean;
+  onBack?: () => void;
+  backLabel?: string;
 }
 
 interface PresidentContactRow {
@@ -244,7 +255,10 @@ export default function InboxPanel({
   currentUserUid,
   currentMember,
   allMembers = [],
-  onUnreadCountChange
+  onUnreadCountChange,
+  fullScreen = false,
+  onBack,
+  backLabel = 'Back to Dashboard'
 }: InboxPanelProps) {
   const isPresident = isPresidentEmail(currentUserEmail);
 
@@ -256,6 +270,7 @@ export default function InboxPanel({
   const [listFilter, setListFilter] = useState<'all' | 'chats'>('all');
   const [selectedContact, setSelectedContact] = useState<PresidentContactRow | null>(null);
   const [mobileShowThread, setMobileShowThread] = useState(false);
+  const [viewingContactDetails, setViewingContactDetails] = useState<PresidentContactRow | null>(null);
 
   // President Individual Broadcast Modal states (send same text individually to all/selected members)
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
@@ -526,6 +541,19 @@ export default function InboxPanel({
     );
   }, [isPresident, selectedContact, presidentContacts]);
 
+  const viewingFullMember = useMemo<SubmissionRecord | null>(() => {
+    if (!isPresident || !viewingContactDetails) return null;
+    const emailLower = (viewingContactDetails.email || '').trim().toLowerCase();
+    return (
+      allMembers.find(
+        (m) =>
+          (viewingContactDetails.memberId && m.id === viewingContactDetails.memberId) ||
+          (emailLower && (m.email || '').trim().toLowerCase() === emailLower) ||
+          (viewingContactDetails.studentId && m.studentId === viewingContactDetails.studentId)
+      ) || null
+    );
+  }, [isPresident, viewingContactDetails, allMembers]);
+
   const filteredContacts = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     return presidentContacts.filter((c) => {
@@ -717,51 +745,124 @@ export default function InboxPanel({
 
   // ==================== PRESIDENT INBOX UI (1-on-1 WITH ANY MEMBER + INDIVIDUAL BROADCAST) ====================
   if (isPresident) {
+    const totalUnreadForPresident = threads.reduce((sum, t) => sum + (t.unreadByPresident || 0), 0);
     return (
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden animate-in fade-in duration-200">
-        {/* Clean President Identity Header + Individual Message All Action */}
-        <div className="px-4 sm:px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="relative shrink-0">
-              <PresidentAvatar sizeClass="w-10 h-10" />
-              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-900" />
+      <div
+        className={
+          fullScreen
+            ? 'h-[100dvh] w-full flex flex-col bg-slate-50 overflow-hidden animate-in fade-in duration-200'
+            : 'bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden animate-in fade-in duration-200'
+        }
+      >
+        {/* Top Full-Screen Navigation & President Header */}
+        {fullScreen && (
+          <div className="h-14 shrink-0 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between gap-3 z-20">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              {onBack && (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-colors cursor-pointer shrink-0 border border-slate-200/80"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>{backLabel}</span>
+                </button>
+              )}
+              <div className="hidden sm:block h-5 w-px bg-slate-200" />
+              <div className="flex items-center gap-2 min-w-0">
+                <img
+                  src="/assets/club-logo.png"
+                  alt="NGDC Science Club"
+                  className="w-7 h-7 rounded-lg object-contain bg-slate-50 border border-slate-200 p-0.5 shrink-0"
+                />
+                <span className="text-sm font-black text-slate-900 truncate">Inbox</span>
+                {totalUnreadForPresident > 0 && (
+                  <span className="px-1.5 py-0.5 min-w-[20px] text-center rounded-full bg-red-600 text-white text-[10px] font-black leading-none">
+                    {totalUnreadForPresident}
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-2 min-w-0 flex-wrap">
-              <h2 className="text-sm sm:text-base font-bold tracking-tight truncate">
-                {PRESIDENT_DISPLAY_NAME}
-              </h2>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-extrabold uppercase tracking-wide">
-                {PRESIDENT_ROLE_LABEL}
-              </span>
-            </div>
-          </div>
 
-          <button
-            type="button"
-            onClick={handleOpenBroadcastModal}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition-all cursor-pointer shrink-0"
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>Message All Individually</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={handleOpenBroadcastModal}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer shrink-0"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Message All Individually</span>
+              <span className="sm:hidden">Message All</span>
+            </button>
+          </div>
+        )}
+
+        {/* Clean President Identity Header when embedded */}
+        {!fullScreen && (
+          <div className="px-4 sm:px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="relative shrink-0">
+                <PresidentAvatar sizeClass="w-10 h-10" />
+                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-900" />
+              </div>
+              <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                <h2 className="text-sm sm:text-base font-bold tracking-tight truncate">
+                  {PRESIDENT_DISPLAY_NAME}
+                </h2>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-extrabold uppercase tracking-wide">
+                  {PRESIDENT_ROLE_LABEL}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleOpenBroadcastModal}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition-all cursor-pointer shrink-0"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Message All Individually</span>
+            </button>
+          </div>
+        )}
 
         {/* Broadcast Delivery Toast Banner */}
         {broadcastBanner && (
-          <div className="px-4 py-2.5 bg-emerald-50 border-b border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
+          <div className="px-4 py-2.5 bg-emerald-50 border-b border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2 shrink-0">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{broadcastBanner}</span>
           </div>
         )}
 
         {/* Two-Pane Messenger Layout */}
-        <div className="grid grid-cols-1 md:grid-cols-12 h-[560px] sm:h-[620px]">
+        <div
+          className={
+            fullScreen
+              ? 'flex-1 min-h-0 w-full flex bg-white overflow-hidden'
+              : 'grid grid-cols-1 md:grid-cols-12 h-[560px] sm:h-[620px]'
+          }
+        >
           {/* Left Member List */}
           <div
-            className={`md:col-span-5 lg:col-span-4 border-r border-slate-200 flex flex-col bg-white min-h-0 ${
+            className={`${
+              fullScreen
+                ? 'w-full md:w-[340px] lg:w-[380px] shrink-0'
+                : 'md:col-span-5 lg:col-span-4'
+            } border-r border-slate-200 flex flex-col bg-white min-h-0 ${
               mobileShowThread ? 'hidden md:flex' : 'flex'
             }`}
           >
+            {fullScreen && (
+              <div className="px-4 pt-3.5 pb-2 flex items-center justify-between gap-2 border-b border-slate-100">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <PresidentAvatar sizeClass="w-8 h-8" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-extrabold text-slate-900 truncate">{PRESIDENT_DISPLAY_NAME}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">{PRESIDENT_ROLE_LABEL}</p>
+                  </div>
+                </div>
+                <span className="text-[11px] font-semibold text-slate-500">{presidentContacts.length} Members</span>
+              </div>
+            )}
             <div className="p-3 border-b border-slate-100 space-y-2.5">
               <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -912,7 +1013,9 @@ export default function InboxPanel({
 
           {/* Right Conversation Canvas */}
           <div
-            className={`md:col-span-7 lg:col-span-8 flex flex-col bg-[#eef3f1] min-h-0 ${
+            className={`${
+              fullScreen ? 'flex-1 min-w-0' : 'md:col-span-7 lg:col-span-8'
+            } flex flex-col bg-[#eef3f1] min-h-0 ${
               mobileShowThread ? 'flex' : 'hidden md:flex'
             }`}
           >
@@ -926,43 +1029,61 @@ export default function InboxPanel({
               </div>
             ) : (
               <>
-                {/* Active Contact Header */}
-                <div className="px-4 sm:px-5 py-3 border-b border-slate-200/80 flex items-center gap-3 bg-white">
+                {/* Active Contact Header — Strictly ONLY Tamim Iqbal can click photo/name to inspect member details */}
+                <div className="px-4 sm:px-5 py-3 border-b border-slate-200/80 flex items-center justify-between gap-3 bg-white">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => setMobileShowThread(false)}
+                      className="md:hidden p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer shrink-0"
+                      aria-label="Back to member list"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setViewingContactDetails(activeContact)}
+                      className="flex items-center gap-3 min-w-0 text-left group cursor-pointer rounded-xl py-1 pr-2.5 -ml-1 pl-1 hover:bg-slate-50 transition-colors"
+                      title="Click to view full member profile"
+                    >
+                      <div className="w-10 h-10 rounded-full border border-slate-200 group-hover:border-emerald-400 bg-slate-100 overflow-hidden flex items-center justify-center shrink-0 transition-colors">
+                        {activeContact.photo ? (
+                          <img
+                            src={activeContact.photo}
+                            alt={activeContact.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <UserIcon className="w-4 h-4 text-slate-400" />
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-bold text-slate-900 group-hover:text-emerald-700 truncate leading-tight transition-colors">
+                          {activeContact.name}
+                        </h3>
+                        <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                          {[
+                            activeContact.membershipId,
+                            activeContact.batch,
+                            activeContact.section ? `Sec ${activeContact.section}` : ''
+                          ]
+                            .filter(Boolean)
+                            .join(' • ') || 'View profile details'}
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+
                   <button
                     type="button"
-                    onClick={() => setMobileShowThread(false)}
-                    className="md:hidden p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
-                    aria-label="Back to member list"
+                    onClick={() => setViewingContactDetails(activeContact)}
+                    className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-800 text-slate-700 text-xs font-semibold transition-colors cursor-pointer shrink-0"
                   >
-                    <ArrowLeft className="w-4 h-4" />
+                    <UserIcon className="w-3.5 h-3.5" />
+                    <span>Details</span>
                   </button>
-
-                  <div className="w-9 h-9 rounded-full border border-slate-200 bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">
-                    {activeContact.photo ? (
-                      <img
-                        src={activeContact.photo}
-                        alt={activeContact.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <UserIcon className="w-4 h-4 text-slate-400" />
-                    )}
-                  </div>
-
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-slate-900 truncate leading-tight">
-                      {activeContact.name}
-                    </h3>
-                    <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                      {[
-                        activeContact.membershipId,
-                        activeContact.batch,
-                        activeContact.section ? `Sec ${activeContact.section}` : ''
-                      ]
-                        .filter(Boolean)
-                        .join(' • ')}
-                    </p>
-                  </div>
                 </div>
 
                 {/* Messages Stream */}
@@ -1295,31 +1416,254 @@ export default function InboxPanel({
             </div>
           </div>
         )}
+        {/* Tamim Iqbal ONLY: Member Full Details Modal (triggered by clicking member name or photo) */}
+        {viewingContactDetails && (
+          <div
+            className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+            onClick={() => setViewingContactDetails(null)}
+          >
+            <div
+              className="bg-white w-full max-w-lg max-h-[88dvh] flex flex-col rounded-2xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Dark Header with Photo, Name, Status & Membership ID */}
+              <div className="px-5 py-5 bg-slate-900 text-white flex items-start justify-between gap-4 shrink-0">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl border-2 border-white/20 bg-slate-800 overflow-hidden flex items-center justify-center shrink-0">
+                    {(viewingFullMember?.photo || viewingContactDetails.photo) ? (
+                      <img
+                        src={viewingFullMember?.photo || viewingContactDetails.photo || ''}
+                        alt={viewingFullMember?.name || viewingContactDetails.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <UserIcon className="w-8 h-8 text-slate-400" />
+                    )}
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <h3 className="text-base sm:text-lg font-black truncate">
+                      {viewingFullMember?.name || viewingContactDetails.name}
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
+                      {(viewingFullMember?.membershipId || viewingContactDetails.membershipId) && (
+                        <span className="font-mono font-bold text-emerald-400">
+                          {viewingFullMember?.membershipId || viewingContactDetails.membershipId}
+                        </span>
+                      )}
+                      {(viewingFullMember?.status || viewingContactDetails.status) && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span className="capitalize font-semibold text-white">
+                            {viewingFullMember?.status || viewingContactDetails.status}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setViewingContactDetails(null)}
+                  className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white cursor-pointer shrink-0"
+                  aria-label="Close member details"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Scrollable Details Body */}
+              <div className="p-5 overflow-y-auto space-y-5 text-xs sm:text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-4 border-b border-slate-100">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                      <Hash className="w-3 h-3" /> College Roll
+                    </p>
+                    <p className="font-mono font-bold text-slate-900 mt-0.5">
+                      {viewingFullMember?.studentId || viewingContactDetails.studentId || '—'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      Academic Group
+                    </p>
+                    {(() => {
+                      const grp = getEffectiveMemberGroup(
+                        viewingFullMember || {
+                          studentId: viewingContactDetails.studentId || ''
+                        }
+                      );
+                      return grp ? (
+                        <span className={`inline-block mt-1 px-2.5 py-0.5 rounded-full border text-[11px] font-bold ${GROUP_BADGE_STYLES[grp]}`}>
+                          {grp}
+                        </span>
+                      ) : (
+                        <p className="font-semibold text-slate-700 mt-0.5">—</p>
+                      );
+                    })()}
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      Batch &amp; Section
+                    </p>
+                    <p className="font-bold text-slate-900 mt-0.5">
+                      {[
+                        viewingFullMember?.batch || viewingContactDetails.batch,
+                        (viewingFullMember?.section || viewingContactDetails.section)
+                          ? `Section ${viewingFullMember?.section || viewingContactDetails.section}`
+                          : ''
+                      ]
+                        .filter(Boolean)
+                        .join(' · ') || '—'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                      <Calendar className="w-3 h-3" /> Date of Birth
+                    </p>
+                    <p className="font-mono font-semibold text-slate-800 mt-0.5">
+                      {viewingFullMember?.dob || '—'}
+                    </p>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                      <Mail className="w-3 h-3" /> Email Address
+                    </p>
+                    <p className="font-semibold text-slate-900 break-all mt-0.5">
+                      {viewingFullMember?.email || viewingContactDetails.email || '—'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                      <Phone className="w-3 h-3" /> Mobile Number
+                    </p>
+                    <p className="font-mono font-bold text-slate-900 mt-0.5">
+                      {viewingFullMember?.phone || '—'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                      <MessageSquare className="w-3 h-3" /> WhatsApp
+                    </p>
+                    <p className="font-mono font-semibold text-slate-800 mt-0.5">
+                      {viewingFullMember?.whatsapp || viewingFullMember?.phone || '—'}
+                    </p>
+                  </div>
+                </div>
+
+                {viewingFullMember?.interestedSegments && viewingFullMember.interestedSegments.length > 0 && (
+                  <div className="pb-4 border-b border-slate-100">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5" /> Interested Science Wings
+                    </p>
+                    <p className="text-xs font-medium text-slate-800 leading-relaxed">
+                      {viewingFullMember.interestedSegments.join(' · ')}
+                    </p>
+                  </div>
+                )}
+
+                {viewingFullMember?.skills && viewingFullMember.skills.length > 0 && (
+                  <div className="pb-4 border-b border-slate-100">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center gap-1">
+                      <Award className="w-3.5 h-3.5" /> Skills
+                    </p>
+                    <p className="text-xs font-medium text-slate-800 leading-relaxed">
+                      {viewingFullMember.skills.join(' · ')}
+                    </p>
+                  </div>
+                )}
+
+                {viewingFullMember?.experienceAchievements && (
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                      Experience &amp; Achievements
+                    </p>
+                    <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
+                      {viewingFullMember.experienceAchievements}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
-  // ==================== MEMBER INBOX UI (STRICTLY ONLY TAMIM IQBAL - PRESIDENT) ====================
+  // ==================== MEMBER INBOX UI (STRICTLY ONLY TAMIM IQBAL - PRESIDENT, NO DETAILS CLICK) ====================
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden animate-in fade-in duration-200 flex flex-col">
-      {/* Clean Chat Header: Only Tamim Iqbal Photo, Name & President Badge */}
-      <div className="px-4 sm:px-5 py-3.5 bg-slate-900 text-white flex items-center gap-3">
-        <div className="relative shrink-0">
-          <PresidentAvatar sizeClass="w-11 h-11" />
-          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-900" />
+    <div
+      className={
+        fullScreen
+          ? 'h-[100dvh] w-full flex flex-col bg-slate-100 overflow-hidden animate-in fade-in duration-200'
+          : 'bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden animate-in fade-in duration-200 flex flex-col'
+      }
+    >
+      {fullScreen && (
+        <div className="h-14 shrink-0 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between gap-3 z-20">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-colors cursor-pointer shrink-0 border border-slate-200/80"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 text-emerald-600" />
+                <span>{backLabel}</span>
+              </button>
+            )}
+            <div className="hidden sm:block h-5 w-px bg-slate-200" />
+            <div className="flex items-center gap-2 min-w-0">
+              <img
+                src="/assets/club-logo.png"
+                alt="NGDC Science Club"
+                className="w-7 h-7 rounded-lg object-contain bg-slate-50 border border-slate-200 p-0.5 shrink-0"
+              />
+              <span className="text-sm font-black text-slate-900 truncate">Inbox</span>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-2 min-w-0 flex-wrap">
-          <h2 className="text-sm sm:text-base font-bold tracking-tight">
-            {PRESIDENT_DISPLAY_NAME}
-          </h2>
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-extrabold uppercase tracking-wide">
-            {PRESIDENT_ROLE_LABEL}
-          </span>
-        </div>
-      </div>
+      )}
 
-      {/* Messages Canvas */}
-      <div className="h-[440px] sm:h-[490px] overflow-y-auto px-3.5 sm:px-5 py-4 bg-[#eef3f1]">
+      <div
+        className={
+          fullScreen
+            ? 'flex-1 min-h-0 w-full flex justify-center md:p-5 overflow-hidden'
+            : 'flex flex-col flex-1 min-h-0'
+        }
+      >
+      <div
+        className={
+          fullScreen
+            ? 'w-full max-w-3xl h-full flex flex-col bg-white md:rounded-2xl md:border md:border-slate-200 md:shadow-sm overflow-hidden'
+            : 'flex flex-col flex-1 min-h-0'
+        }
+      >
+        {/* Clean Chat Header: Only Tamim Iqbal Photo, Name & President Badge (non-clickable for members) */}
+        <div className="px-4 sm:px-5 py-3.5 bg-slate-900 text-white flex items-center gap-3 shrink-0">
+          <div className="relative shrink-0">
+            <PresidentAvatar sizeClass="w-11 h-11" />
+            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-900" />
+          </div>
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
+            <h2 className="text-sm sm:text-base font-bold tracking-tight">
+              {PRESIDENT_DISPLAY_NAME}
+            </h2>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-extrabold uppercase tracking-wide">
+              {PRESIDENT_ROLE_LABEL}
+            </span>
+          </div>
+        </div>
+
+        {/* Messages Canvas */}
+        <div className={fullScreen ? 'flex-1 min-h-0 overflow-y-auto px-3.5 sm:px-6 py-4 bg-[#eef3f1]' : 'h-[440px] sm:h-[490px] overflow-y-auto px-3.5 sm:px-5 py-4 bg-[#eef3f1]'}>
         {renderedMessages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center space-y-3 py-10">
             <PresidentAvatar sizeClass="w-16 h-16" />
@@ -1449,6 +1793,8 @@ export default function InboxPanel({
           </button>
         </div>
       </form>
+      </div>
+      </div>
     </div>
   );
 }

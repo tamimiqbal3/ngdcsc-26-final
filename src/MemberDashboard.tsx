@@ -570,11 +570,24 @@ export default function MemberDashboard({
 
   const displayedSkills = Array.from(new Set([...activeSkillList, ...skills]));
 
+  if (activePage === 'inbox' && (!loading || isPresident || Boolean(member))) {
+    return (
+      <InboxPanel
+        fullScreen
+        onBack={() => (member ? switchPage('slip') : onBackToHome())}
+        backLabel={member ? 'Back to Dashboard' : 'Back to Home'}
+        currentUserEmail={user.email || member?.email || ''}
+        currentUserUid={user.uid}
+        currentMember={member}
+        allMembers={isPresident ? presidentMembersDirectory : []}
+        onUnreadCountChange={setInboxUnreadCount}
+      />
+    );
+  }
+
   return (
     <div
-      className={`w-full ${
-        activePage === 'inbox' && isPresident ? 'max-w-5xl' : 'max-w-3xl'
-      } relative z-10 px-4 sm:px-6 pt-24 sm:pt-28 pb-12 formal-page-enter transition-all`}
+      className="w-full max-w-3xl relative z-10 px-4 sm:px-6 pt-24 sm:pt-28 pb-12 formal-page-enter transition-all"
     >
       {/* Photo Adjust Modal */}
       {adjustingPhoto && (
@@ -756,16 +769,7 @@ export default function MemberDashboard({
             </div>
           </div>
 
-          {/* INBOX PAGE: Available to every dashboard (President <-> Member individual chat, Member -> Tamim Iqbal only) */}
-          {activePage === 'inbox' && (
-            <InboxPanel
-              currentUserEmail={user.email || member?.email || ''}
-              currentUserUid={user.uid}
-              currentMember={member}
-              allMembers={isPresident ? presidentMembersDirectory : []}
-              onUnreadCountChange={setInboxUnreadCount}
-            />
-          )}
+          {/* Inbox opens in dedicated full-screen mode above */}
 
           {/* PAGE 1: CONFIRMATION SLIP PAGE */}
           {member && activePage === 'slip' && (
@@ -1539,9 +1543,6 @@ export default function MemberDashboard({
                         >
                           <div>
                             <span className="text-sm font-extrabold block text-slate-900">{b}</span>
-                            <span className="text-[11px] text-slate-500 font-medium">
-                              {b === 'HSC 27' ? 'Class 12 • Senior Science' : 'Class 11 • Junior Science'}
-                            </span>
                           </div>
                           <div
                             className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${

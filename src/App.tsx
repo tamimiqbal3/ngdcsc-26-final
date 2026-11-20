@@ -70,6 +70,7 @@ import ImageAdjustModal from './components/ImageAdjustModal';
 import DotLoader from './components/DotLoader';
 import InboxToastNotification from './components/InboxToastNotification';
 import NotificationPermissionBanner from './components/NotificationPermissionBanner';
+import { syncPushSubscriptionForUser } from './utils/browserNotifications';
 import { 
   auth,
   saveMemberToFirebase, 
@@ -513,13 +514,26 @@ export default function App() {
   const [inboxAlertMeta, setInboxAlertMeta] = useState<{
     unreadCount: number;
     latestEventKey: string;
+    notifTag?: string;
     senderHint?: string;
   }>({ unreadCount: 0, latestEventKey: '' });
-  const [activeDashboardPage, setActiveDashboardPage] = useState<'slip' | 'attendance' | 'inbox' | 'edit' | 'password'>('slip');
+  const [activeDashboardPage, setActiveDashboardPage] = useState<'slip' | 'attendance' | 'inbox' | 'edit' | 'password'>(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get('open') === 'inbox') return 'inbox';
+    }
+    return 'slip';
+  });
   const [requestedDashboardPage, setRequestedDashboardPage] = useState<{
     page: 'slip' | 'attendance' | 'inbox' | 'edit' | 'password';
     nonce: number;
-  } | null>(null);
+  } | null>(() => {
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get('open') === 'inbox') return { page: 'inbox', nonce: Date.now() };
+    }
+    return null;
+  });
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -528,6 +542,23 @@ export default function App() {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!authUser) return;
+    const syncPush = () => {
+      authUser
+        .getIdToken()
+        .then((token) => {
+          if (token) syncPushSubscriptionForUser(token);
+        })
+        .catch(() => {});
+    };
+    syncPush();
+    window.addEventListener('ngdcsc-notif-permission-changed', syncPush);
+    return () => {
+      window.removeEventListener('ngdcsc-notif-permission-changed', syncPush);
+    };
+  }, [authUser]);
 
   useEffect(() => {
     if (!authUser) {
@@ -549,6 +580,7 @@ export default function App() {
           setInboxAlertMeta({
             unreadCount: unread,
             latestEventKey: `pres:${unread}:${latest?.id || ''}:${latest?.lastMessageAt || ''}`,
+            notifTag: latest?.id && latest?.lastMessageAt ? `ngdcsc-msg-${latest.id}-${latest.lastMessageAt}` : undefined,
             senderHint
           });
         } else {
@@ -563,6 +595,7 @@ export default function App() {
         setInboxAlertMeta({
           unreadCount: unread,
           latestEventKey: `member:${authUser.uid}:${unread}:${thread?.id || ''}:${thread?.lastMessageAt || ''}`,
+          notifTag: thread?.id && thread?.lastMessageAt ? `ngdcsc-msg-${thread.id}-${thread.lastMessageAt}` : undefined,
           senderHint: 'From Tamim Iqbal (President)'
         });
       } else {
@@ -889,6 +922,7 @@ export default function App() {
           <InboxToastNotification
             unreadCount={inboxAlertMeta.unreadCount}
             latestEventKey={inboxAlertMeta.latestEventKey}
+            notifTag={inboxAlertMeta.notifTag}
             senderHint={inboxAlertMeta.senderHint}
             isCurrentlyViewingInbox={false}
             onOpenInbox={() => {
@@ -901,12 +935,19 @@ export default function App() {
     );
   }
 
+  const isFullScreenInbox = Boolean(
+    authUser &&
+      (currentView === 'dashboard' || currentView === 'login') &&
+      activeDashboardPage === 'inbox'
+  );
+
   return (
     <div className="relative min-h-screen text-slate-800 flex flex-col items-center justify-between selection:bg-emerald-500/20 selection:text-emerald-950 font-sans">
       {/* Subtle Luminous Science Canvas Animation Background */}
-      <ScienceBackground />
+      {!isFullScreenInbox && <ScienceBackground />}
 
       {/* Modern Floating Navigation Bar */}
+      {!isFullScreenInbox && (
       <header className="fixed top-3 sm:top-4 inset-x-0 mx-auto max-w-5xl z-50 px-3 sm:px-4">
         <div className="w-full bg-white/90 backdrop-blur-md border border-black/[0.08] rounded-full shadow-[0_6px_24px_rgba(0,0,0,0.05)] px-3 sm:px-4 py-2 flex items-center justify-between transition-all">
           {/* Brand Identity */}
@@ -1136,6 +1177,7 @@ export default function App() {
           </div>
         )}
       </header>
+      )}
 
       {/* Selected Notice Modal (When clicking homepage announcement - strictly fits viewport) */}
       {selectedNotice && (
@@ -1264,7 +1306,7 @@ export default function App() {
       )}
 
       {/* Main Page Views Container - flex-1 ensures natural flow and footer at the bottom */}
-      <main className="w-full flex-1 flex flex-col items-center">
+      <main className={isFullScreenInbox ? 'w-full h-[100dvh] flex flex-col overflow-hidden' : 'w-full flex-1 flex flex-col items-center'}>
         {currentView === 'committee' ? (
           <ExecutiveCommitteePage 
             onBackToRegistration={() => navigateTo('home')} 
@@ -2059,7 +2101,7 @@ export default function App() {
                       type="text"
                       id="student-id"
                       required
-                      placeholder="e.g. 2025'1'133 or 20251588"
+                      placeholder="(Full Roll)"
                       value={formData.studentId}
                       onChange={(e) => {
                         const nextRoll = e.target.value;
@@ -2156,9 +2198,6 @@ export default function App() {
                       >
                         <div>
                           <span className="text-sm font-bold block">{batch}</span>
-                          <span className="text-[11px] text-slate-500">
-                            {batch === 'HSC 27' ? 'Class 12 Science' : 'Class 11 Science'}
-                          </span>
                         </div>
                         <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
                           isSelected ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300'
@@ -2337,6 +2376,7 @@ export default function App() {
         <InboxToastNotification
           unreadCount={inboxAlertMeta.unreadCount}
           latestEventKey={inboxAlertMeta.latestEventKey}
+          notifTag={inboxAlertMeta.notifTag}
           senderHint={inboxAlertMeta.senderHint}
           isCurrentlyViewingInbox={
             (currentView === 'dashboard' || currentView === 'login') &&
@@ -2349,8 +2389,8 @@ export default function App() {
         />
       )}
 
-      {/* Global Club Footer on EVERY single page */}
-      <ClubFooter />
+      {/* Global Club Footer on EVERY single page except dedicated full-screen Inbox */}
+      {!isFullScreenInbox && <ClubFooter />}
     </div>
   );
 }

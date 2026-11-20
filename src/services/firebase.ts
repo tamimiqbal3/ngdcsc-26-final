@@ -61,6 +61,7 @@ import {
 } from '../types';
 
 import { getAnalytics, isSupported } from 'firebase/analytics';
+import { triggerRecipientWebPush } from '../utils/browserNotifications';
 
 export const firebaseConfig = {
   apiKey: "AIzaSyC-J4YtNcvqUQYUA9WgFckP7pQC9KtDNMo",
@@ -2726,6 +2727,26 @@ export async function sendInboxMessage(params: {
     doc(db, 'inbox_threads', params.threadId, 'messages', msgId),
     cleanFirestoreData(messagePayload)
   );
+
+  // Fire-and-forget Web Push so recipient gets notified immediately even when not on the website
+  auth.currentUser
+    ?.getIdToken()
+    .then((idToken) => {
+      if (!idToken) return;
+      const targets = senderIsPresident
+        ? (memberEmailLower ? [memberEmailLower] : [])
+        : [PRESIDENT_EMAIL];
+      return triggerRecipientWebPush({
+        idToken,
+        targetEmails: targets,
+        targetUid: senderIsPresident ? memberUidToStore : undefined,
+        title: 'NGDC Science Club • 1 New Message',
+        body: 'Check your dashboard.',
+        tag: `ngdcsc-msg-${params.threadId}-${nowIso}`,
+        url: '/dashboard?open=inbox'
+      });
+    })
+    .catch(() => {});
 
   return messagePayload;
 }
