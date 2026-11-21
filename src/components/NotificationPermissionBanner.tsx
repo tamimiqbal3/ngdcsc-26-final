@@ -7,6 +7,7 @@ import {
   isInEmbeddedIframe,
   isIosNonStandalone,
   isUserDisabledNotifications,
+  registerFirebaseMessagingServiceWorker,
   registerNotificationServiceWorker
 } from '../utils/browserNotifications';
 
@@ -25,6 +26,7 @@ export default function NotificationPermissionBanner({
 
   useEffect(() => {
     registerNotificationServiceWorker();
+    registerFirebaseMessagingServiceWorker();
 
     const handleSync = () => {
       setPermission(getBrowserNotificationPermission());

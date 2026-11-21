@@ -1,3 +1,12 @@
+import { getApp, getApps } from 'firebase/app';
+import {
+  getMessaging,
+  getToken,
+  isSupported as isMessagingSupported,
+  onMessage,
+  type Messaging
+} from 'firebase/messaging';
+
 export type BrowserNotificationPermission = NotificationPermission | 'unsupported';
 
 export type PushSyncFailureReason =
@@ -19,9 +28,12 @@ export interface PushSyncStatus {
 const CLUB_LOGO_ICON = '/assets/club-logo.png';
 const USER_DISABLED_KEY = 'ngdcsc_notif_user_disabled_v1';
 const PROMPT_SEEN_KEY = 'ngdcsc_notif_prompt_seen_v1';
+const FCM_SW_SCOPE = '/firebase-cloud-messaging-push-scope';
 
 let swRegistrationPromise: Promise<ServiceWorkerRegistration | null> | null = null;
+let fcmSwRegistrationPromise: Promise<ServiceWorkerRegistration | null> | null = null;
 let syncInFlightPromise: Promise<boolean> | null = null;
+let foregroundFcmAttached = false;
 let lastPushSyncStatus: PushSyncStatus = { checked: false, ok: false };
 
 function emitPushSyncStatus(status: PushSyncStatus) {
@@ -122,8 +134,33 @@ export function registerNotificationServiceWorker(): Promise<ServiceWorkerRegist
   return swRegistrationPromise;
 }
 
+export function registerFirebaseMessagingServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+    return Promise.resolve(null);
+  }
+  if (!fcmSwRegistrationPromise) {
+    fcmSwRegistrationPromise = navigator.serviceWorker
+      .register('/firebase-messaging-sw.js', {
+        scope: FCM_SW_SCOPE,
+        updateViaCache: 'none'
+      })
+      .then((reg) => {
+        reg.update().catch(() => {});
+        return reg;
+      })
+      .catch((err: any) => {
+        const msg = err?.message || err?.name || 'FCM SW registration rejected';
+        console.warn('[NGDCSC Push] FCM SW register error:', msg);
+        fcmSwRegistrationPromise = null;
+        return null;
+      });
+  }
+  return fcmSwRegistrationPromise;
+}
+
 async function waitForActiveServiceWorker(
-  reg: ServiceWorkerRegistration
+  reg: ServiceWorkerRegistration,
+  allowReadyFallback = true
 ): Promise<ServiceWorker | null> {
   if (reg.active) return reg.active;
 
@@ -155,6 +192,10 @@ async function waitForActiveServiceWorker(
 
   if (reg.active) return reg.active;
 
+  if (!allowReadyFallback) {
+    return null;
+  }
+
   try {
     const readyReg = await Promise.race([
       navigator.serviceWorker.ready,
@@ -163,6 +204,20 @@ async function waitForActiveServiceWorker(
     return readyReg?.active || null;
   } catch {
     return null;
+  }
+}
+
+function attachForegroundFcmListener(messaging: Messaging) {
+  if (foregroundFcmAttached || typeof window === 'undefined') return;
+  foregroundFcmAttached = true;
+  try {
+    onMessage(messaging, (payload) => {
+      window.dispatchEvent(
+        new CustomEvent('ngdcsc-fcm-push-received', { detail: payload })
+      );
+    });
+  } catch {
+    foregroundFcmAttached = false;
   }
 }
 
@@ -224,6 +279,82 @@ async function subscribePushWithRetry(
     }
   }
   return { sub: null, error: lastErrMsg || 'Push subscribe failed' };
+}
+
+async function acquirePushSubscription(publicKey: string): Promise<{
+  sub: PushSubscription | null;
+  fcmToken?: string;
+  error?: string;
+}> {
+  const desiredKey = urlBase64ToUint8Array(publicKey);
+
+  // Register both root SW (/sw.js) and dedicated Firebase Messaging SW (/firebase-messaging-sw.js)
+  const [fcmReg, swReg] = await Promise.all([
+    registerFirebaseMessagingServiceWorker(),
+    registerNotificationServiceWorker()
+  ]);
+
+  let fcmError = '';
+  if (fcmReg && fcmReg.pushManager) {
+    const activeFcmSw = await waitForActiveServiceWorker(fcmReg, false);
+    if (activeFcmSw) {
+      // Ensure stale key mismatches are cleared before getToken() reads existing subscription
+      const existingFcmSub = await fcmReg.pushManager.getSubscription().catch(() => null);
+      if (
+        existingFcmSub &&
+        existingFcmSub.options?.applicationServerKey &&
+        !uint8ArrayEqual(existingFcmSub.options.applicationServerKey, desiredKey)
+      ) {
+        await existingFcmSub.unsubscribe().catch(() => {});
+      }
+
+      let fcmToken: string | undefined;
+      try {
+        const supported = await isMessagingSupported().catch(() => false);
+        if (supported && getApps().length > 0) {
+          const messaging = getMessaging(getApp());
+          attachForegroundFcmListener(messaging);
+          const token = await getToken(messaging, {
+            vapidKey: publicKey,
+            serviceWorkerRegistration: fcmReg
+          }).catch(() => null);
+          if (token) {
+            fcmToken = token;
+          }
+        }
+      } catch {
+        // continue with PushManager fallback on fcmReg
+      }
+
+      const { sub: fcmSub, error: subErr } = await subscribePushWithRetry(fcmReg, desiredKey);
+      if (fcmSub) {
+        // Avoid duplicate notifications by removing redundant push subscription from root SW
+        if (swReg && swReg.pushManager) {
+          const dupSub = await swReg.pushManager.getSubscription().catch(() => null);
+          if (dupSub && dupSub.endpoint !== fcmSub.endpoint) {
+            await dupSub.unsubscribe().catch(() => {});
+          }
+        }
+        return { sub: fcmSub, fcmToken };
+      }
+      fcmError = subErr || '';
+    }
+  }
+
+  if (!swReg || !swReg.pushManager) {
+    return {
+      sub: null,
+      error: fcmError || lastSwRegisterError || 'Service worker registration unavailable'
+    };
+  }
+
+  const activeSw = await waitForActiveServiceWorker(swReg, true);
+  if (!activeSw) {
+    return { sub: null, error: fcmError || 'Service worker did not activate in time' };
+  }
+
+  const { sub: swSub, error: swErr } = await subscribePushWithRetry(swReg, desiredKey);
+  return { sub: swSub, error: swErr || fcmError };
 }
 
 async function parseJsonSafely<T>(res: Response, endpointLabel: string): Promise<T> {
@@ -307,22 +438,6 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
       return false;
     }
 
-    const reg = await registerNotificationServiceWorker();
-    if (!reg || !reg.pushManager) {
-      const detail = lastSwRegisterError || 'Service worker registration unavailable';
-      console.warn('[NGDCSC Push]', detail);
-      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed', detail });
-      return false;
-    }
-
-    const activeSw = await waitForActiveServiceWorker(reg);
-    if (!activeSw) {
-      const detail = 'Service worker did not activate in time';
-      console.warn('[NGDCSC Push]', detail);
-      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed', detail });
-      return false;
-    }
-
     if (!publicKey) {
       const keyRes = await fetch('/api/push/public-key', { cache: 'no-store' });
       if (!keyRes.ok) {
@@ -344,8 +459,7 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
       return false;
     }
 
-    const desiredKey = urlBase64ToUint8Array(publicKey);
-    const { sub, error: subErr } = await subscribePushWithRetry(reg, desiredKey);
+    const { sub, fcmToken, error: subErr } = await acquirePushSubscription(publicKey);
     if (!sub) {
       const detail = subErr || 'PushManager.subscribe rejected';
       console.warn('[NGDCSC Push]', detail);
@@ -359,7 +473,7 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
         'Content-Type': 'application/json',
         'X-Firebase-Token': idToken
       },
-      body: JSON.stringify({ idToken, subscription: sub.toJSON() })
+      body: JSON.stringify({ idToken, subscription: sub.toJSON(), fcmToken })
     });
     if (!regRes.ok) {
       const detail = `Server register failed (HTTP ${regRes.status})`;
@@ -375,8 +489,11 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
 
     if (regData?.publicKey && regData.publicKey.trim() !== publicKey) {
       await sub.unsubscribe().catch(() => {});
-      const rotatedKey = urlBase64ToUint8Array(regData.publicKey.trim());
-      const { sub: rotatedSub, error: rotErr } = await subscribePushWithRetry(reg, rotatedKey);
+      const {
+        sub: rotatedSub,
+        fcmToken: rotatedFcmToken,
+        error: rotErr
+      } = await acquirePushSubscription(regData.publicKey.trim());
       if (!rotatedSub) {
         emitPushSyncStatus({
           checked: true,
@@ -392,13 +509,22 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
           'Content-Type': 'application/json',
           'X-Firebase-Token': idToken
         },
-        body: JSON.stringify({ idToken, subscription: rotatedSub.toJSON() })
+        body: JSON.stringify({
+          idToken,
+          subscription: rotatedSub.toJSON(),
+          fcmToken: rotatedFcmToken
+        })
       });
       const ok = retryRes.ok;
       emitPushSyncStatus(
         ok
           ? { checked: true, ok: true }
-          : { checked: true, ok: false, reason: 'push-failed', detail: `Server retry failed (HTTP ${retryRes.status})` }
+          : {
+              checked: true,
+              ok: false,
+              reason: 'push-failed',
+              detail: `Server retry failed (HTTP ${retryRes.status})`
+            }
       );
       return ok;
     }
@@ -462,29 +588,20 @@ export async function enableNotificationsForUser(idToken?: string | null): Promi
     pushActive = await syncPushSubscriptionForUser(idToken);
   } else {
     try {
-      const reg = await registerNotificationServiceWorker();
-      const sw = reg ? await waitForActiveServiceWorker(reg) : null;
-      if (!reg || !sw || !reg.pushManager) {
-        preLoginError = lastSwRegisterError || 'Service worker registration unavailable';
+      const keyRes = await fetch('/api/push/public-key', { cache: 'no-store' });
+      if (!keyRes.ok) {
+        preLoginError = `Public key fetch failed (HTTP ${keyRes.status})`;
       } else {
-        const keyRes = await fetch('/api/push/public-key', { cache: 'no-store' });
-        if (!keyRes.ok) {
-          preLoginError = `Public key fetch failed (HTTP ${keyRes.status})`;
-        } else {
-          const data = await parseJsonSafely<{ publicKey?: string }>(keyRes, '/api/push/public-key');
-          if (data?.publicKey) {
-            const { sub, error: subErr } = await subscribePushWithRetry(
-              reg,
-              urlBase64ToUint8Array(data.publicKey)
-            );
-            if (sub) {
-              pushActive = true;
-            } else {
-              preLoginError = subErr || 'PushManager.subscribe rejected';
-            }
+        const data = await parseJsonSafely<{ publicKey?: string }>(keyRes, '/api/push/public-key');
+        if (data?.publicKey) {
+          const { sub, error: subErr } = await acquirePushSubscription(data.publicKey.trim());
+          if (sub) {
+            pushActive = true;
           } else {
-            preLoginError = 'Empty VAPID public key';
+            preLoginError = subErr || 'PushManager.subscribe rejected';
           }
+        } else {
+          preLoginError = 'Empty VAPID public key';
         }
       }
     } catch (err: any) {
@@ -513,18 +630,22 @@ export async function enableNotificationsForUser(idToken?: string | null): Promi
 export async function unregisterCurrentPushEndpoint(idToken?: string | null): Promise<void> {
   if (typeof window === 'undefined' || !idToken || !('serviceWorker' in navigator)) return;
   try {
-    const reg = await navigator.serviceWorker.getRegistration('/');
-    const sub = await reg?.pushManager?.getSubscription();
-    if (sub?.endpoint) {
-      await fetch('/api/push/unregister', {
-        method: 'POST',
-        keepalive: true,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Firebase-Token': idToken
-        },
-        body: JSON.stringify({ idToken, endpoint: sub.endpoint })
-      }).catch(() => {});
+    const regs = await navigator.serviceWorker.getRegistrations();
+    const seen = new Set<string>();
+    for (const reg of regs) {
+      const sub = await reg?.pushManager?.getSubscription().catch(() => null);
+      if (sub?.endpoint && !seen.has(sub.endpoint)) {
+        seen.add(sub.endpoint);
+        await fetch('/api/push/unregister', {
+          method: 'POST',
+          keepalive: true,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Firebase-Token': idToken
+          },
+          body: JSON.stringify({ idToken, endpoint: sub.endpoint })
+        }).catch(() => {});
+      }
     }
   } catch {
     // ignore
@@ -541,20 +662,24 @@ export async function disableNotificationsForUser(idToken?: string | null): Prom
 
   try {
     if ('serviceWorker' in navigator) {
-      const reg = await navigator.serviceWorker.getRegistration('/');
-      const sub = await reg?.pushManager?.getSubscription();
-      if (sub) {
-        const endpoint = sub.endpoint;
-        await sub.unsubscribe().catch(() => {});
-        if (idToken && endpoint) {
-          await fetch('/api/push/unregister', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Firebase-Token': idToken
-            },
-            body: JSON.stringify({ idToken, endpoint })
-          }).catch(() => {});
+      const regs = await navigator.serviceWorker.getRegistrations();
+      const seen = new Set<string>();
+      for (const reg of regs) {
+        const sub = await reg?.pushManager?.getSubscription().catch(() => null);
+        if (sub) {
+          const endpoint = sub.endpoint;
+          await sub.unsubscribe().catch(() => {});
+          if (idToken && endpoint && !seen.has(endpoint)) {
+            seen.add(endpoint);
+            await fetch('/api/push/unregister', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Firebase-Token': idToken
+              },
+              body: JSON.stringify({ idToken, endpoint })
+            }).catch(() => {});
+          }
         }
       }
     }
@@ -609,6 +734,7 @@ export async function requestBrowserNotificationPermission(): Promise<BrowserNot
   }
 
   registerNotificationServiceWorker();
+  registerFirebaseMessagingServiceWorker();
 
   if (Notification.permission === 'granted' || Notification.permission === 'denied') {
     return Notification.permission;

@@ -6,6 +6,7 @@ import {
   dispatchBrowserNotification,
   enableNotificationsForUser,
   getBrowserNotificationPermission,
+  registerFirebaseMessagingServiceWorker,
   registerNotificationServiceWorker
 } from '../utils/browserNotifications';
 
@@ -65,6 +66,7 @@ export default function InboxToastNotification({
 
   useEffect(() => {
     registerNotificationServiceWorker();
+    registerFirebaseMessagingServiceWorker();
 
     const handlePermissionSync = (e: Event) => {
       const detail = (e as CustomEvent<BrowserNotificationPermission>).detail;
@@ -73,7 +75,11 @@ export default function InboxToastNotification({
     window.addEventListener('ngdcsc-notif-permission-changed', handlePermissionSync);
 
     const handleSwMessage = (event: MessageEvent) => {
-      if (event.data && event.data.type === 'OPEN_INBOX') {
+      if (
+        event.data &&
+        (event.data.type === 'OPEN_INBOX' ||
+          (event.data.isFirebaseMessaging && event.data.messageType === 'notification-clicked'))
+      ) {
         onOpenInboxRef.current();
       }
     };

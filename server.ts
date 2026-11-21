@@ -15,7 +15,7 @@ async function startServer() {
   const app = express();
   app.use(express.json({ limit: '256kb' }));
 
-  app.use(['/sw.js', '/sw-notify.js'], (_req, res, next) => {
+  app.use(['/sw.js', '/sw-notify.js', '/firebase-messaging-sw.js'], (_req, res, next) => {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Service-Worker-Allowed', '/');
     next();

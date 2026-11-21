@@ -29,6 +29,7 @@ export interface StoredPushSubscription {
     p256dh: string;
     auth: string;
   };
+  fcmToken?: string;
   emailLower: string;
   uid: string;
   updatedAt: string;
@@ -771,12 +772,18 @@ export async function handleRegister(req: ApiRequestLike, res: ApiResponseLike):
     return;
   }
 
+  const fcmToken =
+    typeof body?.fcmToken === 'string' && body.fcmToken.trim()
+      ? body.fcmToken.trim()
+      : undefined;
+
   const record: StoredPushSubscription = {
     endpoint: sub.endpoint,
     keys: {
       p256dh: sub.keys.p256dh,
       auth: sub.keys.auth
     },
+    ...(fcmToken ? { fcmToken } : {}),
     emailLower: user.emailLower,
     uid: user.uid,
     updatedAt: new Date().toISOString()
@@ -911,13 +918,27 @@ export async function handleSend(req: ApiRequestLike, res: ApiResponseLike): Pro
     return;
   }
 
+  const notifTitle =
+    typeof body?.title === 'string' ? body.title : 'NGDC Science Club • 1 New Message';
+  const notifBody = typeof body?.body === 'string' ? body.body : 'Check your dashboard.';
+  const notifTag = typeof body?.tag === 'string' ? body.tag : `ngdcsc-push-${Date.now()}`;
+  const notifUrl = typeof body?.url === 'string' ? body.url : '/dashboard?open=inbox';
+
   const payload = JSON.stringify({
-    title: typeof body?.title === 'string' ? body.title : 'NGDC Science Club • 1 New Message',
-    body: typeof body?.body === 'string' ? body.body : 'Check your dashboard.',
+    title: notifTitle,
+    body: notifBody,
     icon: '/assets/club-logo.png',
     badge: '/assets/club-logo.png',
-    tag: typeof body?.tag === 'string' ? body.tag : `ngdcsc-push-${Date.now()}`,
-    url: typeof body?.url === 'string' ? body.url : '/dashboard?open=inbox'
+    tag: notifTag,
+    url: notifUrl,
+    data: {
+      title: notifTitle,
+      body: notifBody,
+      icon: '/assets/club-logo.png',
+      badge: '/assets/club-logo.png',
+      tag: notifTag,
+      url: notifUrl
+    }
   });
 
   const expiredEndpoints = new Set<string>();

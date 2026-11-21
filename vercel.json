@@ -1,7 +1,7 @@
 {
   "headers": [
     {
-      "source": "/(sw\\.js|sw-notify\\.js)",
+      "source": "/(sw\\.js|sw-notify\\.js|firebase-messaging-sw\\.js)",
       "headers": [
         {
           "key": "Cache-Control",
@@ -16,7 +16,7 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!api/|assets/|sw\\.js|sw-notify\\.js|manifest\\.webmanifest).*)",
+      "source": "/((?!api/|assets/|sw\\.js|sw-notify\\.js|firebase-messaging-sw\\.js|manifest\\.webmanifest).*)",
       "destination": "/index.html"
     }
   ]
