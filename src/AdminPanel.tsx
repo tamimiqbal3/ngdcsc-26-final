@@ -2253,7 +2253,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                       <span>ON — Allow Member Editing</span>
                     </span>
                     <p className="text-xs text-slate-600 leading-relaxed">
-                      Members can sign in to My Dashboard and update editable fields (Roll, Phone &amp; Email stay locked).
+                      Members can sign in to My Dashboard and update editable fields including Phone Number (Roll &amp; Email stay locked).
                     </p>
                   </div>
                   {regSetting.allowMemberEdit !== false && (

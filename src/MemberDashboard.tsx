@@ -127,9 +127,10 @@ export default function MemberDashboard({
     onActivePageChange?.(activePage);
   }, [activePage, onActivePageChange]);
 
-  // Editable form state (Roll, Phone, and Email are strictly locked)
+  // Editable form state (Roll and Account Email remain locked)
   const [photo, setPhoto] = useState<string | null>(initialCached?.photo || null);
   const [name, setName] = useState(initialCached?.name || '');
+  const [phone, setPhone] = useState(initialCached?.phone || '');
   const [whatsapp, setWhatsapp] = useState(initialCached?.whatsapp || initialCached?.phone || '');
   const [sameAsPhone, setSameAsPhone] = useState(
     initialCached ? (initialCached.sameAsPhone ?? (initialCached.whatsapp === initialCached.phone)) : true
@@ -180,6 +181,7 @@ export default function MemberDashboard({
   const populateForm = (rec: SubmissionRecord) => {
     setPhoto(rec.photo || null);
     setName(rec.name || '');
+    setPhone(rec.phone || '');
     setWhatsapp(rec.whatsapp || rec.phone || '');
     setSameAsPhone(rec.sameAsPhone ?? (rec.whatsapp === rec.phone));
     setDob(rec.dob || '');
@@ -332,8 +334,8 @@ export default function MemberDashboard({
     if (!isEditAllowed) return;
     isFormDirtyRef.current = true;
     setSameAsPhone(checked);
-    if (checked && member?.phone) {
-      setWhatsapp(member.phone);
+    if (checked) {
+      setWhatsapp(phone);
     }
   };
 
@@ -398,7 +400,13 @@ export default function MemberDashboard({
       setErrorMsg('Please enter your full name.');
       return;
     }
-    if (!whatsapp.trim()) {
+    const cleanPhone = phone.trim();
+    if (!cleanPhone) {
+      setErrorMsg('Please enter your phone number.');
+      return;
+    }
+    const cleanWhatsapp = (sameAsPhone ? cleanPhone : whatsapp).trim();
+    if (!cleanWhatsapp) {
       setErrorMsg('Please enter your WhatsApp number.');
       return;
     }
@@ -427,7 +435,8 @@ export default function MemberDashboard({
         {
           photo,
           name: name.trim(),
-          whatsapp: (sameAsPhone ? member.phone : whatsapp).trim(),
+          phone: cleanPhone,
+          whatsapp: cleanWhatsapp,
           sameAsPhone,
           dob,
           section,
@@ -438,6 +447,7 @@ export default function MemberDashboard({
         },
         member
       );
+      isFormDirtyRef.current = false;
       setMember(updated);
       setSaveSuccessMsg('Your profile information has been updated successfully.');
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1177,7 +1187,7 @@ export default function MemberDashboard({
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
                     {isEditAllowed
-                      ? 'Update your profile details below. College Roll, Phone Number, and Email Address are locked.'
+                      ? 'Update your profile details below. College Roll and Account Email are locked.'
                       : 'Profile editing is currently locked by the club administrator.'}
                   </p>
                 </div>
@@ -1187,7 +1197,7 @@ export default function MemberDashboard({
                     : 'bg-rose-50 border-rose-200 text-rose-700'
                 }`}>
                   <Lock className={`w-3 h-3 ${isEditAllowed ? 'text-slate-500' : 'text-rose-600'}`} />
-                  <span>{isEditAllowed ? 'Roll, Phone & Email Locked' : 'Editing Locked by Admin'}</span>
+                  <span>{isEditAllowed ? 'Roll & Email Locked' : 'Editing Locked by Admin'}</span>
                 </span>
               </div>
 
@@ -1327,35 +1337,30 @@ export default function MemberDashboard({
                 </h3>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* LOCKED PHONE */}
+                  {/* EDITABLE PHONE */}
                   <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Phone Number
-                      </label>
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-200/80 px-2 py-0.5 rounded-full">
-                        <Lock className="w-2.5 h-2.5" />
-                        <span>Locked</span>
-                      </span>
-                    </div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Phone Number *
+                    </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
                         <Phone className="w-4 h-4" />
                       </div>
                       <input
                         type="tel"
-                        value={member.phone}
-                        readOnly
-                        disabled
-                        className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-slate-100 text-slate-500 text-sm font-mono font-bold cursor-not-allowed select-none"
+                        required
+                        value={phone}
+                        onChange={(e) => {
+                          const nextVal = e.target.value;
+                          isFormDirtyRef.current = true;
+                          setPhone(nextVal);
+                          if (sameAsPhone) {
+                            setWhatsapp(nextVal);
+                          }
+                        }}
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all font-mono font-medium"
                       />
-                      <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-slate-400">
-                        <Lock className="w-3.5 h-3.5" />
-                      </div>
                     </div>
-                    <p className="text-[10.5px] text-slate-500 mt-1">
-                      Phone number cannot be edited after registration.
-                    </p>
                   </div>
 
                   <div>
@@ -1387,8 +1392,11 @@ export default function MemberDashboard({
                         type="tel"
                         required
                         readOnly={sameAsPhone}
-                        value={sameAsPhone ? member.phone : whatsapp}
-                        onChange={(e) => setWhatsapp(e.target.value)}
+                        value={sameAsPhone ? phone : whatsapp}
+                        onChange={(e) => {
+                          isFormDirtyRef.current = true;
+                          setWhatsapp(e.target.value);
+                        }}
                         className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm outline-none transition-all font-mono font-medium ${
                           sameAsPhone
                             ? 'bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed'

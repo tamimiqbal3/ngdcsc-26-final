@@ -1782,7 +1782,7 @@ export async function fetchMemberProfileForUser(
 
 /**
  * Self-service profile update from My Dashboard.
- * Strictly strips studentId (Roll), phone, email, status, membershipId, and rejectionReason so locked fields can NEVER be changed.
+ * Strictly strips studentId (Roll), email, status, membershipId, and rejectionReason so locked fields can NEVER be changed.
  */
 export async function updateOwnMemberProfile(
   memberId: string,
@@ -1804,10 +1804,11 @@ export async function updateOwnMemberProfile(
     }
   }
 
-  // Explicitly pick ONLY allowed editable fields (excluding studentId / Roll, phone, and email)
+  // Explicitly pick ONLY allowed editable fields (excluding studentId / Roll and email)
   const safeUpdates: Record<string, any> = cleanFirestoreData({
     photo: updates.photo !== undefined ? updates.photo : existingMember?.photo ?? null,
     name: updates.name !== undefined ? updates.name.trim() : existingMember?.name,
+    phone: updates.phone !== undefined ? updates.phone.trim() : existingMember?.phone,
     whatsapp: updates.whatsapp !== undefined ? updates.whatsapp.trim() : existingMember?.whatsapp,
     sameAsPhone: updates.sameAsPhone !== undefined ? updates.sameAsPhone : existingMember?.sameAsPhone,
     section: updates.section !== undefined ? updates.section : existingMember?.section,
