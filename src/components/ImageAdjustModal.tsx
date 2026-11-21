@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   ZoomIn, 
   ZoomOut, 
@@ -29,6 +30,15 @@ export default function ImageAdjustModal({
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [imgLoaded, setImgLoaded] = useState(false);
+
+  // Lock background page scroll while photo adjuster is open
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, []);
 
   // Load the image
   useEffect(() => {
@@ -85,22 +95,33 @@ export default function ImageAdjustModal({
     drawPreview();
   }, [drawPreview]);
 
-  // Smooth pointer drag handling
+  // Smooth pointer drag handling (scaled cleanly to internal 260px canvas coordinates)
+  const getDragRatio = (el: HTMLElement) => {
+    const rectWidth = el.getBoundingClientRect().width;
+    const canvasWidth = previewCanvasRef.current?.width || 260;
+    return rectWidth > 0 ? canvasWidth / rectWidth : 1;
+  };
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {}
+    const ratio = getDragRatio(e.currentTarget);
     setIsDragging(true);
-    setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
+    setDragStart({
+      x: e.clientX * ratio - offset.x,
+      y: e.clientY * ratio - offset.y
+    });
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!isDragging) return;
     e.preventDefault();
+    const ratio = getDragRatio(e.currentTarget);
     setOffset({
-      x: Math.round(e.clientX - dragStart.x),
-      y: Math.round(e.clientY - dragStart.y)
+      x: Math.round(e.clientX * ratio - dragStart.x),
+      y: Math.round(e.clientY * ratio - dragStart.y)
     });
   };
 
@@ -170,11 +191,16 @@ export default function ImageAdjustModal({
     onApply(outputDataUrl);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-150">
-      <div className="relative max-w-sm w-full bg-slate-900 border border-white/15 rounded-3xl shadow-2xl p-5 text-white flex flex-col items-center">
+  const modalContent = (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Adjust Photo"
+      className="fixed inset-0 z-[110] flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-150 overflow-y-auto"
+    >
+      <div className="relative max-w-sm w-full max-h-[calc(100dvh-1.5rem)] overflow-y-auto bg-slate-900 border border-white/15 rounded-3xl shadow-2xl p-4 sm:p-5 text-white flex flex-col items-center my-auto">
         {/* Header */}
-        <div className="w-full flex items-center justify-between pb-3 border-b border-white/10 mb-4">
+        <div className="w-full flex items-center justify-between pb-2.5 border-b border-white/10 mb-3">
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
               <Scissors className="w-4 h-4" />
@@ -184,6 +210,7 @@ export default function ImageAdjustModal({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close"
             className="p-1.5 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -191,9 +218,9 @@ export default function ImageAdjustModal({
         </div>
 
         {/* Viewport Frame */}
-        <div className="relative mb-4 flex flex-col items-center select-none">
+        <div className="relative mb-3 flex flex-col items-center select-none">
           <div 
-            className="relative w-[260px] h-[260px] rounded-2xl overflow-hidden border-2 border-emerald-400/80 shadow-xl bg-slate-950 cursor-grab active:cursor-grabbing"
+            className="relative w-[min(230px,62vw)] h-[min(230px,62vw)] sm:w-[250px] sm:h-[250px] rounded-2xl overflow-hidden border-2 border-emerald-400/80 shadow-xl bg-slate-950 cursor-grab active:cursor-grabbing"
             style={{ touchAction: 'none' }}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
@@ -210,7 +237,7 @@ export default function ImageAdjustModal({
 
             {/* Passport Oval Guide */}
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="w-48 h-56 rounded-[50%] border-2 border-emerald-400/40" />
+              <div className="w-[74%] h-[86%] rounded-[50%] border-2 border-emerald-400/40" />
             </div>
 
             {/* Subtle drag hint */}
@@ -222,7 +249,7 @@ export default function ImageAdjustModal({
         </div>
 
         {/* Zoom & Quick Controls */}
-        <div className="w-full space-y-3 bg-slate-950/60 p-3 rounded-2xl border border-white/10 mb-4">
+        <div className="w-full space-y-2.5 bg-slate-950/60 p-3 rounded-2xl border border-white/10 mb-3">
           {/* Zoom Slider */}
           <div className="flex items-center gap-2">
             <button
@@ -295,4 +322,6 @@ export default function ImageAdjustModal({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 }
