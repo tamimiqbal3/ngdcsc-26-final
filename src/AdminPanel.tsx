@@ -37,6 +37,8 @@ import {
   ToggleRight,
   Settings,
   Lock,
+  Unlock,
+  Ban,
   Sparkles,
   QrCode
 } from 'lucide-react';
@@ -260,6 +262,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
   const [editingMember, setEditingMember] = useState<SubmissionRecord | null>(null);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [rejectingMember, setRejectingMember] = useState<SubmissionRecord | null>(null);
+  const [restrictingMember, setRestrictingMember] = useState<SubmissionRecord | null>(null);
   const [slipMember, setSlipMember] = useState<SubmissionRecord | null>(null);
 
   // Committee Modals
@@ -772,6 +775,96 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     }
   };
 
+  const handleConfirmRestrict = async (reason: string) => {
+    if (!restrictingMember || !restrictingMember.id) return;
+    const memberId = restrictingMember.id;
+    const target = restrictingMember;
+    const restrictedAt = target.isRestricted && target.restrictedAt ? target.restrictedAt : new Date().toISOString();
+    const cleanReason = reason.trim() || null;
+    setRestrictingMember(null);
+
+    // Optimistic update
+    setMembers(prev =>
+      prev.map(m =>
+        m.id === memberId
+          ? { ...m, isRestricted: true, restrictedReason: cleanReason, restrictedAt }
+          : m
+      )
+    );
+    if (selectedMember && selectedMember.id === memberId) {
+      setSelectedMember(prev =>
+        prev
+          ? { ...prev, isRestricted: true, restrictedReason: cleanReason, restrictedAt }
+          : null
+      );
+    }
+    if (editingMember && editingMember.id === memberId) {
+      setEditingMember(prev =>
+        prev
+          ? { ...prev, isRestricted: true, restrictedReason: cleanReason, restrictedAt }
+          : null
+      );
+    }
+
+    setCopiedToast('Account restricted — Inbox only access active.');
+    setTimeout(() => setCopiedToast(null), 2800);
+
+    try {
+      await updateMemberInFirebase(memberId, {
+        ...target,
+        isRestricted: true,
+        restrictedReason: cleanReason,
+        restrictedAt
+      });
+    } catch (err: any) {
+      console.error('Error restricting member:', err);
+      alert('Error restricting member: ' + (err?.message || 'Check connection'));
+    }
+  };
+
+  const handleUnrestrictMember = async (member: SubmissionRecord) => {
+    if (!member.id) return;
+    const memberId = member.id;
+
+    // Optimistic update
+    setMembers(prev =>
+      prev.map(m =>
+        m.id === memberId
+          ? { ...m, isRestricted: false, restrictedReason: null, restrictedAt: null }
+          : m
+      )
+    );
+    if (selectedMember && selectedMember.id === memberId) {
+      setSelectedMember(prev =>
+        prev
+          ? { ...prev, isRestricted: false, restrictedReason: null, restrictedAt: null }
+          : null
+      );
+    }
+    if (editingMember && editingMember.id === memberId) {
+      setEditingMember(prev =>
+        prev
+          ? { ...prev, isRestricted: false, restrictedReason: null, restrictedAt: null }
+          : null
+      );
+    }
+
+    setCopiedToast('Account restriction removed — full access restored.');
+    setTimeout(() => setCopiedToast(null), 2800);
+
+    try {
+      await updateMemberInFirebase(memberId, {
+        ...member,
+        isRestricted: false,
+        restrictedReason: null,
+        restrictedAt: null
+      });
+    } catch (err: any) {
+      console.error('Error unrestricting member:', err);
+      alert('Error removing restriction: ' + (err?.message || 'Check connection'));
+    }
+  };
+
   const handleDeleteMember = async (memberId: string) => {
     if (!window.confirm('Are you sure you want to permanently delete this member registration?')) return;
     const target = members.find(m => m.id === memberId);
@@ -862,7 +955,9 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       'Skills & Talents',
       'Experience & Achievements',
       'Status',
-      'Rejection Reason'
+      'Rejection Reason',
+      'Account Restricted',
+      'Restriction Reason'
     ];
 
     const rows = members.map(m => [
@@ -881,7 +976,9 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       `"${(m.skills || []).join('; ')}"`,
       `"${(m.experienceAchievements || '').replace(/"/g, '""')}"`,
       `"${m.status || 'pending'}"`,
-      `"${m.rejectionReason || ''}"`
+      `"${m.rejectionReason || ''}"`,
+      `"${m.isRestricted ? 'Yes' : 'No'}"`,
+      `"${(m.restrictedReason || '').replace(/"/g, '""')}"`
     ]);
 
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
@@ -955,7 +1052,9 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
 
         const matchBatch = filterBatch === 'All' || m.batch === filterBatch;
         const matchSection = filterSection === 'All' || m.section === filterSection;
-        const matchStatus = filterStatus === 'All' || m.status === filterStatus;
+        const matchStatus =
+          filterStatus === 'All' ||
+          (filterStatus === 'restricted' ? Boolean(m.isRestricted) : m.status === filterStatus);
         const matchSkill = filterSkill === 'All' || (m.skills || []).some(s => s.toLowerCase().trim() === filterSkill.toLowerCase().trim());
 
         return matchSearch && matchBatch && matchSection && matchStatus && matchSkill;
@@ -1432,6 +1531,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                     <option value="pending">Pending</option>
                     <option value="approved">Approved</option>
                     <option value="rejected">Rejected</option>
+                    <option value="restricted">Restricted Accounts</option>
                   </select>
 
                   {/* Skill Filter */}
@@ -1601,15 +1701,23 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                         </div>
                       </div>
 
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase shrink-0 ${
-                        member.status === 'approved'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : member.status === 'rejected'
-                          ? 'bg-rose-100 text-rose-800'
-                          : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {member.status || 'pending'}
-                      </span>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                          member.status === 'approved'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : member.status === 'rejected'
+                            ? 'bg-rose-100 text-rose-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {member.status || 'pending'}
+                        </span>
+                        {member.isRestricted && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-red-600 text-white shadow-2xs">
+                            <Ban className="w-2.5 h-2.5" />
+                            <span>Restricted</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Contacts & Quick Copy */}
@@ -1669,6 +1777,25 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                             <span>Approved</span>
                           </span>
                         )}
+                        {member.isRestricted ? (
+                          <button
+                            type="button"
+                            onClick={() => handleUnrestrictMember(member)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
+                          >
+                            <Unlock className="w-3.5 h-3.5" />
+                            <span>Unrestrict</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setRestrictingMember(member)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                            <span>Restrict</span>
+                          </button>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1">
@@ -1698,6 +1825,27 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                         </button>
                       </div>
                     </div>
+
+                    {member.isRestricted && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs">
+                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                          <span className="text-[10px] font-black text-red-800 uppercase tracking-wider flex items-center gap-1">
+                            <Ban className="w-3 h-3" />
+                            <span>Account Restricted (Inbox Only):</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setRestrictingMember(member)}
+                            className="text-[10px] font-bold text-red-700 hover:text-red-900 underline cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-red-950 font-medium line-clamp-2">
+                          {member.restrictedReason || 'Slip, Attendance, Profile Edit & Password are hidden.'}
+                        </p>
+                      </div>
+                    )}
 
                     {member.status === 'rejected' && (
                       <div className="mt-2.5 p-2 rounded-xl bg-rose-50 border border-rose-200 text-xs">
@@ -1859,15 +2007,36 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                           </td>
 
                           <td className="py-3 px-4">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                              member.status === 'approved'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : member.status === 'rejected'
-                                ? 'bg-rose-100 text-rose-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}>
-                              {member.status || 'pending'}
-                            </span>
+                            <div className="flex flex-col items-start gap-1">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                member.status === 'approved'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : member.status === 'rejected'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                {member.status || 'pending'}
+                              </span>
+                              {member.isRestricted && (
+                                <div className="flex items-center gap-1">
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-red-600 text-white shadow-2xs"
+                                    title={member.restrictedReason || 'Restricted — Inbox Only'}
+                                  >
+                                    <Ban className="w-2.5 h-2.5" />
+                                    <span>Restricted</span>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setRestrictingMember(member)}
+                                    className="text-[10px] underline font-bold text-red-700 hover:text-red-900 cursor-pointer"
+                                    title="Edit restriction note"
+                                  >
+                                    Edit
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                             {member.status === 'rejected' && (
                               <div className="mt-1 flex items-center gap-1 text-[10px] text-rose-700">
                                 <span className="truncate max-w-[120px]" title={member.rejectionReason || 'No reason provided'}>
@@ -1908,6 +2077,28 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                                 >
                                   <XCircle className="w-3.5 h-3.5" />
                                   <span>Reject</span>
+                                </button>
+                              )}
+
+                              {member.isRestricted ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnrestrictMember(member)}
+                                  title="Remove account restriction"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
+                                >
+                                  <Unlock className="w-3.5 h-3.5" />
+                                  <span>Unrestrict</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setRestrictingMember(member)}
+                                  title="Restrict account (Inbox only)"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                  <span>Restrict</span>
                                 </button>
                               )}
 
@@ -2647,6 +2838,12 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                     }`}>
                       Status: {selectedMember.status || 'pending'}
                     </span>
+                    {selectedMember.isRestricted && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-red-600 text-white">
+                        <Ban className="w-3 h-3" />
+                        <span>Account Restricted</span>
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2753,6 +2950,30 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                 </div>
               )}
 
+              {/* Account Restriction Banner if Restricted */}
+              {selectedMember.isRestricted && (
+                <div className="pt-2 border-t border-slate-100">
+                  <div className="p-3 rounded-xl bg-red-50 border border-red-200">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-black text-red-800 uppercase tracking-wider flex items-center gap-1">
+                        <Ban className="w-3.5 h-3.5 text-red-600" />
+                        <span>Account Restricted (Only Inbox Open):</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setRestrictingMember(selectedMember)}
+                        className="text-[11px] font-bold text-red-700 hover:text-red-900 underline cursor-pointer"
+                      >
+                        Edit Note
+                      </button>
+                    </div>
+                    <p className="text-xs text-red-950 font-medium whitespace-pre-wrap leading-relaxed">
+                      {selectedMember.restrictedReason || 'Member cannot access Payment/Confirmation Slip, Attendance, Edit Profile, or Change Password. Only Inbox remains open.'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Rejection Reason if Rejected */}
               {selectedMember.status === 'rejected' && (
                 <div className="pt-2 border-t border-slate-100">
@@ -2794,6 +3015,25 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                 >
                   Reject
                 </button>
+                {selectedMember.isRestricted ? (
+                  <button
+                    type="button"
+                    onClick={() => handleUnrestrictMember(selectedMember)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    <Unlock className="w-3.5 h-3.5" />
+                    <span>Unrestrict</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setRestrictingMember(selectedMember)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    <Ban className="w-3.5 h-3.5" />
+                    <span>Restrict</span>
+                  </button>
+                )}
                 {selectedMember.status === 'approved' && (
                   <button
                     type="button"
@@ -3040,6 +3280,64 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
                 </div>
               </div>
 
+              {/* Account Access Restriction Toggle */}
+              <div className={`p-3.5 rounded-2xl border space-y-2 ${
+                editingMember.isRestricted
+                  ? 'bg-red-50/90 border-red-200'
+                  : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                      <Ban className={`w-3.5 h-3.5 ${editingMember.isRestricted ? 'text-red-600' : 'text-slate-500'}`} />
+                      <span>Restrict Account Access</span>
+                    </p>
+                    <p className="text-[11px] text-slate-600 leading-snug">
+                      When enabled, Confirmation Slip, Attendance, Edit Profile &amp; Password are hidden — only Inbox stays open.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextRestricted = !editingMember.isRestricted;
+                      setEditingMember({
+                        ...editingMember,
+                        isRestricted: nextRestricted,
+                        restrictedReason: nextRestricted ? (editingMember.restrictedReason || '') : null,
+                        restrictedAt: nextRestricted ? (editingMember.restrictedAt || new Date().toISOString()) : null
+                      });
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 ${
+                      editingMember.isRestricted
+                        ? 'bg-red-600 hover:bg-red-700 text-white shadow-2xs'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
+                    }`}
+                  >
+                    {editingMember.isRestricted ? 'Restricted' : 'Active'}
+                  </button>
+                </div>
+
+                {editingMember.isRestricted && (
+                  <div>
+                    <label className="font-bold text-red-900 block mb-1 text-[11px]">
+                      Restriction Note (Optional, visible to member):
+                    </label>
+                    <input
+                      type="text"
+                      value={editingMember.restrictedReason || ''}
+                      onChange={(e) =>
+                        setEditingMember({
+                          ...editingMember,
+                          restrictedReason: e.target.value
+                        })
+                      }
+                      placeholder="e.g., Verification pending — please message President in Inbox"
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-red-300 text-slate-900 text-xs focus:outline-none focus:border-red-500"
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="font-bold text-slate-700 block mb-1">Phone</label>
@@ -3170,6 +3468,15 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
           member={rejectingMember}
           onClose={() => setRejectingMember(null)}
           onConfirm={handleConfirmRejection}
+        />
+      )}
+
+      {/* ===================== MODAL: RESTRICT MEMBER ACCOUNT ===================== */}
+      {restrictingMember && (
+        <RestrictModal
+          member={restrictingMember}
+          onClose={() => setRestrictingMember(null)}
+          onConfirm={handleConfirmRestrict}
         />
       )}
 
@@ -3942,6 +4249,128 @@ function RejectModal({
             >
               <XCircle className="w-3.5 h-3.5" />
               <span>{submitting ? 'Rejecting...' : 'Confirm Rejection'}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------
+// RESTRICT ACCOUNT MODAL (Locks Slip, Attendance, Edit & Password; keeps Inbox open)
+// -------------------------------------------------------------
+function RestrictModal({
+  member,
+  onClose,
+  onConfirm
+}: {
+  member: SubmissionRecord;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState(member.restrictedReason || '');
+  const [submitting, setSubmitting] = useState(false);
+
+  const quickReasons = [
+    'Account temporarily restricted — contact President via Inbox',
+    'Membership verification or payment confirmation pending',
+    'Incomplete or inaccurate profile information',
+    'Under Executive Committee review'
+  ];
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    onConfirm(reason.trim());
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="relative max-w-md w-full bg-white rounded-3xl shadow-2xl border border-amber-200 overflow-hidden text-slate-900 font-sans">
+        <div className="p-4 sm:p-5 border-b border-amber-100 flex items-center justify-between bg-amber-50/80">
+          <div className="flex items-center gap-2 text-amber-900">
+            <Ban className="w-5 h-5 text-red-600" />
+            <h3 className="text-base font-black">
+              {member.isRestricted ? 'Update Account Restriction' : 'Restrict Member Account'}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
+            <div className="w-10 h-12 rounded-lg bg-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+              {member.photo ? (
+                <img src={member.photo} alt={member.name} className="w-full h-full object-cover" />
+              ) : (
+                <UserIcon className="w-5 h-5 text-slate-500" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <h4 className="font-black text-slate-900 text-sm truncate">{member.name}</h4>
+              <p className="text-[11px] text-slate-500 font-mono">
+                {member.batch} • Section {member.section} • Roll: {member.studentId || 'N/A'}
+              </p>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-900 text-[11px] leading-relaxed font-medium">
+            When restricted, this member cannot access <strong>Confirmation / Payment Slip</strong>, <strong>Attendance</strong>, <strong>Edit Profile</strong>, or <strong>Change Password</strong>. Only <strong>Inbox</strong> remains open so they can message the President.
+          </div>
+
+          <div>
+            <label className="font-bold text-slate-700 block mb-1">
+              Restriction Note (Optional, visible to member):
+            </label>
+            <textarea
+              rows={3}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g., Payment or document verification pending. Please message the President in Inbox."
+              className="w-full p-3 rounded-xl bg-slate-50 border border-amber-300 focus:border-red-500 focus:bg-white text-xs leading-relaxed font-sans"
+            />
+          </div>
+
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+              Quick Notes (Click to add):
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {quickReasons.map((qr) => (
+                <button
+                  key={qr}
+                  type="button"
+                  onClick={() => setReason(qr)}
+                  className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-200 text-slate-600 border border-slate-200 text-[10px] font-semibold transition-all cursor-pointer text-left"
+                >
+                  + {qr}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+            >
+              <Ban className="w-3.5 h-3.5" />
+              <span>{submitting ? 'Saving...' : member.isRestricted ? 'Update Restriction' : 'Restrict Account'}</span>
             </button>
           </div>
         </form>

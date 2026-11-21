@@ -29,7 +29,8 @@ import {
   EyeOff,
   ClipboardCheck,
   QrCode,
-  Inbox
+  Inbox,
+  Ban
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
@@ -60,6 +61,7 @@ import {
   getTodayLocalDateStr,
   isPresidentEmail,
   subscribeToMembers,
+  subscribeToMemberById,
   subscribeToPresidentInboxThreads,
   subscribeToMemberInboxThread
 } from './services/firebase';
@@ -110,6 +112,8 @@ export default function MemberDashboard({
 
   const [loading, setLoading] = useState(!initialCached && !isPresident);
   const [member, setMember] = useState<SubmissionRecord | null>(initialCached);
+  const isAccountRestricted = Boolean(member?.isRestricted) && !isPresident;
+
   const [activePage, setActivePage] = useState<DashboardPage>(
     requestedPage?.page || (isPresident && !initialCached ? 'inbox' : 'slip')
   );
@@ -119,9 +123,19 @@ export default function MemberDashboard({
 
   useEffect(() => {
     if (requestedPage?.page) {
-      setActivePage(requestedPage.page);
+      if (isAccountRestricted && requestedPage.page !== 'inbox') {
+        setActivePage('slip');
+      } else {
+        setActivePage(requestedPage.page);
+      }
     }
-  }, [requestedPage?.nonce, requestedPage?.page]);
+  }, [requestedPage?.nonce, requestedPage?.page, isAccountRestricted]);
+
+  useEffect(() => {
+    if (isAccountRestricted && activePage !== 'inbox' && activePage !== 'slip') {
+      setActivePage('slip');
+    }
+  }, [isAccountRestricted, activePage]);
 
   useEffect(() => {
     onActivePageChange?.(activePage);
@@ -220,6 +234,19 @@ export default function MemberDashboard({
       active = false;
     };
   }, [user.uid, user.email]);
+
+  // Real-time listener for this member document so admin restriction/status updates take effect immediately
+  useEffect(() => {
+    if (!member?.id) return;
+    const unsub = subscribeToMemberById(member.id, (liveRecord) => {
+      if (!liveRecord) return;
+      setMember(liveRecord);
+      if (!isFormDirtyRef.current) {
+        populateForm(liveRecord);
+      }
+    });
+    return () => unsub();
+  }, [member?.id]);
 
   // Real-time subscription to ONLY this member's attendance & official session dates
   useEffect(() => {
@@ -322,6 +349,9 @@ export default function MemberDashboard({
   );
 
   const switchPage = (page: DashboardPage) => {
+    if (isAccountRestricted && page !== 'inbox' && page !== 'slip') {
+      return;
+    }
     setActivePage(page);
     setErrorMsg(null);
     setSaveSuccessMsg(null);
@@ -386,6 +416,11 @@ export default function MemberDashboard({
 
     setErrorMsg(null);
     setSaveSuccessMsg(null);
+
+    if (isAccountRestricted) {
+      setErrorMsg('Your account is currently restricted. Only Inbox access is available.');
+      return;
+    }
 
     if (!isEditAllowed) {
       setErrorMsg('Profile editing is currently disabled by the club administrator.');
@@ -454,7 +489,9 @@ export default function MemberDashboard({
       setTimeout(() => setSaveSuccessMsg(null), 4000);
     } catch (err: any) {
       console.error('Error updating profile:', err);
-      if (err?.code === 'edit-locked-by-admin') {
+      if (err?.code === 'account-restricted') {
+        setErrorMsg('Your account is currently restricted. Only Inbox access is available.');
+      } else if (err?.code === 'edit-locked-by-admin') {
         setErrorMsg('Profile editing is currently disabled by the club administrator.');
       } else if (err?.code === 'permission-denied') {
         setErrorMsg('Profile editing is currently locked or unavailable. Please contact the club administrator.');
@@ -515,7 +552,7 @@ export default function MemberDashboard({
   };
 
   const handleDirectDownloadSlip = async () => {
-    if (!member || downloadingSlip) return;
+    if (!member || isAccountRestricted || downloadingSlip) return;
     try {
       setDownloadingSlip(true);
       setDownloadSlipSuccess(false);
@@ -586,7 +623,7 @@ export default function MemberDashboard({
       <InboxPanel
         fullScreen
         onBack={() => (member ? switchPage('slip') : onBackToHome())}
-        backLabel={member ? 'Back to Dashboard' : 'Back to Home'}
+        backLabel={isAccountRestricted ? 'Back' : member ? 'Back to Dashboard' : 'Back to Home'}
         currentUserEmail={user.email || member?.email || ''}
         currentUserUid={user.uid}
         currentMember={member}
@@ -688,6 +725,14 @@ export default function MemberDashboard({
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
                     {PRESIDENT_ROLE_LABEL}
                   </span>
+                ) : isAccountRestricted ? (
+                  <span className="inline-flex items-center gap-1.5 flex-wrap">
+                    <span>{member?.name}</span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 text-[10px] font-black uppercase">
+                      <Ban className="w-2.5 h-2.5" />
+                      <span>Restricted</span>
+                    </span>
+                  </span>
                 ) : activePage === 'inbox' ? (
                   <span>{member?.name}</span>
                 ) : (
@@ -699,7 +744,7 @@ export default function MemberDashboard({
             </div>
 
             <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-100 border border-slate-200/80 self-start sm:self-auto">
-              {member && (
+              {member && !isAccountRestricted && (
                 <>
                   <button
                     type="button"
@@ -747,7 +792,7 @@ export default function MemberDashboard({
                 )}
               </button>
 
-              {member && (
+              {member && !isAccountRestricted && (
                 <>
                   <button
                     type="button"
@@ -785,8 +830,55 @@ export default function MemberDashboard({
 
           {/* Inbox opens in dedicated full-screen mode above */}
 
+          {/* RESTRICTED ACCOUNT VIEW: Everything hidden except Inbox */}
+          {member && isAccountRestricted && (
+            <div className="bg-white rounded-2xl border border-red-200 shadow-sm p-6 sm:p-10 text-center space-y-5 animate-in fade-in duration-200">
+              <div className="w-16 h-16 mx-auto rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center text-red-600">
+                <Ban className="w-8 h-8" />
+              </div>
+
+              <div className="space-y-2 max-w-md mx-auto">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-50 border border-red-200 text-red-700 text-xs font-black uppercase tracking-wide">
+                  <Lock className="w-3 h-3" />
+                  <span>Account Restricted • Inbox Only</span>
+                </span>
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 pt-1">
+                  Your Account Has Been Restricted
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                  Confirmation/Payment Slip, Attendance, Profile Editing, and Password settings are currently disabled for your account. Your <strong>Inbox</strong> remains open so you can contact the President directly.
+                </p>
+
+                {member.restrictedReason && (
+                  <div className="mt-3 p-3.5 rounded-xl bg-red-50/80 border border-red-200 text-xs text-red-900 font-semibold text-left">
+                    <span className="block text-[10px] font-black uppercase tracking-wider text-red-700 mb-0.5">
+                      Administrator Note:
+                    </span>
+                    <p className="leading-relaxed">{member.restrictedReason}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-1 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => switchPage('inbox')}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-red-600 hover:bg-red-700 active:scale-[0.98] text-white text-xs sm:text-sm font-black shadow-md shadow-red-600/20 transition-all cursor-pointer"
+                >
+                  <Inbox className="w-4 h-4" />
+                  <span>Open Inbox</span>
+                  {inboxUnreadCount > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-white text-red-600 text-[10px] font-black leading-none">
+                      {inboxUnreadCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* PAGE 1: CONFIRMATION SLIP PAGE */}
-          {member && activePage === 'slip' && (
+          {member && !isAccountRestricted && activePage === 'slip' && (
             <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-6 animate-in fade-in duration-200">
               {member.status === 'approved' ? (
                 <>
@@ -1016,7 +1108,7 @@ export default function MemberDashboard({
           )}
 
           {/* PAGE 2: MY ATTENDANCE PAGE (STRICTLY PERSONAL) */}
-          {member && activePage === 'attendance' && (
+          {member && !isAccountRestricted && activePage === 'attendance' && (
             <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-6 text-left animate-in fade-in duration-200">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200/80">
                 <div>
@@ -1170,7 +1262,7 @@ export default function MemberDashboard({
           )}
 
           {/* PAGE 3: EDIT PROFILE PAGE */}
-          {member && activePage === 'edit' && (
+          {member && !isAccountRestricted && activePage === 'edit' && (
             <form
               onSubmit={handleSaveChanges}
               onChange={() => {
@@ -1680,7 +1772,7 @@ export default function MemberDashboard({
           )}
 
           {/* PAGE 3: CHANGE PASSWORD PAGE */}
-          {member && activePage === 'password' && (
+          {member && !isAccountRestricted && activePage === 'password' && (
             <form
               onSubmit={handlePasswordChangeSubmit}
               className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-5 text-left animate-in fade-in duration-200"
@@ -1831,7 +1923,7 @@ export default function MemberDashboard({
       )}
 
       {/* Hidden Offscreen A4 Slip Template for Approved Members */}
-      {member && member.status === 'approved' && (
+      {member && !isAccountRestricted && member.status === 'approved' && (
         <div
           style={{
             position: 'absolute',

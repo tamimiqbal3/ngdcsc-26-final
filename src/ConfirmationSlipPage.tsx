@@ -5,7 +5,8 @@ import {
   CheckCircle2, 
   FileText, 
   User, 
-  Check
+  Check,
+  Ban
 } from 'lucide-react';
 import { PublicMemberStatus } from './types';
 import { toPng } from 'html-to-image';
@@ -161,6 +162,37 @@ export default function ConfirmationSlipPage({
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Back to Status Search</span>
         </button>
+      </div>
+    );
+  }
+
+  if (member.isRestricted) {
+    return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 bg-slate-50 text-slate-800">
+        <div className="max-w-md w-full bg-white rounded-3xl border border-red-200 shadow-lg p-7 text-center space-y-4">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center text-red-600">
+            <Ban className="w-7 h-7" />
+          </div>
+          <div className="space-y-1.5">
+            <h1 className="text-xl font-black text-slate-900">Account Restricted</h1>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              This confirmation slip cannot be accessed while the account is restricted. Sign in to your dashboard to contact the President via Inbox.
+            </p>
+            {member.restrictedReason && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs font-semibold text-red-800 mt-2">
+                {member.restrictedReason}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Status Search</span>
+          </button>
+        </div>
       </div>
     );
   }

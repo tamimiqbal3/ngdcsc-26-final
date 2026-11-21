@@ -15,7 +15,8 @@ import {
   Check, 
   CreditCard, 
   Download, 
-  Sparkles 
+  Sparkles,
+  Ban
 } from 'lucide-react';
 import { PublicMemberStatus } from './types';
 import { searchMemberStatus } from './services/firebase';
@@ -321,7 +322,7 @@ export default function MemberStatusSearch({
                     )}
                   </div>
 
-                  {memberResult.status === 'approved' && (
+                  {memberResult.status === 'approved' && !memberResult.isRestricted && (
                     <div className="shrink-0">
                       <MemberQrCode
                         membershipId={memberResult.membershipId || 'NGDCSC-APPROVED'}
@@ -334,6 +335,23 @@ export default function MemberStatusSearch({
 
                 {/* Member Status Badge & Direct PDF Download Action */}
                 <div className="w-full pt-1">
+                  {memberResult.isRestricted ? (
+                    <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-900 space-y-2 text-center">
+                      <div className="flex items-center justify-center gap-1.5 text-sm font-black text-red-700">
+                        <Ban className="w-5 h-5 text-red-600" />
+                        <span>Status: Account Restricted</span>
+                      </div>
+                      <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                        Your account has been restricted by the club administrator. Confirmation/Payment Slip and QR access are currently disabled. Please sign in to your Dashboard and use Inbox to contact the President.
+                      </p>
+                      {memberResult.restrictedReason && (
+                        <p className="text-xs font-semibold text-red-800 bg-red-100/70 p-2.5 rounded-xl border border-red-200 mt-2">
+                          Note: {memberResult.restrictedReason}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <>
                   {memberResult.status === 'approved' && (
                     <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-2 text-center">
                       <div className="flex items-center justify-center gap-1.5 text-sm font-black text-emerald-800">
@@ -419,6 +437,8 @@ export default function MemberStatusSearch({
                       )}
                     </div>
                   )}
+                    </>
+                  )}
                 </div>
 
               </div>
@@ -449,7 +469,7 @@ export default function MemberStatusSearch({
       </div>
 
       {/* Hidden Offscreen Pristine A4 Slip Template for Direct PDF Download */}
-      {memberResult && memberResult.status === 'approved' && (
+      {memberResult && !memberResult.isRestricted && memberResult.status === 'approved' && (
         <div 
           style={{ 
             position: 'absolute', 

@@ -45,6 +45,9 @@ export interface SubmissionRecord extends MembershipFormData {
   submittedAt: string;
   status?: MemberStatus;
   rejectionReason?: string;
+  isRestricted?: boolean;
+  restrictedReason?: string | null;
+  restrictedAt?: string | null;
   createdAt?: string;
   lastEmailSent?: {
     type: EmailType;
@@ -62,6 +65,9 @@ export interface PublicMemberStatus {
   photo: string | null;
   status: MemberStatus;
   rejectionReason?: string;
+  isRestricted?: boolean;
+  restrictedReason?: string | null;
+  restrictedAt?: string | null;
   batch?: BatchType | string;
   section?: SectionType | string;
   submittedAt?: string;

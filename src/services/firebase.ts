@@ -329,6 +329,9 @@ export async function saveMemberToFirebase(member: SubmissionRecord): Promise<st
     photo: recordWithId.photo || null,
     status: recordWithId.status || 'pending',
     rejectionReason: recordWithId.rejectionReason || null,
+    isRestricted: Boolean(recordWithId.isRestricted),
+    restrictedReason: recordWithId.isRestricted ? (recordWithId.restrictedReason || null) : null,
+    restrictedAt: recordWithId.isRestricted ? (recordWithId.restrictedAt || null) : null,
     batch: recordWithId.batch,
     section: recordWithId.section,
     submittedAt: recordWithId.submittedAt || recordWithId.createdAt,
@@ -529,6 +532,9 @@ export async function updateMemberInFirebase(id: string, updates: Partial<Submis
   let effectivePhoto = updates.photo !== undefined ? updates.photo : (targetMember?.photo || null);
   let effectiveStatus = updates.status !== undefined ? updates.status : (targetMember?.status || 'pending');
   let effectiveReason = updates.rejectionReason !== undefined ? updates.rejectionReason : (targetMember?.rejectionReason || null);
+  let effectiveRestricted = updates.isRestricted !== undefined ? Boolean(updates.isRestricted) : Boolean(targetMember?.isRestricted);
+  let effectiveRestrictedReason = updates.restrictedReason !== undefined ? (updates.restrictedReason || null) : (targetMember?.restrictedReason || null);
+  let effectiveRestrictedAt = updates.restrictedAt !== undefined ? (updates.restrictedAt || null) : (targetMember?.restrictedAt || null);
   let effectiveBatch = updates.batch !== undefined ? updates.batch : (targetMember?.batch || null);
   let effectiveSection = updates.section !== undefined ? updates.section : (targetMember?.section || null);
   let effectiveSubmittedAt = updates.submittedAt || targetMember?.submittedAt || targetMember?.createdAt || null;
@@ -547,6 +553,15 @@ export async function updateMemberInFirebase(id: string, updates: Partial<Submis
         if (!effectiveBatch && d.batch) effectiveBatch = d.batch;
         if (!effectiveSection && d.section) effectiveSection = d.section;
         if (!effectiveSubmittedAt && (d.submittedAt || d.createdAt)) effectiveSubmittedAt = d.submittedAt || d.createdAt;
+        if (updates.isRestricted === undefined && d.isRestricted !== undefined) {
+          effectiveRestricted = Boolean(d.isRestricted);
+        }
+        if (updates.restrictedReason === undefined && d.restrictedReason !== undefined) {
+          effectiveRestrictedReason = d.restrictedReason || null;
+        }
+        if (updates.restrictedAt === undefined && d.restrictedAt !== undefined) {
+          effectiveRestrictedAt = d.restrictedAt || null;
+        }
       }
     } catch (err) {
       console.warn('Firestore member lookup error:', err);
@@ -559,6 +574,9 @@ export async function updateMemberInFirebase(id: string, updates: Partial<Submis
     photo: effectivePhoto,
     status: effectiveStatus,
     rejectionReason: effectiveStatus === 'approved' ? null : effectiveReason,
+    isRestricted: effectiveRestricted,
+    restrictedReason: effectiveRestricted ? effectiveRestrictedReason : null,
+    restrictedAt: effectiveRestricted ? effectiveRestrictedAt : null,
     batch: effectiveBatch,
     section: effectiveSection,
     submittedAt: effectiveSubmittedAt,
@@ -762,6 +780,9 @@ export async function searchMemberStatus(queryStr: string): Promise<PublicMember
               photo: enriched.photo || null,
               status: (enriched.status as MemberStatus) || 'pending',
               rejectionReason: enriched.rejectionReason || undefined,
+              isRestricted: Boolean(enriched.isRestricted),
+              restrictedReason: enriched.restrictedReason || undefined,
+              restrictedAt: enriched.restrictedAt || undefined,
               batch: enriched.batch,
               section: enriched.section,
               submittedAt: enriched.submittedAt || enriched.createdAt,
@@ -812,6 +833,9 @@ export async function searchMemberStatus(queryStr: string): Promise<PublicMember
               photo: data.photo || null,
               status: (data.status as MemberStatus) || 'pending',
               rejectionReason: data.rejectionReason || undefined,
+              isRestricted: Boolean(data.isRestricted),
+              restrictedReason: data.restrictedReason || undefined,
+              restrictedAt: data.restrictedAt || undefined,
               batch: data.batch,
               section: data.section,
               submittedAt: data.submittedAt || data.createdAt,
@@ -1781,8 +1805,41 @@ export async function fetchMemberProfileForUser(
 }
 
 /**
+ * Live real-time listener for a single member profile document by ID.
+ * Ensures status or account restriction changes take effect immediately on the member dashboard.
+ */
+export function subscribeToMemberById(
+  memberId: string,
+  callback: (record: SubmissionRecord | null) => void
+): Unsubscribe {
+  if (!memberId) return () => {};
+  const docRef = doc(db, 'members', memberId);
+  return onSnapshot(
+    docRef,
+    (snap) => {
+      if (!snap.exists()) {
+        callback(null);
+        return;
+      }
+      const record = { id: snap.id, ...snap.data() } as SubmissionRecord;
+      try {
+        const cached = getCachedMembers();
+        const updated = [record, ...cached.filter((m) => m.id !== record.id)];
+        localStorage.setItem(LS_MEMBERS_KEY, JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+      callback(record);
+    },
+    (err) => {
+      console.warn('Member doc listener warning:', err);
+    }
+  );
+}
+
+/**
  * Self-service profile update from My Dashboard.
- * Strictly strips studentId (Roll), email, status, membershipId, and rejectionReason so locked fields can NEVER be changed.
+ * Strictly blocks restricted accounts and strips studentId (Roll), email, status, membershipId, rejectionReason & restriction fields.
  */
 export async function updateOwnMemberProfile(
   memberId: string,
@@ -1790,16 +1847,30 @@ export async function updateOwnMemberProfile(
   updates: Partial<MembershipFormData>,
   existingMember?: SubmissionRecord
 ): Promise<SubmissionRecord> {
-  // Verify admin allows member profile editing
+  if (existingMember?.isRestricted) {
+    const err: any = new Error('Your account is currently restricted by the club administrator.');
+    err.code = 'account-restricted';
+    throw err;
+  }
+
+  // Verify live member doc is not restricted & admin allows member profile editing
   try {
-    const settingSnap = await getDoc(doc(db, 'settings', 'membership_registration'));
+    const [settingSnap, liveMemberSnap] = await Promise.all([
+      getDoc(doc(db, 'settings', 'membership_registration')),
+      getDoc(doc(db, 'members', memberId))
+    ]);
+    if (liveMemberSnap.exists() && liveMemberSnap.data()?.isRestricted === true) {
+      const err: any = new Error('Your account is currently restricted by the club administrator.');
+      err.code = 'account-restricted';
+      throw err;
+    }
     if (settingSnap.exists() && settingSnap.data()?.allowMemberEdit === false) {
       const err: any = new Error('Profile editing is currently disabled by the club administrator.');
       err.code = 'edit-locked-by-admin';
       throw err;
     }
   } catch (checkErr: any) {
-    if (checkErr?.code === 'edit-locked-by-admin') {
+    if (checkErr?.code === 'edit-locked-by-admin' || checkErr?.code === 'account-restricted') {
       throw checkErr;
     }
   }
