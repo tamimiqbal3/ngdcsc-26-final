@@ -24,6 +24,7 @@ import {
   doc, 
   setDoc, 
   getDoc, 
+  getDocFromServer,
   getDocs, 
   getDocsFromServer,
   updateDoc, 
@@ -607,13 +608,13 @@ export async function updateMemberInFirebase(id: string, updates: Partial<Submis
     if (digitsOnly) lookupKeys.add(digitsOnly);
   }
 
-  for (const k of Array.from(lookupKeys)) {
-    try {
-      await setDoc(doc(db, 'member_status', k), statusPayload, { merge: true });
-    } catch (e) {
-      console.warn(`Firestore member_status sync warning for key ${k}:`, e);
-    }
-  }
+  await Promise.allSettled(
+    Array.from(lookupKeys).map((k) =>
+      setDoc(doc(db, 'member_status', k), statusPayload, { merge: true }).catch((e) => {
+        console.warn(`Firestore member_status sync warning for key ${k}:`, e);
+      })
+    )
+  );
 }
 
 /**
@@ -749,22 +750,23 @@ export async function searchMemberStatus(queryStr: string): Promise<PublicMember
     }
 
     try {
-      const statusPromises = Array.from(candidateKeys).map(k => getDoc(doc(db, 'member_status', k)).catch(() => null));
+      const fetchFreshDoc = (ref: any) =>
+        getDocFromServer(ref).catch(() => getDoc(ref)).catch(() => null);
+      const statusPromises = Array.from(candidateKeys).map(k => fetchFreshDoc(doc(db, 'member_status', k)));
       const statusSnaps = await Promise.all(statusPromises);
       for (const snap of statusSnaps) {
         if (snap && snap.exists()) {
-          const data = snap.data();
+          const data = (snap.data() || {}) as Record<string, any>;
           if (data && data.status !== 'deleted') {
-            // Attempt to enrich with full members record if available
-            let enriched: any = { ...data };
+            // Attempt to enrich with full authoritative 'members' record so restriction/status is never stale
+            let enriched: Record<string, any> = { ...data };
             const memberDocId = data.id || (snap.id.startsWith('ngdc_') ? snap.id : null);
             if (memberDocId) {
-              try {
-                const fullSnap = await getDoc(doc(db, 'members', memberDocId));
-                if (fullSnap.exists()) {
-                  enriched = { ...fullSnap.data(), ...data };
-                }
-              } catch {}
+              const fullSnap = await fetchFreshDoc(doc(db, 'members', memberDocId));
+              if (fullSnap && fullSnap.exists()) {
+                const fullData = (fullSnap.data() || {}) as Record<string, any>;
+                enriched = { ...data, ...fullData, id: fullSnap.id };
+              }
             }
             if (!enriched.phone || !enriched.email || !enriched.studentId) {
               const cached = getCachedMembers();
@@ -820,7 +822,9 @@ export async function searchMemberStatus(queryStr: string): Promise<PublicMember
         }
       }
 
-      const querySnaps = await Promise.all(queriesToRun.map(q => getDocs(q).catch(() => null)));
+      const querySnaps = await Promise.all(
+        queriesToRun.map(q => getDocsFromServer(q).catch(() => getDocs(q)).catch(() => null))
+      );
       for (const qSnap of querySnaps) {
         if (qSnap && !qSnap.empty) {
           const docSnap = qSnap.docs[0];
@@ -1784,7 +1788,9 @@ export async function fetchMemberProfileForUser(
       }
     }
 
-    const snaps = await Promise.all(queries.map((q) => getDocs(q).catch(() => null)));
+    const snaps = await Promise.all(
+      queries.map((q) => getDocsFromServer(q).catch(() => getDocs(q)).catch(() => null))
+    );
     for (const snap of snaps) {
       if (snap && !snap.empty) {
         const d = snap.docs[0];

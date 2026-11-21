@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { User as FirebaseUser } from 'firebase/auth';
 import {
   ArrowLeft,
@@ -112,7 +113,9 @@ export default function MemberDashboard({
 
   const [loading, setLoading] = useState(!initialCached && !isPresident);
   const [member, setMember] = useState<SubmissionRecord | null>(initialCached);
+  const [liveVerified, setLiveVerified] = useState(isPresident);
   const isAccountRestricted = Boolean(member?.isRestricted) && !isPresident;
+  const [restrictedPopupDismissed, setRestrictedPopupDismissed] = useState(false);
 
   const [activePage, setActivePage] = useState<DashboardPage>(
     requestedPage?.page || (isPresident && !initialCached ? 'inbox' : 'slip')
@@ -120,6 +123,12 @@ export default function MemberDashboard({
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
   const [presidentMembersDirectory, setPresidentMembersDirectory] = useState<SubmissionRecord[]>([]);
   const isFormDirtyRef = useRef(false);
+
+  useEffect(() => {
+    if (isAccountRestricted) {
+      setRestrictedPopupDismissed(false);
+    }
+  }, [isAccountRestricted]);
 
   useEffect(() => {
     if (requestedPage?.page) {
@@ -219,19 +228,38 @@ export default function MemberDashboard({
       setLoading(true);
     }
 
-    fetchMemberProfileForUser(user.uid, user.email)
-      .then((rec) => {
-        if (!active) return;
-        setMember(rec);
-        if (rec && !isFormDirtyRef.current) {
-          populateForm(rec);
-        }
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+    const refreshProfile = () => {
+      fetchMemberProfileForUser(user.uid, user.email)
+        .then((rec) => {
+          if (!active) return;
+          setMember(rec);
+          setLiveVerified(true);
+          if (rec && !isFormDirtyRef.current) {
+            populateForm(rec);
+          }
+        })
+        .catch(() => {
+          if (active) setLiveVerified(true);
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    };
+
+    refreshProfile();
+
+    const handleVisibilityOrFocus = () => {
+      if (typeof document === 'undefined' || !document.hidden) {
+        refreshProfile();
+      }
+    };
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
     return () => {
       active = false;
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
     };
   }, [user.uid, user.email]);
 
@@ -552,7 +580,7 @@ export default function MemberDashboard({
   };
 
   const handleDirectDownloadSlip = async () => {
-    if (!member || isAccountRestricted || downloadingSlip) return;
+    if (!member || isAccountRestricted || !liveVerified || downloadingSlip) return;
     try {
       setDownloadingSlip(true);
       setDownloadSlipSuccess(false);
@@ -843,20 +871,21 @@ export default function MemberDashboard({
                   <span>Account Restricted • Inbox Only</span>
                 </span>
                 <h2 className="text-xl sm:text-2xl font-black text-slate-900 pt-1">
-                  Your Account Has Been Restricted
+                  Your account has been restricted
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                  Confirmation/Payment Slip, Attendance, Profile Editing, and Password settings are currently disabled for your account. Your <strong>Inbox</strong> remains open so you can contact the President directly.
+                  Confirmation/Payment Slip, Attendance, Profile Editing, and Password settings are completely disabled. Only your <strong>Inbox</strong> remains open so you can contact the President.
                 </p>
 
-                {member.restrictedReason && (
-                  <div className="mt-3 p-3.5 rounded-xl bg-red-50/80 border border-red-200 text-xs text-red-900 font-semibold text-left">
-                    <span className="block text-[10px] font-black uppercase tracking-wider text-red-700 mb-0.5">
-                      Administrator Note:
-                    </span>
-                    <p className="leading-relaxed">{member.restrictedReason}</p>
-                  </div>
-                )}
+                <div className="mt-3 p-3.5 rounded-xl bg-red-50/80 border border-red-200 text-xs text-red-900 font-semibold text-left">
+                  <span className="block text-[10px] font-black uppercase tracking-wider text-red-700 mb-0.5">
+                    Reason:
+                  </span>
+                  <p className="leading-relaxed">
+                    {member.restrictedReason ||
+                      'Restricted by the club administrator. Please contact the President via Inbox.'}
+                  </p>
+                </div>
               </div>
 
               <div className="pt-1 flex flex-wrap items-center justify-center gap-3">
@@ -897,29 +926,36 @@ export default function MemberDashboard({
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleDirectDownloadSlip}
-                      disabled={downloadingSlip}
-                      className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-emerald-700 hover:bg-emerald-800 active:scale-[0.98] text-white font-bold text-xs sm:text-sm shadow-md transition-all cursor-pointer disabled:opacity-60 shrink-0"
-                    >
-                      {downloadingSlip ? (
-                        <>
-                          <DotLoader size="sm" color="white" />
-                          <span>Downloading PDF...</span>
-                        </>
-                      ) : downloadSlipSuccess ? (
-                        <>
-                          <Check className="w-4 h-4" />
-                          <span>Slip Downloaded!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Download className="w-4 h-4" />
-                          <span>Download A4 PDF</span>
-                        </>
-                      )}
-                    </button>
+                    {liveVerified ? (
+                      <button
+                        type="button"
+                        onClick={handleDirectDownloadSlip}
+                        disabled={downloadingSlip}
+                        className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-emerald-700 hover:bg-emerald-800 active:scale-[0.98] text-white font-bold text-xs sm:text-sm shadow-md transition-all cursor-pointer disabled:opacity-60 shrink-0"
+                      >
+                        {downloadingSlip ? (
+                          <>
+                            <DotLoader size="sm" color="white" />
+                            <span>Downloading PDF...</span>
+                          </>
+                        ) : downloadSlipSuccess ? (
+                          <>
+                            <Check className="w-4 h-4" />
+                            <span>Slip Downloaded!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Download className="w-4 h-4" />
+                            <span>Download A4 PDF</span>
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <span className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-100 text-slate-600 font-bold text-xs shrink-0">
+                        <DotLoader size="sm" color="emerald" />
+                        <span>Verifying status...</span>
+                      </span>
+                    )}
                   </div>
 
                   {/* Clean Formal Confirmation Slip Preview Card */}
@@ -2110,6 +2146,78 @@ export default function MemberDashboard({
           </div>
         </div>
       )}
+      {/* Automatic Popup Modal when Account is Restricted */}
+      {typeof document !== 'undefined' &&
+        member &&
+        isAccountRestricted &&
+        !restrictedPopupDismissed &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="relative w-full max-w-md bg-white rounded-3xl border border-red-200 shadow-2xl overflow-hidden text-slate-900">
+              <div className="p-4 sm:p-5 bg-red-50 border-b border-red-100 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-red-800">
+                  <Ban className="w-5 h-5 text-red-600 shrink-0" />
+                  <h2 className="text-sm sm:text-base font-black">Account Restricted</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRestrictedPopupDismissed(true)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-red-100/70 transition-colors cursor-pointer"
+                  aria-label="Close popup"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 sm:p-6 space-y-4 text-center">
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center text-red-600">
+                  <Lock className="w-7 h-7" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-black text-slate-900">
+                    Your account has been restricted
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                    Confirmation/Payment Slip, Attendance, Edit Profile, and Change Password are disabled. Only <strong>Inbox</strong> is open.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-red-50/90 border border-red-200 text-left">
+                  <span className="block text-[10px] font-black uppercase tracking-wider text-red-700 mb-1">
+                    Reason:
+                  </span>
+                  <p className="text-xs font-semibold text-red-950 leading-relaxed">
+                    {member.restrictedReason ||
+                      'Restricted by the club administrator. Please open Inbox to contact the President.'}
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRestrictedPopupDismissed(true);
+                      switchPage('inbox');
+                    }}
+                    className="w-full sm:flex-1 py-2.5 px-4 rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-black shadow-md shadow-red-600/20 transition-all cursor-pointer inline-flex items-center justify-center gap-2"
+                  >
+                    <Inbox className="w-4 h-4" />
+                    <span>Open Inbox</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRestrictedPopupDismissed(true)}
+                    className="w-full sm:w-auto py-2.5 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm font-bold transition-all cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Search, 
   Phone, 
@@ -16,7 +17,9 @@ import {
   CreditCard, 
   Download, 
   Sparkles,
-  Ban
+  Ban,
+  X,
+  Lock
 } from 'lucide-react';
 import { PublicMemberStatus } from './types';
 import { searchMemberStatus } from './services/firebase';
@@ -43,6 +46,7 @@ export default function MemberStatusSearch({
   const [copiedId, setCopiedId] = useState(false);
   const [downloadingSlip, setDownloadingSlip] = useState(false);
   const [downloadSlipSuccess, setDownloadSlipSuccess] = useState(false);
+  const [showRestrictedModal, setShowRestrictedModal] = useState(false);
   const hiddenSlipRef = useRef<HTMLDivElement>(null);
 
   const handleSearch = async (e?: React.FormEvent) => {
@@ -60,11 +64,20 @@ export default function MemberStatusSearch({
     }
 
     setErrorMsg(null);
+    setShowRestrictedModal(false);
     setLoading(true);
     setSearched(true);
     try {
       const result = await searchMemberStatus(normPhone);
       setMemberResult(result);
+      if (result?.isRestricted) {
+        try {
+          sessionStorage.removeItem('ngdcsc_current_slip_member');
+        } catch {
+          // ignore
+        }
+        setShowRestrictedModal(true);
+      }
     } catch (err: any) {
       console.error('Error searching member status:', err);
       if (err?.message === 'PERMISSION_DENIED' || err?.code === 'permission-denied') {
@@ -81,6 +94,7 @@ export default function MemberStatusSearch({
     setSearchInput('');
     setSearched(false);
     setMemberResult(null);
+    setShowRestrictedModal(false);
     setErrorMsg(null);
     setCopiedId(false);
   };
@@ -93,7 +107,7 @@ export default function MemberStatusSearch({
 
   // Direct 1-click A4 PDF download without opening new tabs or modals
   const handleDirectDownloadSlip = async () => {
-    if (!memberResult || downloadingSlip) return;
+    if (!memberResult || memberResult.isRestricted || downloadingSlip) return;
     try {
       setDownloadingSlip(true);
       setDownloadSlipSuccess(false);
@@ -339,16 +353,27 @@ export default function MemberStatusSearch({
                     <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-900 space-y-2 text-center">
                       <div className="flex items-center justify-center gap-1.5 text-sm font-black text-red-700">
                         <Ban className="w-5 h-5 text-red-600" />
-                        <span>Status: Account Restricted</span>
+                        <span>Your account has been restricted</span>
                       </div>
                       <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                        Your account has been restricted by the club administrator. Confirmation/Payment Slip and QR access are currently disabled. Please sign in to your Dashboard and use Inbox to contact the President.
+                        Confirmation/Payment Slip, Profile Edit, and Attendance are completely disabled. Only Inbox remains open in your Dashboard.
                       </p>
                       {memberResult.restrictedReason && (
-                        <p className="text-xs font-semibold text-red-800 bg-red-100/70 p-2.5 rounded-xl border border-red-200 mt-2">
-                          Note: {memberResult.restrictedReason}
-                        </p>
+                        <div className="text-xs font-semibold text-red-900 bg-red-100/80 p-3 rounded-xl border border-red-200 mt-2 text-left">
+                          <span className="block text-[10px] font-black uppercase tracking-wider text-red-700 mb-0.5">
+                            Reason:
+                          </span>
+                          <p>{memberResult.restrictedReason}</p>
+                        </div>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => setShowRestrictedModal(true)}
+                        className="mt-1 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-xs cursor-pointer transition-colors"
+                      >
+                        <Ban className="w-3.5 h-3.5" />
+                        <span>View Restriction Notice</span>
+                      </button>
                     </div>
                   ) : (
                     <>
@@ -676,6 +701,65 @@ export default function MemberStatusSearch({
           </div>
         </div>
       )}
+
+      {/* Restricted Account Alert Popup Modal */}
+      {typeof document !== 'undefined' &&
+        memberResult?.isRestricted &&
+        showRestrictedModal &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="relative w-full max-w-md bg-white rounded-3xl border border-red-200 shadow-2xl overflow-hidden text-slate-900">
+              <div className="p-4 sm:p-5 bg-red-50 border-b border-red-100 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-red-800">
+                  <Ban className="w-5 h-5 text-red-600 shrink-0" />
+                  <h2 className="text-sm sm:text-base font-black">Account Restricted</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowRestrictedModal(false)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-red-100/70 transition-colors cursor-pointer"
+                  aria-label="Close popup"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 sm:p-6 space-y-4 text-center">
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center text-red-600">
+                  <Lock className="w-7 h-7" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-black text-slate-900">
+                    Your account has been restricted
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                    Payment / Confirmation Slip download, Profile Editing, and Attendance are unavailable for this account. Please sign in to your Dashboard and use <strong>Inbox</strong> to contact the President.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-red-50/90 border border-red-200 text-left">
+                  <span className="block text-[10px] font-black uppercase tracking-wider text-red-700 mb-1">
+                    Reason:
+                  </span>
+                  <p className="text-xs font-semibold text-red-950 leading-relaxed">
+                    {memberResult.restrictedReason ||
+                      'Restricted by the club administrator. Contact the President via Inbox for details.'}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowRestrictedModal(false)}
+                  className="w-full py-2.5 px-4 rounded-2xl bg-slate-900 hover:bg-black text-white text-xs sm:text-sm font-bold shadow-xs transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

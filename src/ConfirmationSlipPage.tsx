@@ -30,24 +30,58 @@ export default function ConfirmationSlipPage({
   const [downloading, setDownloading] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [verifyingRestriction, setVerifyingRestriction] = useState(true);
 
   const collegeLogo = '/assets/college-logo.png';
   const clubLogo = '/assets/club-logo.png';
 
-  // Load member from sessionStorage or URL query if not passed via props
+  // Load member from sessionStorage or URL query and always re-verify live restriction status from Firestore
   useEffect(() => {
+    let active = true;
+
+    const verifyLiveStatus = async (seed: PublicMemberStatus | null) => {
+      const lookupKey = seed?.phone || seed?.membershipId;
+      if (!lookupKey) {
+        if (active) setVerifyingRestriction(false);
+        return;
+      }
+      try {
+        const fresh = await searchMemberStatus(lookupKey);
+        if (!active) return;
+        if (fresh) {
+          setMember(fresh);
+          if (fresh.isRestricted) {
+            try {
+              sessionStorage.removeItem('ngdcsc_current_slip_member');
+            } catch {}
+          }
+        }
+      } catch {
+        // ignore network fallback
+      } finally {
+        if (active) setVerifyingRestriction(false);
+      }
+    };
+
     if (initialMember) {
       setMember(initialMember);
       setLoadingMember(false);
-      return;
+      verifyLiveStatus(initialMember);
+      return () => {
+        active = false;
+      };
     }
 
     try {
       const stored = sessionStorage.getItem('ngdcsc_current_slip_member');
       if (stored) {
-        setMember(JSON.parse(stored));
+        const parsed = JSON.parse(stored) as PublicMemberStatus;
+        setMember(parsed);
         setLoadingMember(false);
-        return;
+        verifyLiveStatus(parsed);
+        return () => {
+          active = false;
+        };
       }
     } catch {}
 
@@ -59,15 +93,26 @@ export default function ConfirmationSlipPage({
       const queryId = urlParams.get('id') || urlParams.get('mid') || urlParams.get('phone');
       if (queryId) {
         setLoadingMember(true);
-        searchMemberStatus(queryId).then((res) => {
-          if (res) setMember(res);
-          setLoadingMember(false);
-        }).catch(() => setLoadingMember(false));
-        return;
+        searchMemberStatus(queryId)
+          .then((res) => {
+            if (!active) return;
+            if (res) setMember(res);
+            setLoadingMember(false);
+          })
+          .catch(() => {
+            if (active) setLoadingMember(false);
+          });
+        return () => {
+          active = false;
+        };
       }
     }
 
     setLoadingMember(false);
+    setVerifyingRestriction(false);
+    return () => {
+      active = false;
+    };
   }, [initialMember]);
 
   const memberId = member?.membershipId || 'NGDCSC-PENDING';
@@ -78,7 +123,7 @@ export default function ConfirmationSlipPage({
   });
 
   const handleDownloadPdf = async () => {
-    if (!slipRef.current || downloading || !member) return;
+    if (!slipRef.current || downloading || verifyingRestriction || !member || member.isRestricted) return;
     try {
       setDownloading(true);
       setDownloadSuccess(false);
@@ -169,20 +214,24 @@ export default function ConfirmationSlipPage({
   if (member.isRestricted) {
     return (
       <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 bg-slate-50 text-slate-800">
-        <div className="max-w-md w-full bg-white rounded-3xl border border-red-200 shadow-lg p-7 text-center space-y-4">
+        <div className="max-w-md w-full bg-white rounded-3xl border border-red-200 shadow-xl p-7 text-center space-y-4">
           <div className="w-14 h-14 mx-auto rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center text-red-600">
             <Ban className="w-7 h-7" />
           </div>
-          <div className="space-y-1.5">
-            <h1 className="text-xl font-black text-slate-900">Account Restricted</h1>
+          <div className="space-y-2">
+            <h1 className="text-xl font-black text-slate-900">Your account has been restricted</h1>
             <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-              This confirmation slip cannot be accessed while the account is restricted. Sign in to your dashboard to contact the President via Inbox.
+              Confirmation/Payment Slip download is disabled. Please sign in to your dashboard to contact the President via <strong>Inbox</strong>.
             </p>
-            {member.restrictedReason && (
-              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs font-semibold text-red-800 mt-2">
-                {member.restrictedReason}
-              </div>
-            )}
+            <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-xs font-semibold text-red-900 mt-2 text-left">
+              <span className="block text-[10px] font-black uppercase tracking-wider text-red-700 mb-1">
+                Reason:
+              </span>
+              <p className="leading-relaxed">
+                {member.restrictedReason ||
+                  'Restricted by the club administrator. Please open Inbox in your Member Dashboard to contact the President.'}
+              </p>
+            </div>
           </div>
           <button
             type="button"
@@ -222,29 +271,36 @@ export default function ConfirmationSlipPage({
 
         <div className="flex items-center gap-2">
           {/* Direct Download Button */}
-          <button
-            type="button"
-            onClick={handleDownloadPdf}
-            disabled={downloading}
-            className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold transition-all shadow-md cursor-pointer disabled:opacity-50"
-          >
-            {downloading ? (
-              <>
-                <DotLoader size="sm" color="white" />
-                <span>Downloading PDF...</span>
-              </>
-            ) : downloadSuccess ? (
-              <>
-                <Check className="w-4 h-4 text-emerald-200" />
-                <span>Downloaded!</span>
-              </>
-            ) : (
-              <>
-                <Download className="w-4 h-4" />
-                <span>Download PDF</span>
-              </>
-            )}
-          </button>
+          {verifyingRestriction ? (
+            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">
+              <DotLoader size="sm" color="emerald" />
+              <span>Verifying...</span>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={downloading}
+              className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold transition-all shadow-md cursor-pointer disabled:opacity-50"
+            >
+              {downloading ? (
+                <>
+                  <DotLoader size="sm" color="white" />
+                  <span>Downloading PDF...</span>
+                </>
+              ) : downloadSuccess ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-200" />
+                  <span>Downloaded!</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  <span>Download PDF</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
       </header>
 
