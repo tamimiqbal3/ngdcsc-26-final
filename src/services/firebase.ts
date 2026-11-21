@@ -62,7 +62,7 @@ import {
 } from '../types';
 
 import { getAnalytics, isSupported } from 'firebase/analytics';
-import { triggerRecipientWebPush } from '../utils/browserNotifications';
+import { triggerRecipientWebPush, unregisterCurrentPushEndpoint } from '../utils/browserNotifications';
 
 export const firebaseConfig = {
   apiKey: "AIzaSyC-J4YtNcvqUQYUA9WgFckP7pQC9KtDNMo",
@@ -1682,6 +1682,14 @@ export async function sendMemberPasswordReset(email: string): Promise<void> {
  * Sign out current user
  */
 export async function logoutMemberAccount(): Promise<void> {
+  try {
+    const token = await auth.currentUser?.getIdToken().catch(() => null);
+    if (token) {
+      await unregisterCurrentPushEndpoint(token);
+    }
+  } catch {
+    // ignore
+  }
   await signOut(auth);
 }
 

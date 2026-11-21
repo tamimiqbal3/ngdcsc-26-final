@@ -13,6 +13,7 @@ export interface PushSyncStatus {
   checked: boolean;
   ok: boolean;
   reason?: PushSyncFailureReason;
+  detail?: string;
 }
 
 const CLUB_LOGO_ICON = '/assets/club-logo.png';
@@ -97,18 +98,23 @@ export function getBrowserNotificationPermission(): BrowserNotificationPermissio
   return Notification.permission;
 }
 
+let lastSwRegisterError = '';
+
 export function registerNotificationServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
     return Promise.resolve(null);
   }
   if (!swRegistrationPromise) {
+    lastSwRegisterError = '';
     swRegistrationPromise = navigator.serviceWorker
       .register('/sw.js', { scope: '/', updateViaCache: 'none' })
       .then((reg) => {
         reg.update().catch(() => {});
         return reg;
       })
-      .catch(() => {
+      .catch((err: any) => {
+        lastSwRegisterError = err?.message || err?.name || 'SW registration rejected';
+        console.warn('[NGDCSC Push] SW register error:', lastSwRegisterError);
         swRegistrationPromise = null;
         return null;
       });
@@ -185,7 +191,7 @@ function uint8ArrayEqual(a: ArrayBuffer | null, b: Uint8Array): boolean {
 async function subscribePushWithRetry(
   reg: ServiceWorkerRegistration,
   applicationServerKey: Uint8Array<ArrayBuffer>
-): Promise<PushSubscription | null> {
+): Promise<{ sub: PushSubscription | null; error?: string }> {
   let sub = await reg.pushManager.getSubscription();
   if (
     sub &&
@@ -196,15 +202,18 @@ async function subscribePushWithRetry(
     sub = null;
   }
 
-  if (sub) return sub;
+  if (sub) return { sub };
 
+  let lastErrMsg = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      return await reg.pushManager.subscribe({
+      const created = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey
       });
-    } catch {
+      return { sub: created };
+    } catch (err: any) {
+      lastErrMsg = `${err?.name || 'Error'}: ${err?.message || 'Push subscribe failed'}`;
       const existing = await reg.pushManager.getSubscription().catch(() => null);
       if (existing) {
         await existing.unsubscribe().catch(() => {});
@@ -214,7 +223,7 @@ async function subscribePushWithRetry(
       }
     }
   }
-  return null;
+  return { sub: null, error: lastErrMsg || 'Push subscribe failed' };
 }
 
 export function syncPushSubscriptionForUser(idToken: string): Promise<boolean> {
@@ -254,7 +263,7 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
       });
       if (syncRes.ok) {
         const data = (await syncRes.json()) as { publicKey?: string };
-        publicKey = data?.publicKey;
+        publicKey = data?.publicKey?.trim();
       }
     } catch {
       // fallback below
@@ -282,38 +291,47 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
 
     const reg = await registerNotificationServiceWorker();
     if (!reg || !reg.pushManager) {
-      console.warn('[NGDCSC Push] Service worker registration unavailable');
-      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
+      const detail = lastSwRegisterError || 'Service worker registration unavailable';
+      console.warn('[NGDCSC Push]', detail);
+      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed', detail });
       return false;
     }
 
     const activeSw = await waitForActiveServiceWorker(reg);
     if (!activeSw) {
-      console.warn('[NGDCSC Push] Service worker did not reach active state');
-      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
+      const detail = 'Service worker did not activate in time';
+      console.warn('[NGDCSC Push]', detail);
+      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed', detail });
       return false;
     }
 
     if (!publicKey) {
       const keyRes = await fetch('/api/push/public-key', { cache: 'no-store' });
       if (!keyRes.ok) {
-        console.warn('[NGDCSC Push] Failed to fetch VAPID public key:', keyRes.status);
-        emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
+        const detail = `Public key fetch failed (HTTP ${keyRes.status})`;
+        console.warn('[NGDCSC Push]', detail);
+        emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed', detail });
         return false;
       }
       const data = (await keyRes.json()) as { publicKey?: string };
-      publicKey = data?.publicKey;
+      publicKey = data?.publicKey?.trim();
     }
     if (!publicKey) {
-      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
+      emitPushSyncStatus({
+        checked: true,
+        ok: false,
+        reason: 'push-failed',
+        detail: 'Empty VAPID public key'
+      });
       return false;
     }
 
     const desiredKey = urlBase64ToUint8Array(publicKey);
-    const sub = await subscribePushWithRetry(reg, desiredKey);
+    const { sub, error: subErr } = await subscribePushWithRetry(reg, desiredKey);
     if (!sub) {
-      console.warn('[NGDCSC Push] PushManager.subscribe failed (check Brave push privacy setting or Incognito)');
-      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
+      const detail = subErr || 'PushManager.subscribe rejected';
+      console.warn('[NGDCSC Push]', detail);
+      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed', detail });
       return false;
     }
 
@@ -326,8 +344,9 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
       body: JSON.stringify({ idToken, subscription: sub.toJSON() })
     });
     if (!regRes.ok) {
-      console.warn('[NGDCSC Push] /api/push/register rejected:', regRes.status);
-      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
+      const detail = `Server register failed (HTTP ${regRes.status})`;
+      console.warn('[NGDCSC Push]', detail);
+      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed', detail });
       return false;
     }
 
@@ -336,12 +355,17 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
       publicKey?: string;
     } | null;
 
-    if (regData?.publicKey && regData.publicKey !== publicKey) {
+    if (regData?.publicKey && regData.publicKey.trim() !== publicKey) {
       await sub.unsubscribe().catch(() => {});
-      const rotatedKey = urlBase64ToUint8Array(regData.publicKey);
-      const rotatedSub = await subscribePushWithRetry(reg, rotatedKey);
+      const rotatedKey = urlBase64ToUint8Array(regData.publicKey.trim());
+      const { sub: rotatedSub, error: rotErr } = await subscribePushWithRetry(reg, rotatedKey);
       if (!rotatedSub) {
-        emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
+        emitPushSyncStatus({
+          checked: true,
+          ok: false,
+          reason: 'push-failed',
+          detail: rotErr || 'Key rotation subscribe failed'
+        });
         return false;
       }
       const retryRes = await fetch('/api/push/register', {
@@ -353,18 +377,24 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
         body: JSON.stringify({ idToken, subscription: rotatedSub.toJSON() })
       });
       const ok = retryRes.ok;
-      emitPushSyncStatus(ok ? { checked: true, ok: true } : { checked: true, ok: false, reason: 'push-failed' });
+      emitPushSyncStatus(
+        ok
+          ? { checked: true, ok: true }
+          : { checked: true, ok: false, reason: 'push-failed', detail: `Server retry failed (HTTP ${retryRes.status})` }
+      );
       return ok;
     }
 
     emitPushSyncStatus({ checked: true, ok: true });
     return true;
-  } catch (err) {
-    console.warn('[NGDCSC Push] Sync error:', err);
+  } catch (err: any) {
+    const detail = err?.message || String(err);
+    console.warn('[NGDCSC Push] Sync error:', detail);
     emitPushSyncStatus({
       checked: true,
       ok: false,
-      reason: isIosNonStandalone() ? 'ios-a2hs' : 'push-failed'
+      reason: isIosNonStandalone() ? 'ios-a2hs' : 'push-failed',
+      detail
     });
     return false;
   }
@@ -374,6 +404,7 @@ export async function enableNotificationsForUser(idToken?: string | null): Promi
   permission: BrowserNotificationPermission;
   pushActive: boolean;
   reason?: PushSyncFailureReason;
+  detail?: string;
 }> {
   if (typeof window === 'undefined') {
     return { permission: 'unsupported', pushActive: false, reason: 'unsupported' };
@@ -438,8 +469,30 @@ export async function enableNotificationsForUser(idToken?: string | null): Promi
   return {
     permission: perm,
     pushActive,
-    reason: pushActive ? undefined : lastPushSyncStatus.reason
+    reason: pushActive ? undefined : (lastPushSyncStatus.reason || 'push-failed'),
+    detail: pushActive ? undefined : lastPushSyncStatus.detail
   };
+}
+
+export async function unregisterCurrentPushEndpoint(idToken?: string | null): Promise<void> {
+  if (typeof window === 'undefined' || !idToken || !('serviceWorker' in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration('/');
+    const sub = await reg?.pushManager?.getSubscription();
+    if (sub?.endpoint) {
+      await fetch('/api/push/unregister', {
+        method: 'POST',
+        keepalive: true,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Firebase-Token': idToken
+        },
+        body: JSON.stringify({ idToken, endpoint: sub.endpoint })
+      }).catch(() => {});
+    }
+  } catch {
+    // ignore
+  }
 }
 
 export async function disableNotificationsForUser(idToken?: string | null): Promise<void> {

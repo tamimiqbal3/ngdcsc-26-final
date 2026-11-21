@@ -202,16 +202,21 @@ async function syncCanonicalVapidKeysWithAdminToken(idToken: string): Promise<vo
   vapidSyncInFlight = (async () => {
     try {
       const existing = await getFirestoreDoc('system_meta/webpush_vapid', idToken);
-      const remotePub = existing?.publicKey?.stringValue;
-      const remotePriv = existing?.privateKey?.stringValue;
+      const remotePub = existing?.publicKey?.stringValue?.trim();
+      const remotePriv = existing?.privateKey?.stringValue?.trim();
       if (remotePub && remotePriv) {
-        if (remotePub !== vapidKeys.publicKey || remotePriv !== vapidKeys.privateKey) {
-          const nextKeys = { publicKey: remotePub, privateKey: remotePriv };
-          applyVapidKeys(nextKeys);
-          saveVapidKeysToDisk(nextKeys);
+        const pubBytes = Buffer.from(remotePub, 'base64url');
+        const isValidPub = pubBytes.length === 65 && pubBytes[0] === 0x04;
+        if (isValidPub) {
+          if (remotePub !== vapidKeys.publicKey || remotePriv !== vapidKeys.privateKey) {
+            const nextKeys = { publicKey: remotePub, privateKey: remotePriv };
+            applyVapidKeys(nextKeys);
+            saveVapidKeysToDisk(nextKeys);
+          }
+          canonicalVapidSynced = true;
+          return;
         }
-        canonicalVapidSynced = true;
-        return;
+        console.warn('[web-push] Ignoring invalid remote VAPID public key in Firestore');
       }
 
       const ok = await patchFirestoreDoc(
@@ -554,12 +559,12 @@ async function startServer() {
     );
 
     const targetSet = new Set(allowedTargets);
+    const cleanTargetUid =
+      senderIsPresident && typeof req.body?.targetUid === 'string'
+        ? req.body.targetUid.trim()
+        : '';
     const localMatching = subscriptionStore.filter(
-      (s) =>
-        targetSet.has(s.emailLower) ||
-        (senderIsPresident &&
-          typeof req.body?.targetUid === 'string' &&
-          s.uid === req.body.targetUid)
+      (s) => targetSet.has(s.emailLower) || (cleanTargetUid.length > 0 && s.uid === cleanTargetUid)
     );
 
     const matchingSubs = mergeSubscriptionLists(localMatching, ...remoteLists);

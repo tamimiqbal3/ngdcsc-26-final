@@ -27,6 +27,7 @@ export default function NotificationToggleControl({
   const [enabled, setEnabled] = useState<boolean>(() => computeEffectiveToggleOn());
   const [busy, setBusy] = useState(false);
   const [tipReason, setTipReason] = useState<PushSyncFailureReason | null>(null);
+  const [tipDetail, setTipDetail] = useState<string | null>(null);
 
   useEffect(() => {
     const syncState = () => {
@@ -44,10 +45,12 @@ export default function NotificationToggleControl({
     if (busy) return;
     if (isInEmbeddedIframe()) {
       setTipReason('iframe');
+      setTipDetail(null);
       return;
     }
     setBusy(true);
     setTipReason(null);
+    setTipDetail(null);
     try {
       const token = await auth.currentUser?.getIdToken().catch(() => null);
       if (enabled) {
@@ -58,6 +61,7 @@ export default function NotificationToggleControl({
         setEnabled(computeEffectiveToggleOn());
         if (!res.pushActive && res.reason) {
           setTipReason(res.reason);
+          setTipDetail(res.detail || null);
         }
       }
     } finally {
@@ -168,6 +172,11 @@ export default function NotificationToggleControl({
                 <p className="text-xs text-slate-600 leading-relaxed">
                   Your browser allowed site alerts but blocked background push registration. Use a normal (non-Incognito) Chrome/Edge/Safari window and enable Google push messaging if using Brave.
                 </p>
+                {tipDetail && (
+                  <p className="text-[11px] font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-2.5 py-1.5 break-words">
+                    {tipDetail}
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={() => setTipReason(null)}
