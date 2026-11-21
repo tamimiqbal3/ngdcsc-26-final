@@ -226,6 +226,24 @@ async function subscribePushWithRetry(
   return { sub: null, error: lastErrMsg || 'Push subscribe failed' };
 }
 
+async function parseJsonSafely<T>(res: Response, endpointLabel: string): Promise<T> {
+  const raw = await res.text();
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    throw new Error(`${endpointLabel} returned empty response (HTTP ${res.status})`);
+  }
+  if (trimmed.startsWith('<')) {
+    throw new Error(
+      `Push API unreachable (${endpointLabel} returned HTML instead of JSON, HTTP ${res.status})`
+    );
+  }
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    throw new Error(`${endpointLabel} returned invalid JSON (HTTP ${res.status})`);
+  }
+}
+
 export function syncPushSubscriptionForUser(idToken: string): Promise<boolean> {
   if (typeof window === 'undefined' || !idToken) {
     return Promise.resolve(false);
@@ -262,7 +280,7 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
         body: JSON.stringify({ idToken })
       });
       if (syncRes.ok) {
-        const data = (await syncRes.json()) as { publicKey?: string };
+        const data = await parseJsonSafely<{ publicKey?: string }>(syncRes, '/api/push/sync-keys');
         publicKey = data?.publicKey?.trim();
       }
     } catch {
@@ -313,7 +331,7 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
         emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed', detail });
         return false;
       }
-      const data = (await keyRes.json()) as { publicKey?: string };
+      const data = await parseJsonSafely<{ publicKey?: string }>(keyRes, '/api/push/public-key');
       publicKey = data?.publicKey?.trim();
     }
     if (!publicKey) {
@@ -350,10 +368,10 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
       return false;
     }
 
-    const regData = (await regRes.json().catch(() => null)) as {
+    const regData = await parseJsonSafely<{
       ok?: boolean;
       publicKey?: string;
-    } | null;
+    }>(regRes, '/api/push/register');
 
     if (regData?.publicKey && regData.publicKey.trim() !== publicKey) {
       await sub.unsubscribe().catch(() => {});
@@ -439,23 +457,41 @@ export async function enableNotificationsForUser(idToken?: string | null): Promi
   }
 
   let pushActive = false;
+  let preLoginError: string | undefined;
   if (idToken) {
     pushActive = await syncPushSubscriptionForUser(idToken);
   } else {
     try {
       const reg = await registerNotificationServiceWorker();
       const sw = reg ? await waitForActiveServiceWorker(reg) : null;
-      if (reg && sw && reg.pushManager) {
+      if (!reg || !sw || !reg.pushManager) {
+        preLoginError = lastSwRegisterError || 'Service worker registration unavailable';
+      } else {
         const keyRes = await fetch('/api/push/public-key', { cache: 'no-store' });
-        if (keyRes.ok) {
-          const data = (await keyRes.json()) as { publicKey?: string };
+        if (!keyRes.ok) {
+          preLoginError = `Public key fetch failed (HTTP ${keyRes.status})`;
+        } else {
+          const data = await parseJsonSafely<{ publicKey?: string }>(keyRes, '/api/push/public-key');
           if (data?.publicKey) {
-            await subscribePushWithRetry(reg, urlBase64ToUint8Array(data.publicKey));
+            const { sub, error: subErr } = await subscribePushWithRetry(
+              reg,
+              urlBase64ToUint8Array(data.publicKey)
+            );
+            if (sub) {
+              pushActive = true;
+            } else {
+              preLoginError = subErr || 'PushManager.subscribe rejected';
+            }
+          } else {
+            preLoginError = 'Empty VAPID public key';
           }
         }
       }
-    } catch {
-      // will complete on login via syncPushSubscriptionForUser
+    } catch (err: any) {
+      preLoginError = err?.message || String(err);
+    }
+    if (!pushActive && preLoginError) {
+      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed', detail: preLoginError });
     }
   }
 
@@ -470,7 +506,7 @@ export async function enableNotificationsForUser(idToken?: string | null): Promi
     permission: perm,
     pushActive,
     reason: pushActive ? undefined : (lastPushSyncStatus.reason || 'push-failed'),
-    detail: pushActive ? undefined : lastPushSyncStatus.detail
+    detail: pushActive ? undefined : (preLoginError || lastPushSyncStatus.detail)
   };
 }
 

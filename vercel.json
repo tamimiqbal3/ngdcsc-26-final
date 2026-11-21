@@ -1,7 +1,22 @@
 {
+  "headers": [
+    {
+      "source": "/(sw\\.js|sw-notify\\.js)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!api/|assets/|sw\\.js|sw-notify\\.js|manifest\\.webmanifest).*)",
       "destination": "/index.html"
     }
   ]
