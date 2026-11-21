@@ -180,8 +180,12 @@ async function patchFirestoreDoc(
       body: JSON.stringify({ fields }),
       signal: AbortSignal.timeout(7000)
     });
+    if (!res.ok) {
+      console.warn(`[web-push] Firestore PATCH ${docPath} failed: HTTP ${res.status}`);
+    }
     return res.ok;
-  } catch {
+  } catch (err: any) {
+    console.warn(`[web-push] Firestore PATCH ${docPath} error:`, err?.message || err);
     return false;
   }
 }

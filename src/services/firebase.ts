@@ -81,17 +81,17 @@ export const auth = getAuth(firebaseApp);
 
 // Suppress internal Firestore connection/retry notices from triggering false-positive error triggers
 try {
-  setLogLevel('error');
+  setLogLevel('silent');
 } catch {
   // ignore
 }
 
-// Initialize Firestore with fast WebChannel streaming + automatic long-polling fallback
-// when behind restrictive corporate/mobile proxies.
+// Initialize Firestore with resilient HTTP long-polling (prevents sandboxed iframe & proxy WebChannel [code=unavailable] errors)
+// while real-time speed is guaranteed by eager getDocsFromServer fetches & live catch-up sync.
 export const db = (() => {
   try {
     return initializeFirestore(firebaseApp, {
-      experimentalAutoDetectLongPolling: true,
+      experimentalForceLongPolling: true,
       ignoreUndefinedProperties: true
     });
   } catch {

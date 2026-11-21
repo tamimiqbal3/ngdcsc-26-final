@@ -5,23 +5,32 @@ import {
   PushSyncFailureReason,
   disableNotificationsForUser,
   enableNotificationsForUser,
-  isDeviceNotificationsEnabled
+  getLastPushSyncStatus,
+  isDeviceNotificationsEnabled,
+  isInEmbeddedIframe
 } from '../utils/browserNotifications';
 
 interface NotificationToggleControlProps {
   compact?: boolean;
 }
 
+function computeEffectiveToggleOn(): boolean {
+  if (!isDeviceNotificationsEnabled() || isInEmbeddedIframe()) return false;
+  const status = getLastPushSyncStatus();
+  if (status.checked && !status.ok) return false;
+  return true;
+}
+
 export default function NotificationToggleControl({
   compact = false
 }: NotificationToggleControlProps) {
-  const [enabled, setEnabled] = useState<boolean>(() => isDeviceNotificationsEnabled());
+  const [enabled, setEnabled] = useState<boolean>(() => computeEffectiveToggleOn());
   const [busy, setBusy] = useState(false);
   const [tipReason, setTipReason] = useState<PushSyncFailureReason | null>(null);
 
   useEffect(() => {
     const syncState = () => {
-      setEnabled(isDeviceNotificationsEnabled());
+      setEnabled(computeEffectiveToggleOn());
     };
     window.addEventListener('ngdcsc-notif-permission-changed', syncState);
     window.addEventListener('ngdcsc-push-status-changed', syncState);
@@ -33,6 +42,10 @@ export default function NotificationToggleControl({
 
   const handleToggle = async () => {
     if (busy) return;
+    if (isInEmbeddedIframe()) {
+      setTipReason('iframe');
+      return;
+    }
     setBusy(true);
     setTipReason(null);
     try {
@@ -42,8 +55,8 @@ export default function NotificationToggleControl({
         setEnabled(false);
       } else {
         const res = await enableNotificationsForUser(token);
-        setEnabled(isDeviceNotificationsEnabled());
-        if (res.permission !== 'granted' && res.reason) {
+        setEnabled(computeEffectiveToggleOn());
+        if (!res.pushActive && res.reason) {
           setTipReason(res.reason);
         }
       }
@@ -122,7 +135,7 @@ export default function NotificationToggleControl({
               <>
                 <h4 className="text-sm font-black text-slate-900">Open in Browser Tab</h4>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  Open this portal in a regular browser tab and switch Alerts ON to receive notifications anywhere.
+                  Open this portal in a regular browser tab and switch Alerts ON to receive notifications when the website is closed.
                 </p>
                 <a
                   href={typeof window !== 'undefined' ? window.location.href : '/'}
@@ -140,6 +153,20 @@ export default function NotificationToggleControl({
                 <h4 className="text-sm font-black text-slate-900">Add to Home Screen</h4>
                 <p className="text-xs text-slate-600 leading-relaxed">
                   On iPhone/iPad, tap <span className="font-bold text-slate-800 inline-flex items-center gap-0.5"><Share className="w-3 h-3" /> Share</span> → <span className="font-bold text-slate-800">Add to Home Screen</span>, then open the Home Screen app and turn Alerts ON.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setTipReason(null)}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-900 text-white text-xs font-bold cursor-pointer"
+                >
+                  Got It
+                </button>
+              </>
+            ) : tipReason === 'push-failed' ? (
+              <>
+                <h4 className="text-sm font-black text-slate-900">Background Push Blocked</h4>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Your browser allowed site alerts but blocked background push registration. Use a normal (non-Incognito) Chrome/Edge/Safari window and enable Google push messaging if using Brave.
                 </p>
                 <button
                   type="button"

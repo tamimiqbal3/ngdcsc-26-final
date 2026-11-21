@@ -236,6 +236,11 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
     return false;
   }
 
+  if (isInEmbeddedIframe()) {
+    emitPushSyncStatus({ checked: true, ok: false, reason: 'iframe' });
+    return false;
+  }
+
   try {
     let publicKey: string | undefined;
     try {
@@ -261,44 +266,30 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
     }
 
     if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-      emitPushSyncStatus({
-        checked: true,
-        ok: false,
-        reason: isInEmbeddedIframe() ? 'iframe' : 'unsupported'
-      });
+      emitPushSyncStatus({ checked: true, ok: false, reason: 'unsupported' });
       return false;
     }
 
     if (Notification.permission === 'denied') {
-      emitPushSyncStatus({
-        checked: true,
-        ok: false,
-        reason: isInEmbeddedIframe() ? 'iframe' : 'denied'
-      });
+      emitPushSyncStatus({ checked: true, ok: false, reason: 'denied' });
       return false;
     }
 
     if (Notification.permission !== 'granted') {
-      emitPushSyncStatus({
-        checked: true,
-        ok: false,
-        reason: isInEmbeddedIframe() ? 'iframe' : 'permission-needed'
-      });
+      emitPushSyncStatus({ checked: true, ok: false, reason: 'permission-needed' });
       return false;
     }
 
     const reg = await registerNotificationServiceWorker();
     if (!reg || !reg.pushManager) {
-      emitPushSyncStatus({
-        checked: true,
-        ok: false,
-        reason: isInEmbeddedIframe() ? 'iframe' : 'push-failed'
-      });
+      console.warn('[NGDCSC Push] Service worker registration unavailable');
+      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
       return false;
     }
 
     const activeSw = await waitForActiveServiceWorker(reg);
     if (!activeSw) {
+      console.warn('[NGDCSC Push] Service worker did not reach active state');
       emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
       return false;
     }
@@ -306,6 +297,7 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
     if (!publicKey) {
       const keyRes = await fetch('/api/push/public-key', { cache: 'no-store' });
       if (!keyRes.ok) {
+        console.warn('[NGDCSC Push] Failed to fetch VAPID public key:', keyRes.status);
         emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
         return false;
       }
@@ -320,11 +312,8 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
     const desiredKey = urlBase64ToUint8Array(publicKey);
     const sub = await subscribePushWithRetry(reg, desiredKey);
     if (!sub) {
-      emitPushSyncStatus({
-        checked: true,
-        ok: false,
-        reason: isInEmbeddedIframe() ? 'iframe' : 'push-failed'
-      });
+      console.warn('[NGDCSC Push] PushManager.subscribe failed (check Brave push privacy setting or Incognito)');
+      emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
       return false;
     }
 
@@ -337,6 +326,7 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
       body: JSON.stringify({ idToken, subscription: sub.toJSON() })
     });
     if (!regRes.ok) {
+      console.warn('[NGDCSC Push] /api/push/register rejected:', regRes.status);
       emitPushSyncStatus({ checked: true, ok: false, reason: 'push-failed' });
       return false;
     }
@@ -369,11 +359,12 @@ async function runSyncPushSubscriptionForUser(idToken: string): Promise<boolean>
 
     emitPushSyncStatus({ checked: true, ok: true });
     return true;
-  } catch {
+  } catch (err) {
+    console.warn('[NGDCSC Push] Sync error:', err);
     emitPushSyncStatus({
       checked: true,
       ok: false,
-      reason: isInEmbeddedIframe() ? 'iframe' : isIosNonStandalone() ? 'ios-a2hs' : 'push-failed'
+      reason: isIosNonStandalone() ? 'ios-a2hs' : 'push-failed'
     });
     return false;
   }

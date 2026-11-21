@@ -38,13 +38,11 @@ import {
   Settings,
   Lock,
   Sparkles,
-  QrCode,
-  Inbox
+  QrCode
 } from 'lucide-react';
 import ImageAdjustModal from './components/ImageAdjustModal';
 import EmailLogsPanel from './components/EmailLogsPanel';
 import AdminAttendancePanel from './components/AdminAttendancePanel';
-import InboxPanel from './components/InboxPanel';
 import { 
   SubmissionRecord, 
   ExecutiveMember, 
@@ -97,9 +95,7 @@ import {
   subscribeToAttendanceSessions,
   getCachedAttendance,
   getCachedAttendanceSessions,
-  getTodayLocalDateStr,
-  isPresidentEmail,
-  subscribeToPresidentInboxThreads
+  getTodayLocalDateStr
 } from './services/firebase';
 import { 
   signInWithPopup, 
@@ -110,7 +106,6 @@ import {
 import { INITIAL_COMMITTEE } from './ExecutiveCommitteePage';
 import ConfirmationSlipModal from './components/ConfirmationSlipModal';
 import DotLoader from './components/DotLoader';
-import InboxToastNotification from './components/InboxToastNotification';
 import NotificationPermissionBanner from './components/NotificationPermissionBanner';
 import NotificationToggleControl from './components/NotificationToggleControl';
 import { syncPushSubscriptionForUser } from './utils/browserNotifications';
@@ -130,32 +125,19 @@ interface AdminPanelProps {
   onExit: () => void;
 }
 
-type TabType = 'dashboard' | 'members' | 'attendance' | 'inbox' | 'email_logs' | 'committee' | 'notices' | 'settings';
+type TabType = 'dashboard' | 'members' | 'attendance' | 'email_logs' | 'committee' | 'notices' | 'settings';
 
 export default function AdminPanel({ onExit }: AdminPanelProps) {
   // Auth state
   const [currentUser, setCurrentUser] = useState<User | null>(() => auth.currentUser);
   const [authLoading, setAuthLoading] = useState(() => !auth.currentUser);
-  const isPresident = isPresidentEmail(currentUser?.email);
-  const [presidentUnreadCount, setPresidentUnreadCount] = useState(0);
-  const [presidentNotifMeta, setPresidentNotifMeta] = useState<{
-    latestEventKey: string;
-    notifTag?: string;
-    senderHint?: string;
-  }>({ latestEventKey: '' });
 
   // Login form state
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginSubmitting, setLoginSubmitting] = useState(false);
 
-  // Active Tab: Default is 'dashboard' with rich graphs (or 'inbox' when opened from push notification)
-  const [activeTab, setActiveTab] = useState<TabType>(() => {
-    if (typeof window !== 'undefined') {
-      const sp = new URLSearchParams(window.location.search);
-      if (sp.get('open') === 'inbox') return 'inbox';
-    }
-    return 'dashboard';
-  });
+  // Active Tab: Default is 'dashboard' with rich graphs
+  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
 
   useEffect(() => {
     if (!currentUser) return;
@@ -224,32 +206,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       }
     };
   }, [currentUser]);
-
-  useEffect(() => {
-    if (!isPresident) {
-      setPresidentUnreadCount(0);
-      setPresidentNotifMeta({ latestEventKey: '' });
-      return;
-    }
-    return subscribeToPresidentInboxThreads((list) => {
-      const unreadThreads = list.filter((t) => (t.unreadByPresident || 0) > 0);
-      const total = unreadThreads.reduce((sum, t) => sum + (t.unreadByPresident || 0), 0);
-      setPresidentUnreadCount(total);
-      if (total > 0) {
-        const latest = unreadThreads[0];
-        setPresidentNotifMeta({
-          latestEventKey: `admin-pres:${total}:${latest?.id || ''}:${latest?.lastMessageAt || ''}`,
-          notifTag: latest?.id && latest?.lastMessageAt ? `ngdcsc-msg-${latest.id}-${latest.lastMessageAt}` : undefined,
-          senderHint:
-            unreadThreads.length === 1
-              ? `From ${latest?.memberName || 'Club Member'}`
-              : `From ${unreadThreads.length} members`
-        });
-      } else {
-        setPresidentNotifMeta({ latestEventKey: '' });
-      }
-    });
-  }, [isPresident]);
 
   // Data states: initialized instantly from localStorage cache so there is ZERO lag on open/refresh
   const [members, setMembers] = useState<SubmissionRecord[]>(() => {
@@ -1175,24 +1131,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
     );
   }
 
-  // ==================== DEDICATED FULL-SCREEN PRESIDENT INBOX ====================
-  if (activeTab === 'inbox' && isPresident) {
-    return (
-      <>
-        <InboxPanel
-          fullScreen
-          onBack={() => setActiveTab('dashboard')}
-          backLabel="Back to Admin Panel"
-          currentUserEmail={currentUser?.email || ''}
-          currentUserUid={currentUser?.uid || null}
-          allMembers={members}
-          onUnreadCountChange={setPresidentUnreadCount}
-        />
-        <NotificationPermissionBanner suppressWhenToastVisible={false} />
-      </>
-    );
-  }
-
   // ==================== AUTHENTICATED ADMIN PANEL (LIGHT THEME) ====================
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
@@ -1330,27 +1268,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
               {attendanceRecords.filter((r) => r.date === getTodayLocalDateStr() && r.status === 'present').length}
             </span>
           </button>
-
-          {/* 3.5. President Inbox Tab (Strictly visible only for info.tamimiq@gmail.com / Tamim Iqbal) */}
-          {isPresident && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('inbox')}
-              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer shrink-0 ${
-                activeTab === 'inbox'
-                  ? 'bg-gradient-to-r from-rose-50 via-red-50 to-orange-50 text-red-600 border-2 border-red-500 shadow-sm shadow-red-500/15'
-                  : 'bg-gradient-to-r from-rose-500/15 via-red-500/15 to-amber-500/15 hover:from-rose-500/25 hover:via-red-500/25 hover:to-amber-500/25 text-red-600 border border-red-300/80'
-              }`}
-            >
-              <Inbox className="w-4 h-4 shrink-0 text-red-600" />
-              <span className="text-red-600 font-black">President Inbox</span>
-              {presidentUnreadCount > 0 && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-600 text-white">
-                  {presidentUnreadCount}
-                </span>
-              )}
-            </button>
-          )}
 
           {/* 4. Email Logs Tab (ইমেইল লগস) */}
           <button
@@ -2046,8 +1963,6 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
             }}
           />
         )}
-
-        {/* President Inbox renders in dedicated full-screen mode above */}
 
         {/* ===================== TAB: EMAIL LOGS & NOTIFICATIONS ===================== */}
         {activeTab === 'email_logs' && (
@@ -3279,22 +3194,7 @@ export default function AdminPanel({ onExit }: AdminPanelProps) {
       )}
 
       {/* First-entry browser notification permission prompt */}
-      <NotificationPermissionBanner
-        suppressWhenToastVisible={Boolean(isPresident && presidentUnreadCount > 0 && activeTab !== 'inbox')}
-      />
-
-      {/* Real-time President Inbox Notification in Admin Panel */}
-      {isPresident && (
-        <InboxToastNotification
-          unreadCount={presidentUnreadCount}
-          latestEventKey={presidentNotifMeta.latestEventKey}
-          notifTag={presidentNotifMeta.notifTag}
-          senderHint={presidentNotifMeta.senderHint}
-          isCurrentlyViewingInbox={activeTab === 'inbox'}
-          buttonLabel="Check Dashboard"
-          onOpenInbox={() => setActiveTab('inbox')}
-        />
-      )}
+      <NotificationPermissionBanner />
     </div>
   );
 }
