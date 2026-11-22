@@ -1177,18 +1177,76 @@ export function subscribeToNotices(
   });
 }
 
+export function getNoticeTimestampMs(notice: ClubNotice): number {
+  if (!notice) return 0;
+  const rawCreated: any = notice.createdAt;
+  if (rawCreated) {
+    if (typeof rawCreated?.toMillis === 'function') {
+      return rawCreated.toMillis();
+    }
+    const parsedCreated = Date.parse(String(rawCreated));
+    if (!Number.isNaN(parsedCreated)) return parsedCreated;
+  }
+  const idMatch = notice.id?.match(/^notice_(\d{10,})$/);
+  if (idMatch) {
+    const idMs = Number(idMatch[1]);
+    if (!Number.isNaN(idMs) && idMs > 1600000000000) return idMs;
+  }
+  if (notice.date) {
+    const parsedDate = Date.parse(notice.date);
+    if (!Number.isNaN(parsedDate)) return parsedDate;
+  }
+  return 0;
+}
+
+export function isNoticeConsideredNew(notice: ClubNotice): boolean {
+  if (!notice || !notice.id) return false;
+  // Seeded fallback notices should not trigger "new notice added" alerts unless recently published
+  if (notice.id.startsWith('notice_seed_')) return false;
+  const ts = getNoticeTimestampMs(notice);
+  if (!ts) return false;
+  const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+  return Date.now() - ts <= FOURTEEN_DAYS_MS;
+}
+
+export function getReadNoticeIdsForUser(uid?: string | null): string[] {
+  if (!uid) return [];
+  try {
+    const raw = localStorage.getItem(`ngdcsc_read_notices_${uid}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function markNoticeAsReadForUser(uid?: string | null, noticeId?: string | null): void {
+  if (!uid || !noticeId) return;
+  try {
+    const existing = getReadNoticeIdsForUser(uid);
+    if (existing.includes(noticeId)) return;
+    const next = [noticeId, ...existing].slice(0, 100);
+    localStorage.setItem(`ngdcsc_read_notices_${uid}`, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * Add or update a notice in Firebase
  */
 export async function saveNoticeToFirebase(notice: ClubNotice): Promise<void> {
   const noticeId = notice.id || `notice_${Date.now()}`;
+  const createdAt = notice.createdAt || new Date().toISOString();
   const record: ClubNotice = {
     ...notice,
     id: noticeId,
     fileUrl: notice.fileUrl || null,
     fileName: notice.fileUrl && notice.fileName ? notice.fileName : null,
     fileType: notice.fileUrl && notice.fileType ? notice.fileType : null,
-    isPinned: Boolean(notice.isPinned)
+    isPinned: Boolean(notice.isPinned),
+    createdAt
   };
 
   // Update local cache
@@ -1217,6 +1275,7 @@ export async function saveNoticeToFirebase(notice: ClubNotice): Promise<void> {
       fileType: record.fileType,
       isPinned: record.isPinned,
       publishedBy: record.publishedBy || 'Executive Committee',
+      createdAt: record.createdAt,
       updatedAt: serverTimestamp()
     });
   } catch (err) {

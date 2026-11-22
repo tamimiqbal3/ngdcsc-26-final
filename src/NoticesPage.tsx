@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Calendar,
-  Download,
   FileText,
   Pin,
   Link2,
   Check,
-  X
+  ChevronRight,
+  BookOpen
 } from 'lucide-react';
 import { ClubNotice } from './types';
 import { subscribeToNotices, getCachedNotices } from './services/firebase';
@@ -15,15 +15,14 @@ import DotLoader from './components/DotLoader';
 
 interface NoticesPageProps {
   onBack: () => void;
+  onOpenNotice: (notice: ClubNotice) => void;
   onOpenAdmin?: () => void;
 }
 
-export default function NoticesPage({ onBack }: NoticesPageProps) {
+export default function NoticesPage({ onBack, onOpenNotice }: NoticesPageProps) {
   const [notices, setNotices] = useState<ClubNotice[]>(() => getCachedNotices());
   const [loading, setLoading] = useState(() => getCachedNotices().length === 0);
-  const [activeNoticeModal, setActiveNoticeModal] = useState<ClubNotice | null>(null);
   const [copiedNoticeId, setCopiedNoticeId] = useState<string | null>(null);
-  const [initialDeepLinkHandled, setInitialDeepLinkHandled] = useState(false);
 
   // Real-time listener for notices
   useEffect(() => {
@@ -34,22 +33,6 @@ export default function NoticesPage({ onBack }: NoticesPageProps) {
 
     return () => unsubscribe();
   }, []);
-
-  // Auto-open specific notice when visited via shared ?id=... link
-  useEffect(() => {
-    if (initialDeepLinkHandled || notices.length === 0 || typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const targetId = params.get('id');
-    if (targetId) {
-      const matched = notices.find((n) => n.id === targetId);
-      if (matched) {
-        setActiveNoticeModal(matched);
-      }
-      setInitialDeepLinkHandled(true);
-    } else {
-      setInitialDeepLinkHandled(true);
-    }
-  }, [notices, initialDeepLinkHandled]);
 
   const sortedNotices = [...notices].sort((a, b) => {
     if (a.isPinned && !b.isPinned) return -1;
@@ -116,24 +99,6 @@ export default function NoticesPage({ onBack }: NoticesPageProps) {
     }
   };
 
-  const openNoticeModal = (notice: ClubNotice) => {
-    setActiveNoticeModal(notice);
-    try {
-      window.history.replaceState(null, '', `/notices?id=${encodeURIComponent(notice.id)}`);
-    } catch {
-      // ignore
-    }
-  };
-
-  const closeNoticeModal = () => {
-    setActiveNoticeModal(null);
-    try {
-      window.history.replaceState(null, '', '/notices');
-    } catch {
-      // ignore
-    }
-  };
-
   return (
     <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-24 sm:pt-28 pb-12 relative z-10 overflow-x-hidden formal-page-enter">
       {/* Top Bar */}
@@ -167,10 +132,16 @@ export default function NoticesPage({ onBack }: NoticesPageProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {sortedNotices.map((notice) => {
             const isCopied = copiedNoticeId === notice.id;
+            const isPdf = Boolean(
+              notice.fileUrl &&
+                (notice.fileType === 'pdf' ||
+                  notice.fileUrl.startsWith('data:application/pdf') ||
+                  notice.fileName?.toLowerCase().endsWith('.pdf'))
+            );
             return (
               <div
                 key={notice.id}
-                onClick={() => openNoticeModal(notice)}
+                onClick={() => onOpenNotice(notice)}
                 className={`group min-w-0 break-words rounded-2xl bg-white border p-5 transition-all duration-200 hover:shadow-md cursor-pointer flex flex-col justify-between overflow-hidden ${
                   notice.isPinned
                     ? 'border-emerald-300'
@@ -229,17 +200,31 @@ export default function NoticesPage({ onBack }: NoticesPageProps) {
                       ) : (
                         <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs font-medium w-full justify-between min-w-0">
                           <div className="flex items-center gap-2 min-w-0">
-                            <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
+                            {isPdf ? (
+                              <BookOpen className="w-4 h-4 text-emerald-600 shrink-0" />
+                            ) : (
+                              <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
+                            )}
                             <span className="truncate">{notice.fileName || 'Attachment'}</span>
                           </div>
+                          {isPdf && (
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded shrink-0">
+                              Read PDF
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>
                   )}
                 </div>
 
-                {/* Minimal Footer with Copy Link */}
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end">
+                {/* Footer with Copy Link & Read Notice indicator */}
+                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 group-hover:translate-x-0.5 transition-transform">
+                    <span>Open Notice</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </span>
+
                   <button
                     type="button"
                     onClick={(e) => handleCopyNoticeLink(notice.id, e)}
@@ -265,136 +250,6 @@ export default function NoticesPage({ onBack }: NoticesPageProps) {
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* Active Notice Detail Modal (Strictly fits viewport with internal scroll) */}
-      {activeNoticeModal && (
-        <div
-          onClick={closeNoticeModal}
-          className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full max-h-[88vh] flex flex-col overflow-hidden text-slate-900 shadow-2xl relative"
-          >
-            {/* Fixed Modal Header */}
-            <div className="px-5 sm:px-7 pt-5 pb-4 border-b border-slate-100 shrink-0 relative">
-              <button
-                type="button"
-                onClick={closeNoticeModal}
-                aria-label="Close notice"
-                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-
-              <div className="flex items-center flex-wrap gap-2 mb-2.5 pr-10">
-                <span
-                  className={`inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold uppercase tracking-wide border ${getCategoryBadgeClass(
-                    activeNoticeModal.category
-                  )}`}
-                >
-                  {activeNoticeModal.category || 'Notice'}
-                </span>
-                <span className="text-slate-500 text-xs font-mono">
-                  {activeNoticeModal.date}
-                </span>
-                {activeNoticeModal.isPinned && (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
-                    Pinned
-                  </span>
-                )}
-              </div>
-
-              <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight leading-snug break-words pr-8">
-                {activeNoticeModal.title}
-              </h2>
-            </div>
-
-            {/* Scrollable Modal Content */}
-            <div className="px-5 sm:px-7 py-4 overflow-y-auto flex-1 min-h-0 space-y-5">
-              {activeNoticeModal.content && (
-                <div className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap break-words font-sans">
-                  {activeNoticeModal.content}
-                </div>
-              )}
-
-              {activeNoticeModal.fileUrl && (
-                <div className="pt-4 border-t border-slate-100 space-y-3">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5 min-w-0">
-                      <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span className="truncate">{activeNoticeModal.fileName || 'Attachment'}</span>
-                    </span>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <a
-                        href={activeNoticeModal.fileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold transition-colors"
-                      >
-                        <span>Open</span>
-                      </a>
-                      <a
-                        href={activeNoticeModal.fileUrl}
-                        download={activeNoticeModal.fileName || 'NGDCSC_Notice'}
-                        className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Download</span>
-                      </a>
-                    </div>
-                  </div>
-
-                  {(activeNoticeModal.fileType === 'image' ||
-                    activeNoticeModal.fileUrl.startsWith('data:image')) && (
-                    <div className="rounded-xl overflow-hidden bg-slate-50 border border-slate-200 w-full flex items-center justify-center p-2">
-                      <img
-                        src={activeNoticeModal.fileUrl}
-                        alt={activeNoticeModal.title}
-                        className="max-w-full w-auto max-h-[48vh] object-contain rounded-lg"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Fixed Modal Footer */}
-            <div className="px-5 sm:px-7 py-3.5 border-t border-slate-100 bg-slate-50/70 flex items-center justify-between gap-2 shrink-0 text-xs">
-              <button
-                type="button"
-                onClick={() => handleCopyNoticeLink(activeNoticeModal.id)}
-                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-semibold border transition-colors cursor-pointer ${
-                  copiedNoticeId === activeNoticeModal.id
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                    : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700'
-                }`}
-              >
-                {copiedNoticeId === activeNoticeModal.id ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Link Copied</span>
-                  </>
-                ) : (
-                  <>
-                    <Link2 className="w-3.5 h-3.5" />
-                    <span>Copy Share Link</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={closeNoticeModal}
-                className="px-4 py-2 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>

@@ -66,6 +66,7 @@ import AdminPanel from './AdminPanel';
 import NotFoundPage from './NotFoundPage';
 import MemberAuthPage from './MemberAuthPage';
 import MemberDashboard from './MemberDashboard';
+import NoticeDetailPage from './NoticeDetailPage';
 import ImageAdjustModal from './components/ImageAdjustModal';
 import DotLoader from './components/DotLoader';
 import InboxToastNotification from './components/InboxToastNotification';
@@ -85,7 +86,8 @@ import {
   DEFAULT_REGISTRATION_SETTING,
   isPresidentEmail,
   subscribeToPresidentInboxThreads,
-  subscribeToMemberInboxThread
+  subscribeToMemberInboxThread,
+  markNoticeAsReadForUser
 } from './services/firebase';
 
 const CLUB_SEGMENTS = [
@@ -114,7 +116,20 @@ const INITIAL_FORM: MembershipFormData = {
   agreedToRules: false
 };
 
-type ViewType = 'home' | 'form' | 'committee' | 'notices' | 'status' | 'slip' | 'login' | 'dashboard' | 'admin' | '404';
+type ViewType = 'home' | 'form' | 'committee' | 'notices' | 'notice_detail' | 'status' | 'slip' | 'login' | 'dashboard' | 'admin' | '404';
+
+const getNoticeIdFromUrl = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  const searchParams = new URLSearchParams(window.location.search);
+  const directId = searchParams.get('id');
+  if (directId) return directId;
+  const hash = window.location.hash;
+  if (hash.includes('?')) {
+    const hashParams = new URLSearchParams(hash.split('?')[1]);
+    return hashParams.get('id');
+  }
+  return null;
+};
 
 // Helper to determine view from current URL path & hash
 const resolveCurrentView = (): ViewType => {
@@ -125,7 +140,9 @@ const resolveCurrentView = (): ViewType => {
   if (hash === 'admin' || rawPath === '/admin' || rawPath.endsWith('/admin')) return 'admin';
   if (hash === 'login' || hash === 'signin' || rawPath === '/login' || rawPath.endsWith('/login')) return 'login';
   if (hash === 'dashboard' || hash === 'my-dashboard' || rawPath === '/dashboard' || rawPath === '/my-dashboard' || rawPath.endsWith('/dashboard')) return 'dashboard';
-  if (hash === 'notices' || rawPath === '/notices' || rawPath.endsWith('/notices')) return 'notices';
+  if (hash === 'notices' || hash.startsWith('notices?') || rawPath === '/notices' || rawPath.endsWith('/notices')) {
+    return getNoticeIdFromUrl() ? 'notice_detail' : 'notices';
+  }
   if (hash === 'committee' || rawPath === '/committee' || rawPath.endsWith('/committee')) return 'committee';
   if (hash === 'status' || hash === 'check-status' || rawPath === '/status' || rawPath.endsWith('/status')) return 'status';
   if (hash.startsWith('slip') || rawPath === '/slip' || rawPath.endsWith('/slip')) return 'slip';
@@ -660,8 +677,8 @@ export default function App() {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [liveNotices, setLiveNotices] = useState<ClubNotice[]>(() => getCachedNotices());
-  const [selectedNotice, setSelectedNotice] = useState<ClubNotice | null>(null);
-  const [copiedHomeNoticeLink, setCopiedHomeNoticeLink] = useState(false);
+  const [selectedNoticeId, setSelectedNoticeId] = useState<string | null>(() => getNoticeIdFromUrl());
+  const [noticeReturnView, setNoticeReturnView] = useState<'home' | 'notices' | 'dashboard'>('notices');
   const [activeMemberCount, setActiveMemberCount] = useState<number | null>(() => getCachedActiveMemberCount());
 
   // Real-time listener for notices
@@ -704,12 +721,31 @@ export default function App() {
 
   // Sync browser URL history on view change
   const navigateTo = (view: ViewType) => {
+    if (view !== 'notice_detail') {
+      setSelectedNoticeId(null);
+    }
     setCurrentView(view);
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     try {
-      const targetPath = view === 'home' ? '/' : `/${view}`;
+      const targetPath = view === 'home' ? '/' : view === 'notice_detail' ? '/notices' : `/${view}`;
       window.history.pushState(null, '', targetPath);
+    } catch {
+      // ignore
+    }
+  };
+
+  const openNoticeDetailPage = (notice: ClubNotice, returnTo: 'home' | 'notices' | 'dashboard') => {
+    setSelectedNoticeId(notice.id);
+    setNoticeReturnView(returnTo);
+    setCurrentView('notice_detail');
+    setMenuOpen(false);
+    if (authUser?.uid) {
+      markNoticeAsReadForUser(authUser.uid, notice.id);
+    }
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    try {
+      window.history.pushState(null, '', `/notices?id=${encodeURIComponent(notice.id)}`);
     } catch {
       // ignore
     }
@@ -718,6 +754,7 @@ export default function App() {
   // Listen to popstate & hashchange for browser navigation
   useEffect(() => {
     const handlePopState = () => {
+      setSelectedNoticeId(getNoticeIdFromUrl());
       setCurrentView(resolveCurrentView());
     };
     window.addEventListener('popstate', handlePopState);
@@ -1044,7 +1081,7 @@ export default function App() {
               type="button"
               onClick={() => navigateTo('notices')}
               className={`px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
-                currentView === 'notices'
+                currentView === 'notices' || currentView === 'notice_detail'
                   ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(0,0,0,0.08)] font-semibold'
                   : 'text-slate-600 hover:text-slate-950 hover:bg-white/50'
               }`}
@@ -1230,123 +1267,6 @@ export default function App() {
       </header>
       )}
 
-      {/* Selected Notice Modal (When clicking homepage announcement - strictly fits viewport) */}
-      {selectedNotice && (
-        <div
-          onClick={() => setSelectedNotice(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/45 backdrop-blur-sm animate-in fade-in"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full max-h-[88vh] flex flex-col overflow-hidden text-slate-800 relative"
-          >
-            {/* Fixed Modal Header */}
-            <div className="px-5 sm:px-6 pt-5 pb-3.5 border-b border-slate-100 shrink-0 relative">
-              <button 
-                type="button"
-                onClick={() => setSelectedNotice(null)}
-                aria-label="Close notice"
-                className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700 cursor-pointer transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              <div className="flex items-center gap-2 mb-2 pr-8">
-                <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  {selectedNotice.category || 'Official Notice'}
-                </span>
-                <span className="text-xs font-mono text-slate-500">{selectedNotice.date}</span>
-              </div>
-
-              <h3 className="text-lg font-black text-slate-900 leading-snug break-words pr-8">
-                {selectedNotice.title}
-              </h3>
-            </div>
-
-            {/* Scrollable Modal Body */}
-            <div className="px-5 sm:px-6 py-4 overflow-y-auto flex-1 min-h-0 space-y-4">
-              {selectedNotice.content && (
-                <p className="text-xs sm:text-sm text-slate-700 whitespace-pre-line break-words leading-relaxed">
-                  {selectedNotice.content}
-                </p>
-              )}
-
-              {selectedNotice.fileUrl && (
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5 min-w-0">
-                      <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span className="truncate">{selectedNotice.fileName || 'Attached Notice Document'}</span>
-                    </p>
-                    <a
-                      href={selectedNotice.fileUrl}
-                      download={selectedNotice.fileName || 'NGDCSC_Notice'}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer shrink-0"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Download</span>
-                    </a>
-                  </div>
-                  {(selectedNotice.fileType === 'image' || selectedNotice.fileUrl.startsWith('data:image')) && (
-                    <div className="rounded-xl overflow-hidden border border-slate-200 bg-white flex items-center justify-center p-1.5">
-                      <img
-                        src={selectedNotice.fileUrl}
-                        alt="Notice document"
-                        className="max-w-full w-auto max-h-[48vh] object-contain rounded-lg"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Fixed Modal Footer */}
-            <div className="px-5 sm:px-6 py-3.5 border-t border-slate-100 bg-slate-50/70 flex items-center justify-between gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={async () => {
-                  const shareUrl = `${window.location.origin}/notices?id=${encodeURIComponent(selectedNotice.id)}`;
-                  try {
-                    await navigator.clipboard.writeText(shareUrl);
-                    setCopiedHomeNoticeLink(true);
-                    setTimeout(() => setCopiedHomeNoticeLink(false), 2200);
-                  } catch {
-                    // ignore clipboard failure
-                  }
-                }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors inline-flex items-center gap-1.5 border ${
-                  copiedHomeNoticeLink
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                    : 'bg-white border-slate-200 hover:bg-slate-100 text-slate-700'
-                }`}
-              >
-                {copiedHomeNoticeLink ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Link Copied</span>
-                  </>
-                ) : (
-                  <>
-                    <Link2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Copy Link</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedNotice(null)}
-                className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold cursor-pointer transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Image Adjust / Crop Modal */}
       {adjustingPhoto && (
         <ImageAdjustModal
@@ -1365,7 +1285,25 @@ export default function App() {
       ) : currentView === 'notices' ? (
         <NoticesPage
           onBack={() => navigateTo('home')}
+          onOpenNotice={(notice) => openNoticeDetailPage(notice, 'notices')}
           onOpenAdmin={() => navigateTo('admin')}
+        />
+      ) : currentView === 'notice_detail' ? (
+        <NoticeDetailPage
+          notice={liveNotices.find((n) => n.id === selectedNoticeId) || null}
+          loading={liveNotices.length === 0}
+          backLabel={
+            noticeReturnView === 'dashboard'
+              ? 'Back to Dashboard'
+              : noticeReturnView === 'home'
+              ? 'Back to Home'
+              : 'Back to Notices'
+          }
+          onBack={() => navigateTo(noticeReturnView)}
+          onViewAllNotices={() => navigateTo('notices')}
+          onNoticeViewed={(id) => {
+            if (authUser?.uid) markNoticeAsReadForUser(authUser.uid, id);
+          }}
         />
       ) : currentView === '404' ? (
         <NotFoundPage
@@ -1392,6 +1330,7 @@ export default function App() {
             onBackToHome={() => navigateTo('home')}
             onGoToRegistration={() => navigateTo('form')}
             onSignedOut={() => navigateTo('login')}
+            onOpenNotice={(notice) => openNoticeDetailPage(notice, 'dashboard')}
             requestedPage={requestedDashboardPage}
             onActivePageChange={setActiveDashboardPage}
           />
@@ -1414,6 +1353,7 @@ export default function App() {
             onBackToHome={() => navigateTo('home')}
             onGoToRegistration={() => navigateTo('form')}
             onSignedOut={() => navigateTo('login')}
+            onOpenNotice={(notice) => openNoticeDetailPage(notice, 'dashboard')}
             requestedPage={requestedDashboardPage}
             onActivePageChange={setActiveDashboardPage}
           />
@@ -1432,7 +1372,7 @@ export default function App() {
           onGoToStatus={() => navigateTo('status')}
           registrationSetting={registrationSetting}
           latestNotice={liveNotices.length > 0 ? liveNotices[0] : undefined}
-          onOpenNotice={(notice) => setSelectedNotice(notice)}
+          onOpenNotice={(notice) => openNoticeDetailPage(notice, 'home')}
           activeMemberCount={activeMemberCount}
         />
       ) : (

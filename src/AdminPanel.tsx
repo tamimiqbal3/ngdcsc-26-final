@@ -4486,7 +4486,8 @@ function NoticeModal({
         fileUrl: fileUrl ? fileUrl : null,
         fileName: fileUrl && fileName ? fileName : null,
         fileType: fileUrl && fileType ? fileType : null,
-        isPinned: Boolean(isPinned)
+        isPinned: Boolean(isPinned),
+        createdAt: initialNotice?.createdAt || new Date().toISOString()
       });
     } finally {
       setSubmitting(false);

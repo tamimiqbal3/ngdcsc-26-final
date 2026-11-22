@@ -31,7 +31,10 @@ import {
   ClipboardCheck,
   QrCode,
   Inbox,
-  Ban
+  Ban,
+  Bell,
+  BookOpen,
+  ChevronRight
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
@@ -39,6 +42,7 @@ import {
   SubmissionRecord,
   SectionType,
   BatchType,
+  ClubNotice,
   MembershipRegistrationSetting,
   DEFAULT_SKILL_OPTIONS,
   AttendanceRecord,
@@ -64,7 +68,13 @@ import {
   subscribeToMembers,
   subscribeToMemberById,
   subscribeToPresidentInboxThreads,
-  subscribeToMemberInboxThread
+  subscribeToMemberInboxThread,
+  subscribeToNotices,
+  getCachedNotices,
+  getNoticeTimestampMs,
+  isNoticeConsideredNew,
+  getReadNoticeIdsForUser,
+  markNoticeAsReadForUser
 } from './services/firebase';
 import ImageAdjustModal from './components/ImageAdjustModal';
 import DotLoader from './components/DotLoader';
@@ -89,6 +99,7 @@ interface MemberDashboardProps {
   onBackToHome: () => void;
   onGoToRegistration: () => void;
   onSignedOut: () => void;
+  onOpenNotice?: (notice: ClubNotice) => void;
   requestedPage?: { page: DashboardPage; nonce: number } | null;
   onActivePageChange?: (page: DashboardPage) => void;
 }
@@ -99,6 +110,7 @@ export default function MemberDashboard({
   onBackToHome,
   onGoToRegistration,
   onSignedOut,
+  onOpenNotice,
   requestedPage,
   onActivePageChange
 }: MemberDashboardProps) {
@@ -117,12 +129,45 @@ export default function MemberDashboard({
   const isAccountRestricted = Boolean(member?.isRestricted) && !isPresident;
   const [restrictedPopupDismissed, setRestrictedPopupDismissed] = useState(false);
 
+  const [liveNotices, setLiveNotices] = useState<ClubNotice[]>(() => getCachedNotices());
+  const [readNoticeIds, setReadNoticeIds] = useState<string[]>(() => getReadNoticeIdsForUser(user.uid));
+  const [noticePopupDismissed, setNoticePopupDismissed] = useState(false);
+  const lastPopupNoticeIdRef = useRef<string | null>(null);
+
   const [activePage, setActivePage] = useState<DashboardPage>(
     requestedPage?.page || (isPresident && !initialCached ? 'inbox' : 'slip')
   );
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
   const [presidentMembersDirectory, setPresidentMembersDirectory] = useState<SubmissionRecord[]>([]);
   const isFormDirtyRef = useRef(false);
+
+  useEffect(() => {
+    setReadNoticeIds(getReadNoticeIdsForUser(user.uid));
+    setNoticePopupDismissed(false);
+    lastPopupNoticeIdRef.current = null;
+  }, [user.uid]);
+
+  useEffect(() => {
+    const unsubNotices = subscribeToNotices((list) => {
+      setLiveNotices(list);
+    });
+    return () => unsubNotices();
+  }, []);
+
+  const unreadNewNotices = useMemo(() => {
+    return [...liveNotices]
+      .filter((n) => isNoticeConsideredNew(n) && !readNoticeIds.includes(n.id))
+      .sort((a, b) => getNoticeTimestampMs(b) - getNoticeTimestampMs(a));
+  }, [liveNotices, readNoticeIds]);
+
+  const latestUnreadNotice = unreadNewNotices[0] || null;
+
+  useEffect(() => {
+    if (latestUnreadNotice && latestUnreadNotice.id !== lastPopupNoticeIdRef.current) {
+      lastPopupNoticeIdRef.current = latestUnreadNotice.id;
+      setNoticePopupDismissed(false);
+    }
+  }, [latestUnreadNotice]);
 
   useEffect(() => {
     if (isAccountRestricted) {
@@ -646,18 +691,129 @@ export default function MemberDashboard({
 
   const displayedSkills = Array.from(new Set([...activeSkillList, ...skills]));
 
+  const newNoticePopupPortal =
+    typeof document !== 'undefined' &&
+    !loading &&
+    !isAccountRestricted &&
+    Boolean(latestUnreadNotice) &&
+    !noticePopupDismissed &&
+    requestedPage?.page !== 'inbox'
+      ? createPortal(
+          <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4 bg-slate-950/55 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="relative w-full max-w-md bg-white rounded-3xl border border-emerald-200 shadow-2xl overflow-hidden text-slate-900">
+              <div className="p-4 sm:p-5 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5 text-emerald-900">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                    <Bell className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm sm:text-base font-black leading-tight">
+                      New Notice Added
+                    </h2>
+                    {unreadNewNotices.length > 1 && (
+                      <p className="text-[11px] font-bold text-emerald-700">
+                        {unreadNewNotices.length} new notices published
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNoticePopupDismissed(true)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-emerald-100/70 transition-colors cursor-pointer"
+                  aria-label="Close popup"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 sm:p-6 space-y-4">
+                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                  A new official notice has been added to the NGDC Science Club notice board.
+                </p>
+
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-left">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      {latestUnreadNotice!.category || 'Notice'}
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-500">
+                      {latestUnreadNotice!.date}
+                    </span>
+                  </div>
+
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 leading-snug break-words">
+                    {latestUnreadNotice!.title}
+                  </h3>
+
+                  {latestUnreadNotice!.content && (
+                    <p className="text-xs text-slate-600 line-clamp-3 leading-relaxed break-words">
+                      {latestUnreadNotice!.content}
+                    </p>
+                  )}
+
+                  {latestUnreadNotice!.fileUrl && (
+                    <div className="pt-1 flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
+                      <BookOpen className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">
+                        {latestUnreadNotice!.fileType === 'pdf' ||
+                        latestUnreadNotice!.fileName?.toLowerCase().endsWith('.pdf')
+                          ? `PDF Attached: ${latestUnreadNotice!.fileName || 'Read on page'}`
+                          : `Attachment: ${latestUnreadNotice!.fileName || 'View inside'}`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = latestUnreadNotice!;
+                      markNoticeAsReadForUser(user.uid, target.id);
+                      setReadNoticeIds((prev) =>
+                        prev.includes(target.id) ? prev : [target.id, ...prev]
+                      );
+                      setNoticePopupDismissed(true);
+                      if (onOpenNotice) {
+                        onOpenNotice(target);
+                      }
+                    }}
+                    className="w-full sm:flex-1 py-2.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-black shadow-md shadow-emerald-600/20 transition-all cursor-pointer inline-flex items-center justify-center gap-1.5"
+                  >
+                    <span>Read Notice</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNoticePopupDismissed(true)}
+                    className="w-full sm:w-auto py-2.5 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm font-bold transition-all cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
   if (activePage === 'inbox' && (!loading || isPresident || Boolean(member))) {
     return (
-      <InboxPanel
-        fullScreen
-        onBack={() => (member ? switchPage('slip') : onBackToHome())}
-        backLabel={isAccountRestricted ? 'Back' : member ? 'Back to Dashboard' : 'Back to Home'}
-        currentUserEmail={user.email || member?.email || ''}
-        currentUserUid={user.uid}
-        currentMember={member}
-        allMembers={isPresident ? presidentMembersDirectory : []}
-        onUnreadCountChange={setInboxUnreadCount}
-      />
+      <>
+        <InboxPanel
+          fullScreen
+          onBack={() => (member ? switchPage('slip') : onBackToHome())}
+          backLabel={isAccountRestricted ? 'Back' : member ? 'Back to Dashboard' : 'Back to Home'}
+          currentUserEmail={user.email || member?.email || ''}
+          currentUserUid={user.uid}
+          currentMember={member}
+          allMembers={isPresident ? presidentMembersDirectory : []}
+          onUnreadCountChange={setInboxUnreadCount}
+        />
+        {newNoticePopupPortal}
+      </>
     );
   }
 
@@ -2218,6 +2374,7 @@ export default function MemberDashboard({
           </div>,
           document.body
         )}
+      {newNoticePopupPortal}
     </div>
   );
 }
