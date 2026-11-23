@@ -8,6 +8,7 @@ import {
   handleSyncKeys,
   handleUnregister
 } from './api/_pushEngine.ts';
+import { handleRobots, handleSitemap } from './api/_seoEngine.ts';
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -19,6 +20,18 @@ async function startServer() {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Service-Worker-Allowed', '/');
     next();
+  });
+
+  app.get('/sitemap.xml', (req, res) => {
+    void handleSitemap(req, res).catch((err: any) => {
+      res.status(500).send(err?.message || 'Failed to generate sitemap');
+    });
+  });
+
+  app.get('/robots.txt', (req, res) => {
+    void handleRobots(req, res).catch((err: any) => {
+      res.status(500).send(err?.message || 'Failed to generate robots.txt');
+    });
   });
 
   app.get('/api/push/public-key', (req, res) => {

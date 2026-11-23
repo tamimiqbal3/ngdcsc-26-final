@@ -16,7 +16,15 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!api/|assets/|sw\\.js|sw-notify\\.js|firebase-messaging-sw\\.js|manifest\\.webmanifest).*)",
+      "source": "/sitemap.xml",
+      "destination": "/api/sitemap"
+    },
+    {
+      "source": "/robots.txt",
+      "destination": "/api/robots"
+    },
+    {
+      "source": "/((?!api/|assets/|sw\\.js|sw-notify\\.js|firebase-messaging-sw\\.js|manifest\\.webmanifest|sitemap\\.xml|robots\\.txt).*)",
       "destination": "/index.html"
     }
   ]

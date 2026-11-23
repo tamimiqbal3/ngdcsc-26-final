@@ -1,7 +1,7 @@
 {
-  "name": "NGDC Science Club",
-  "short_name": "NGDC Science",
-  "description": "Official membership portal, executive dashboard, and inbox for New Government Degree College Science Club.",
+  "name": "NGDC SCIENCE CLUB",
+  "short_name": "NGDC SCIENCE CLUB",
+  "description": "Official website, membership portal, notice board, and executive dashboard for New Government Degree College Science Club (NGDCSC).",
   "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",

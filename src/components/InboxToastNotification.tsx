@@ -61,7 +61,7 @@ export default function InboxToastNotification({
   const onOpenInboxRef = useRef(onOpenInbox);
   onOpenInboxRef.current = onOpenInbox;
   const baseTitleRef = useRef<string>(
-    typeof document !== 'undefined' ? document.title.replace(/^\(\d+\)\s*/, '') : 'NGDC Science Club'
+    typeof document !== 'undefined' ? document.title.replace(/^\(\d+\)\s*/, '') : 'NGDC SCIENCE CLUB'
   );
 
   useEffect(() => {
