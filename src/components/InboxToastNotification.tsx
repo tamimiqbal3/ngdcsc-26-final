@@ -60,9 +60,6 @@ export default function InboxToastNotification({
   const lastAlertedKeyRef = useRef<string>('');
   const onOpenInboxRef = useRef(onOpenInbox);
   onOpenInboxRef.current = onOpenInbox;
-  const baseTitleRef = useRef<string>(
-    typeof document !== 'undefined' ? document.title.replace(/^\(\d+\)\s*/, '') : 'NGDC SCIENCE CLUB'
-  );
 
   useEffect(() => {
     registerNotificationServiceWorker();
@@ -95,17 +92,17 @@ export default function InboxToastNotification({
     };
   }, []);
 
-  // Sync browser tab title with live unread count
+  // Sync browser tab title with live unread count without overwriting route SEO titles
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const baseTitle = baseTitleRef.current || 'NGDC Science Club';
+    const currentBase = document.title.replace(/^\(\d+\)\s*/, '') || 'NGDC SCIENCE CLUB';
     if (unreadCount > 0) {
-      document.title = `(${unreadCount}) ${baseTitle}`;
+      document.title = `(${unreadCount}) ${currentBase}`;
     } else {
-      document.title = baseTitle;
+      document.title = currentBase;
     }
     return () => {
-      document.title = baseTitle;
+      document.title = document.title.replace(/^\(\d+\)\s*/, '') || 'NGDC SCIENCE CLUB';
     };
   }, [unreadCount]);
 

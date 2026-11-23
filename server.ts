@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'node:fs';
 import path from 'node:path';
 import {
   handlePublicKey,
@@ -8,7 +9,7 @@ import {
   handleSyncKeys,
   handleUnregister
 } from './api/_pushEngine.ts';
-import { handleRobots, handleSitemap } from './api/_seoEngine.ts';
+import { handleRobots, handleSitemap, injectRouteSeoIntoHtml } from './api/_seoEngine.ts';
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -84,9 +85,20 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distDir = path.resolve(process.cwd(), 'dist');
-    app.use(express.static(distDir));
-    app.get('/{*splat}', (_req, res) => {
-      res.sendFile(path.join(distDir, 'index.html'));
+    const indexHtmlPath = path.join(distDir, 'index.html');
+    const cachedTemplate = fs.existsSync(indexHtmlPath)
+      ? fs.readFileSync(indexHtmlPath, 'utf-8')
+      : '';
+    app.use(express.static(distDir, { index: false }));
+    app.get('/{*splat}', async (req, res) => {
+      try {
+        const template = cachedTemplate || fs.readFileSync(indexHtmlPath, 'utf-8');
+        const seoHtml = await injectRouteSeoIntoHtml(template, req.originalUrl || req.url, req.headers);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.status(200).send(seoHtml);
+      } catch {
+        res.sendFile(indexHtmlPath);
+      }
     });
   }
 

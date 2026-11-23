@@ -72,6 +72,7 @@ import DotLoader from './components/DotLoader';
 import InboxToastNotification from './components/InboxToastNotification';
 import NotificationPermissionBanner from './components/NotificationPermissionBanner';
 import { syncPushSubscriptionForUser } from './utils/browserNotifications';
+import { applyRouteSeo } from './utils/seoManager';
 import { 
   auth,
   saveMemberToFirebase, 
@@ -764,6 +765,15 @@ export default function App() {
       window.removeEventListener('hashchange', handlePopState);
     };
   }, []);
+
+  // Keep per-URL SEO metadata, 100+ bilingual keywords, canonical link, and JSON-LD synced
+  useEffect(() => {
+    const activeNotice =
+      currentView === 'notice_detail' && selectedNoticeId
+        ? liveNotices.find((n) => n.id === selectedNoticeId) || null
+        : null;
+    applyRouteSeo(currentView, activeNotice);
+  }, [currentView, selectedNoticeId, liveNotices]);
 
   // Close 3-dot menu on outside click
   useEffect(() => {
